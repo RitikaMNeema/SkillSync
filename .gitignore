@@ -135,7 +135,7 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
+# .env is intentionally committed — private repo, no real secrets
 .envrc
 .venv
 env/
