@@ -12,6 +12,7 @@ build/
 develop-eggs/
 dist/
 downloads/
+node_modules/
 eggs/
 .eggs/
 lib/
@@ -135,7 +136,7 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-# .env is intentionally committed — private repo, no real secrets
+# (.env not listed here — backend/.env is tracked for local Docker defaults; avoid committing real secrets.)
 .envrc
 .venv
 env/
@@ -193,6 +194,10 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Local machine files
+.DS_Store
+.ollama/
 
 # Cursor
 #  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to

@@ -3,13 +3,13 @@ name: Messaging Service Tests
 on:
   push:
     paths:
-      - 'services/messaging_service/**'
-      - 'shared/**'
+      - 'backend/services/messaging_service/**'
+      - 'backend/shared/**'
       - '.github/workflows/test-messaging-service.yml'
   pull_request:
     paths:
-      - 'services/messaging_service/**'
-      - 'shared/**'
+      - 'backend/services/messaging_service/**'
+      - 'backend/shared/**'
 
 jobs:
   test:
@@ -22,13 +22,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: services/messaging_service/requirements.txt
+          cache-dependency-path: backend/services/messaging_service/requirements.txt
 
       - name: Install dependencies
-        run: pip install -r services/messaging_service/requirements.txt
+        run: pip install -r backend/services/messaging_service/requirements.txt
 
       - name: Run tests
-        working-directory: services/messaging_service
+        working-directory: backend/services/messaging_service
         env:
-          PYTHONPATH: ${{ github.workspace }}
+          PYTHONPATH: ${{ github.workspace }}/backend
         run: pytest tests/ -v

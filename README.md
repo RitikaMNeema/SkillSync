@@ -1,6 +1,6 @@
-# SkillSync
+# LinkedIn (class project)
 
-A LinkedIn-like professional networking platform built as a distributed systems class project. SkillSync lets members create profiles, connect with each other, browse and apply to jobs, message recruiters, and track their application pipeline. While recruiters can post listings, manage applicants, and communicate with candidates. All activity is streamed through Kafka and aggregated into an analytics layer in real time.
+A LinkedIn-style professional networking platform built as a distributed systems class project. This app lets members create profiles, connect with each other, browse and apply to jobs, message recruiters, and track their application pipeline. Recruiters can post listings, manage applicants, and communicate with candidates. Activity is streamed through Kafka and aggregated into an analytics layer in real time.
 
 ---
 
@@ -35,28 +35,41 @@ A LinkedIn-like professional networking platform built as a distributed systems 
 
 ## Docs
 
-- [Backend setup & running locally](backend.md)
-- [Full API reference for frontend](api.md)
+- [Backend setup & running locally](backend/backend.md)
+- [Full API reference for frontend](backend/api.md)
 
 ---
 
 ## Quick Start
 
 ```bash
-cp .env.example .env
+cd backend
 docker compose up --build -d
 python scripts/seed.py      # loads realistic test data
+cd ../frontend
+npm install
+npm run dev
 ```
 
 Swagger UI available at `localhost:300X/docs` for each service.
 
 ---
 
+## Repo Layout
+
+```text
+<repository>/
+├── backend/    # FastAPI services, Docker Compose, Kafka, DB init, seed script
+└── frontend/   # React + Vite frontend
+```
+
+---
+
 ## Environment Setup
 
-The `.env` file is committed to this repo since it only contains local Docker config — no real secrets or API keys. All services read their configuration (database hosts, ports, JWT secret, etc.) from `.env` at runtime.
+The backend `.env` file is committed in `backend/.env` since it only contains local Docker config — no real secrets or API keys. All services read their configuration (database hosts, ports, JWT secret, etc.) from that file at runtime.
 
-If the frontend or any service adds a new port or variable, update `.env` and commit it so everyone stays in sync. If you need to override something locally, change your local `.env` — just don't commit a value that only works on your machine.
+If the frontend or any service adds a new port or variable, update `backend/.env` and commit it so everyone stays in sync. If you need to override something locally, change your local copy — just don't commit a value that only works on your machine.
 
 ---
 
@@ -67,9 +80,11 @@ If the frontend or any service adds a new port or variable, update `.env` and co
 Clone the repo over SSH:
 
 ```bash
-git clone git@github.com:KruthikaVirupakshappa/SkillSync.git
-cd SkillSync
+git clone git@github.com:KruthikaVirupakshappa/SkillSync.git linkedin-class-project
+cd linkedin-class-project
 ```
+
+(The remote repository name on GitHub may still be `SkillSync`; cloning into `linkedin-class-project` is optional but keeps your local folder aligned with the product name.)
 
 ### Every development session
 

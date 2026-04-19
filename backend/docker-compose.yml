@@ -1,0 +1,293 @@
+version: '3.9'
+
+services:
+  # ── Infrastructure ──────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: linkedin_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  mongo:
+    image: mongo:7.0
+    container_name: linkedin_mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./database/mongodb/init.js:/docker-entrypoint-initdb.d/init.js
+    healthcheck:
+      test: ["CMD", "mongosh", "-u", "${MONGO_INITDB_ROOT_USERNAME}", "-p", "${MONGO_INITDB_ROOT_PASSWORD}", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: linkedin_redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: linkedin_kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    ports:
+      - "9093:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ── Services ─────────────────────────────────────────────────────
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth_service/Dockerfile
+    container_name: linkedin_auth
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: ${AUTH_SERVICE_PORT}
+      PYTHONPATH: /app
+    ports:
+      - "${AUTH_SERVICE_PORT}:${AUTH_SERVICE_PORT}"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${AUTH_SERVICE_PORT}/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  profile-service:
+    build:
+      context: .
+      dockerfile: services/profile_service/Dockerfile
+    container_name: linkedin_profile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: ${PROFILE_SERVICE_PORT}
+      PYTHONPATH: /app
+    ports:
+      - "${PROFILE_SERVICE_PORT}:${PROFILE_SERVICE_PORT}"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${PROFILE_SERVICE_PORT}/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  recruiter-service:
+    build:
+      context: .
+      dockerfile: services/recruiter_service/Dockerfile
+    container_name: linkedin_recruiter
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: ${RECRUITER_SERVICE_PORT}
+      PYTHONPATH: /app
+    ports:
+      - "${RECRUITER_SERVICE_PORT}:${RECRUITER_SERVICE_PORT}"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${RECRUITER_SERVICE_PORT}/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  connection-service:
+    build:
+      context: .
+      dockerfile: services/connection_service/Dockerfile
+    container_name: linkedin_connection
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: ${CONNECTION_SERVICE_PORT}
+      PYTHONPATH: /app
+    ports:
+      - "${CONNECTION_SERVICE_PORT}:${CONNECTION_SERVICE_PORT}"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${CONNECTION_SERVICE_PORT}/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  job-service:
+    build:
+      context: .
+      dockerfile: services/job_service/Dockerfile
+    container_name: linkedin_job
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: ${JOB_SERVICE_PORT}
+      PYTHONPATH: /app
+    ports:
+      - "${JOB_SERVICE_PORT}:${JOB_SERVICE_PORT}"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${JOB_SERVICE_PORT}/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  application-service:
+    build:
+      context: .
+      dockerfile: services/application_service/Dockerfile
+    container_name: linkedin_application
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: ${APPLICATION_SERVICE_PORT}
+      PYTHONPATH: /app
+    ports:
+      - "${APPLICATION_SERVICE_PORT}:${APPLICATION_SERVICE_PORT}"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${APPLICATION_SERVICE_PORT}/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  messaging-service:
+    build:
+      context: .
+      dockerfile: services/messaging_service/Dockerfile
+    container_name: linkedin_messaging
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: ${MESSAGING_SERVICE_PORT}
+      PYTHONPATH: /app
+    ports:
+      - "${MESSAGING_SERVICE_PORT}:${MESSAGING_SERVICE_PORT}"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${MESSAGING_SERVICE_PORT}/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  analytics-service:
+    build:
+      context: .
+      dockerfile: services/analytics_service/Dockerfile
+    container_name: linkedin_analytics
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: ${ANALYTICS_SERVICE_PORT}
+      PYTHONPATH: /app
+    ports:
+      - "${ANALYTICS_SERVICE_PORT}:${ANALYTICS_SERVICE_PORT}"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${ANALYTICS_SERVICE_PORT}/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  mysql_data:
+  mongo_data:
+  redis_data:
+  kafka_data:
