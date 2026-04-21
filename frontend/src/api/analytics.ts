@@ -10,23 +10,23 @@ import type {
   TopJobMetric
 } from "../types/analytics";
 
-export async function getTopJobs(month: string) {
-  const response = await api.post<ApiResponse<TopJobMetric[]>>("/analytics/jobs/top", { month });
+export async function getTopJobs(month: string, recruiter_id?: number) {
+  const response = await api.post<ApiResponse<TopJobMetric[]>>("/analytics/jobs/top", { month, recruiter_id });
   return response.data.data;
 }
 
-export async function getLowTractionJobs() {
-  const response = await api.post<ApiResponse<TopJobMetric[]>>("/analytics/jobs/lowTraction", {});
+export async function getLowTractionJobs(month: string, recruiter_id?: number) {
+  const response = await api.post<ApiResponse<TopJobMetric[]>>("/analytics/jobs/lowTraction", { month, recruiter_id });
   return response.data.data;
 }
 
-export async function getJobClicks() {
-  const response = await api.post<ApiResponse<ClickMetric[]>>("/analytics/jobs/clicks", {});
+export async function getJobClicks(month?: string, recruiter_id?: number) {
+  const response = await api.post<ApiResponse<ClickMetric[]>>("/analytics/jobs/clicks", { month, recruiter_id });
   return response.data.data;
 }
 
-export async function getSavedJobsTrend(period: "day" | "week") {
-  const response = await api.post<ApiResponse<SavedJobMetric[]>>("/analytics/jobs/saves", { period });
+export async function getSavedJobsTrend(period: "day" | "week", month?: string, recruiter_id?: number) {
+  const response = await api.post<ApiResponse<SavedJobMetric[]>>("/analytics/jobs/saves", { period, month, recruiter_id });
   return response.data.data;
 }
 
@@ -35,8 +35,8 @@ export async function getFunnel() {
   return response.data.data;
 }
 
-export async function getGeoDistribution() {
-  const response = await api.post<ApiResponse<GeoMetric[]>>("/analytics/geo", {});
+export async function getGeoDistribution(month?: string, recruiter_id?: number, job_id?: string) {
+  const response = await api.post<ApiResponse<GeoMetric[]>>("/analytics/geo", { month, recruiter_id, job_id });
   return response.data.data;
 }
 

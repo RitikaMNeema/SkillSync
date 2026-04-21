@@ -1,7 +1,7 @@
 import asyncio
 from fastapi import HTTPException
 from models.job import (
-    create_job, get_job, update_job, close_job, increment_views,
+    create_job, get_job, update_job, close_job, delete_job, increment_views,
     search_jobs, jobs_by_recruiter, save_job, unsave_job, saved_by_member, PAGE_SIZE,
 )
 from producers.job_producer import emit_job_viewed, emit_job_saved, emit_job_closed
@@ -14,7 +14,9 @@ _job_key    = lambda jid: f"job:{jid}"
 _search_key = lambda p:   f"job:search:{p}"
 
 
-async def create(body: dict) -> dict:
+async def create(body: dict, actor_id=None) -> dict:
+    if actor_id and str(body.get("recruiter_id")) != str(actor_id):
+        raise HTTPException(403, "Not authorized to create postings for another recruiter")
     job_id = await create_job(body)
     return await get_job(job_id)
 
@@ -30,9 +32,12 @@ async def get(job_id: int) -> dict:
     return job
 
 
-async def update(job_id: int, fields: dict) -> dict:
-    if not await get_job(job_id):
+async def update(job_id: int, fields: dict, actor_id=None) -> dict:
+    existing = await get_job(job_id)
+    if not existing:
         raise HTTPException(404, "Job not found")
+    if actor_id and str(existing.get("recruiter_id")) != str(actor_id):
+        raise HTTPException(403, "Not authorized to update this job")
     await update_job(job_id, fields)
     await cache_del(_job_key(job_id))
     await cache_del_pattern("job:search:*")
@@ -64,17 +69,31 @@ async def close(job_id: int, actor_id) -> dict:
     return {"job_id": job_id, "status": "closed"}
 
 
+async def delete(job_id: int, actor_id) -> dict:
+    job = await get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if str(actor_id) != str(job["recruiter_id"]):
+        raise HTTPException(403, "Not authorized to delete this job")
+    if not await delete_job(job_id):
+        raise HTTPException(400, "Failed to delete job")
+    await cache_del(_job_key(job_id))
+    await cache_del_pattern("job:search:*")
+    return {"job_id": job_id, "deleted": True}
+
+
 async def by_recruiter(recruiter_id: int, page: int) -> dict:
     rows, total = await jobs_by_recruiter(recruiter_id, page)
     return {"jobs": rows, "total": total, "page": page, "page_size": PAGE_SIZE}
 
 
 async def save(member_id: int, job_id: int) -> dict:
-    if not await get_job(job_id):
+    job = await get_job(job_id)
+    if not job:
         raise HTTPException(404, "Job not found")
     if not await save_job(member_id, job_id):
         raise HTTPException(409, "Job already saved")
-    await emit_job_saved(member_id, job_id)
+    await emit_job_saved(member_id, job_id, job.get("recruiter_id"))
     return {"member_id": member_id, "job_id": job_id, "saved": True}
 
 
@@ -90,9 +109,10 @@ async def saved_jobs(member_id: int, page: int) -> dict:
 
 
 async def track_view(job_id: int, viewer_id) -> dict:
-    if not await get_job(job_id):
+    job = await get_job(job_id)
+    if not job:
         raise HTTPException(404, "Job not found")
     await increment_views(job_id)
     await cache_del(_job_key(job_id))
-    asyncio.create_task(emit_job_viewed(viewer_id or "anonymous", job_id))
+    asyncio.create_task(emit_job_viewed(viewer_id or "anonymous", job_id, job.get("recruiter_id")))
     return {"job_id": job_id, "tracked": True}

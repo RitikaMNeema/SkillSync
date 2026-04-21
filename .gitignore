@@ -135,8 +135,8 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
-# Environments
-# (.env not listed here — backend/.env is tracked for local Docker defaults; avoid committing real secrets.)
+# Environments — commit `.env.example` templates; keep real secrets in `.env` only (untracked).
+!.env.example
 .envrc
 .venv
 env/

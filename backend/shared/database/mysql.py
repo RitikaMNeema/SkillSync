@@ -8,11 +8,11 @@ async def get_pool() -> aiomysql.Pool:
     global _pool
     if _pool is None:
         _pool = await aiomysql.create_pool(
-            host=os.getenv("MYSQL_HOST", "mysql"),
+            host=os.getenv("MYSQL_HOST", "host.docker.internal"),
             port=int(os.getenv("MYSQL_PORT", 3306)),
             db=os.getenv("MYSQL_DATABASE", "linkedin_db"),
-            user=os.getenv("MYSQL_USER", "linkedin_user"),
-            password=os.getenv("MYSQL_PASSWORD", "linkedin_pass"),
+            user=os.getenv("MYSQL_USER", "root"),
+            password=os.getenv("MYSQL_PASSWORD", os.getenv("MYSQL_ROOT_PASSWORD", "seekrit03")),
             autocommit=True,
             minsize=2,
             maxsize=10,

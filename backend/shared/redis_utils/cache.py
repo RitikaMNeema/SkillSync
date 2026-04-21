@@ -1,7 +1,17 @@
 import json
+from datetime import date, datetime
+from decimal import Decimal
 from shared.redis_utils.client import get_redis
 
 DEFAULT_TTL = 300
+
+
+def _json_default(value):
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
 async def cache_get(key: str):
@@ -17,7 +27,7 @@ async def cache_get(key: str):
 
 async def cache_set(key: str, value, ttl: int = DEFAULT_TTL) -> None:
     redis = await get_redis()
-    await redis.set(key, json.dumps(value), ex=ttl)
+    await redis.set(key, json.dumps(value, default=_json_default), ex=ttl)
 
 
 async def cache_del(key: str) -> None:

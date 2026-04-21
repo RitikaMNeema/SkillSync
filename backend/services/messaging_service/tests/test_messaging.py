@@ -6,13 +6,21 @@ Run from `backend/` (PYTHONPATH includes this folder — see CI):
 import pytest
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime
+from pathlib import Path
 
-for mod in ("aiomysql", "aiokafka", "redis.asyncio"):
+SERVICE_DIR = Path(__file__).resolve().parents[1]
+BACKEND_DIR = SERVICE_DIR.parents[1]
+sys.path.insert(0, str(BACKEND_DIR))
+sys.path.insert(0, str(SERVICE_DIR))
+
+for mod in ("aiomysql", "aiokafka", "redis.asyncio", "jose", "motor", "motor.motor_asyncio"):
     sys.modules.setdefault(mod, MagicMock())
 
 from shared.middleware.auth import get_current_user  # noqa: E402
 from main import app  # noqa: E402
 from httpx import AsyncClient, ASGITransport  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
 USER_A = {"user_id": 1, "role": "member", "email": "a@test.com"}
 USER_B = {"user_id": 2, "role": "member", "email": "b@test.com"}
@@ -34,6 +42,11 @@ _MSG = {
 }
 
 
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
 @pytest.fixture(autouse=True)
 def override_auth():
     app.dependency_overrides[get_current_user] = lambda: USER_A
@@ -41,7 +54,7 @@ def override_auth():
     app.dependency_overrides.clear()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_open_thread():
     with patch("controllers.messaging.find_thread_by_participants", new=AsyncMock(return_value=None)), \
          patch("controllers.messaging.create_thread", new=AsyncMock(return_value=_THREAD)):
@@ -51,7 +64,7 @@ async def test_open_thread():
         assert resp.json()["data"]["thread_id"] == "t-123"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_open_thread_idempotent_returns_existing():
     with patch("controllers.messaging.find_thread_by_participants", new=AsyncMock(return_value=_THREAD)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -60,14 +73,14 @@ async def test_open_thread_idempotent_returns_existing():
         assert resp.json()["data"]["thread_id"] == "t-123"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_open_thread_requires_two_participants():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         resp = await ac.post("/threads/open", json={"participant_ids": [1]})
     assert resp.status_code == 400
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_send_message():
     with patch("controllers.messaging.get_thread",          new=AsyncMock(return_value=_THREAD)), \
          patch("controllers.messaging.create_message",      new=AsyncMock(return_value=_MSG)), \
@@ -79,9 +92,27 @@ async def test_send_message():
             })
         assert resp.status_code == 201
         assert resp.json()["data"]["message_id"] == "m-abc"
+        assert resp.json()["data"]["delivery_status"]["kafka"] == "sent"
+        assert resp.json()["data"]["delivery_status"]["realtime"] == "sent"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
+async def test_send_message_retries_downstream_delivery_and_reports_failure():
+    with patch("controllers.messaging.get_thread", new=AsyncMock(return_value=_THREAD)), \
+         patch("controllers.messaging.create_message", new=AsyncMock(return_value=_MSG)), \
+         patch("controllers.messaging.update_last_message_at", new=AsyncMock()), \
+         patch("controllers.messaging.emit_message_sent", new=AsyncMock(side_effect=Exception("kafka-down"))), \
+         patch("controllers.messaging.hub.broadcast", new=AsyncMock(side_effect=Exception("ws-down"))):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.post("/messages/send", json={
+                "thread_id": "t-123", "sender_id": 1, "text": "Hello!",
+            })
+        assert resp.status_code == 201
+        assert resp.json()["data"]["delivery_status"]["kafka"] == "failed"
+        assert resp.json()["data"]["delivery_status"]["realtime"] == "failed"
+
+
+@pytest.mark.anyio
 async def test_send_message_non_participant_returns_403():
     thread_without_user = {**_THREAD, "participant_ids": ["5", "6"]}
     with patch("controllers.messaging.get_thread", new=AsyncMock(return_value=thread_without_user)):
@@ -92,7 +123,7 @@ async def test_send_message_non_participant_returns_403():
         assert resp.status_code == 403
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_send_message_thread_not_found_returns_404():
     with patch("controllers.messaging.get_thread", new=AsyncMock(return_value=None)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -102,7 +133,7 @@ async def test_send_message_thread_not_found_returns_404():
         assert resp.status_code == 404
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_messages_paginated():
     with patch("controllers.messaging.get_thread",    new=AsyncMock(return_value=_THREAD)), \
          patch("controllers.messaging.list_messages", new=AsyncMock(return_value=([_MSG], 1))):
@@ -113,7 +144,7 @@ async def test_list_messages_paginated():
         assert len(resp.json()["data"]["messages"]) == 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_mark_read():
     with patch("controllers.messaging.get_thread", new=AsyncMock(return_value=_THREAD)), \
          patch("controllers.messaging.mark_read",  new=AsyncMock(return_value=3)):
@@ -121,3 +152,26 @@ async def test_mark_read():
             resp = await ac.post("/messages/markRead", json={"thread_id": "t-123", "user_id": 1})
         assert resp.status_code == 200
         assert resp.json()["data"]["messages_marked_read"] == 3
+
+
+def test_message_send_receive_over_websocket():
+    msg = {**_MSG, "timestamp": datetime.utcnow()}
+    token = "ws-test-token"
+    with patch("main.get_thread", new=AsyncMock(return_value=_THREAD)), \
+         patch("main._decode_ws_token", return_value={"user_id": 1, "role": "member"}), \
+         patch("controllers.messaging.get_thread", new=AsyncMock(return_value=_THREAD)), \
+         patch("controllers.messaging.create_message", new=AsyncMock(return_value=msg)), \
+         patch("controllers.messaging.update_last_message_at", new=AsyncMock()), \
+         patch("controllers.messaging.emit_message_sent", new=AsyncMock()):
+        with TestClient(app) as client:
+            with client.websocket_connect(f"/ws?thread_id=t-123&token={token}") as websocket:
+                response = client.post(
+                    "/messages/send",
+                    json={"thread_id": "t-123", "sender_id": 1, "text": "Hello!"},
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                assert response.status_code == 201
+                payload = websocket.receive_json()
+                assert payload["event"] == "message.created"
+                assert payload["data"]["thread_id"] == "t-123"
+                assert payload["data"]["text"] == "Hello!"

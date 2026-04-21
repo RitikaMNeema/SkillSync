@@ -24,6 +24,21 @@ export async function getJobsByRecruiter(recruiter_id: number, page = 1) {
   return response.data.data;
 }
 
+/** All pages — needed for recruiter dashboard charts and labels when postings exceed `page_size`. */
+export async function getAllJobsByRecruiter(recruiter_id: number) {
+  const jobs: Job[] = [];
+  let page = 1;
+  let total = Infinity;
+  while (jobs.length < total) {
+    const data = await getJobsByRecruiter(recruiter_id, page);
+    jobs.push(...data.jobs);
+    total = data.total;
+    if (data.jobs.length === 0 || data.jobs.length < data.page_size) break;
+    page += 1;
+  }
+  return jobs;
+}
+
 export async function createJob(payload: Omit<Job, "job_id"> & { company_id: number; recruiter_id: number; title: string; work_mode: "remote" | "hybrid" | "onsite" }) {
   const response = await api.post<ApiResponse<Job>>("/jobs/create", payload);
   return response.data.data;
@@ -36,6 +51,11 @@ export async function updateJob(payload: Partial<Job> & { job_id: number }) {
 
 export async function closeJob(job_id: number) {
   const response = await api.post<ApiResponse<{ job_id: number; status: "closed" }>>("/jobs/close", { job_id });
+  return response.data.data;
+}
+
+export async function deleteJob(job_id: number) {
+  const response = await api.post<ApiResponse<{ job_id: number; deleted: boolean }>>("/jobs/delete", { job_id });
   return response.data.data;
 }
 

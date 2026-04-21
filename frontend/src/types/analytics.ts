@@ -29,6 +29,7 @@ export interface GeoMetric {
 
 export interface MemberDashboard {
   profile_views_30d: number;
+  search_appearances_30d: number;
   application_status_breakdown: Array<{
     status: ApplicationStatus;
     count: number;

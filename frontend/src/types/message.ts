@@ -19,6 +19,10 @@ export interface Message {
   text: string;
   timestamp: string;
   read_by: string[];
+  delivery_status?: {
+    kafka: "sent" | "failed";
+    realtime: "sent" | "failed";
+  };
 }
 
 export interface MessageListResponse {

@@ -1,13 +1,16 @@
 from fastapi import HTTPException
 from models.application import (
-    submit_application_transaction, get_application, apps_by_job, apps_by_member,
+    submit_application_transaction, get_application, get_job_recruiter_id, get_member_location,
+    apps_by_job, apps_by_member,
     update_status, withdraw_application, add_note, get_notes,
     VALID_TRANSITIONS, PAGE_SIZE,
 )
 from producers.application_producer import emit_submitted, emit_status_changed
 
 
-async def submit(job_id, member_id, resume_url, cover_letter, answers) -> dict:
+async def submit(job_id, member_id, resume_url, cover_letter, answers, actor: dict) -> dict:
+    if actor.get("role") != "member" or str(actor["user_id"]) != str(member_id):
+        raise HTTPException(403, "Members may only submit applications for themselves")
     try:
         app_id = await submit_application_transaction(job_id, member_id, resume_url, cover_letter, answers)
     except ValueError as e:
@@ -19,24 +22,48 @@ async def submit(job_id, member_id, resume_url, cover_letter, answers) -> dict:
         if msg == "DUPLICATE":
             raise HTTPException(409, "Already applied to this job")
         raise
-    await emit_submitted(member_id, app_id, job_id, member_id)
+    submitted_app = await get_application(app_id)
+    recruiter_id = submitted_app["job_recruiter_id"] if submitted_app else None
+    loc = await get_member_location(member_id)
+    city = (loc or {}).get("location_city")
+    state = (loc or {}).get("location_state")
+    await emit_submitted(member_id, app_id, job_id, member_id, recruiter_id, city=city, state=state)
     return {"application_id": app_id, "job_id": job_id, "member_id": member_id, "status": "submitted"}
 
 
-async def get(application_id: int) -> dict:
+async def get(application_id: int, actor: dict) -> dict:
     app = await get_application(application_id)
     if not app:
         raise HTTPException(404, "Application not found")
+    role = actor.get("role")
+    uid = str(actor["user_id"])
+    if role == "member":
+        if str(app["member_id"]) != uid:
+            raise HTTPException(403, "Not authorized to view this application")
+    elif role == "recruiter":
+        if str(app["job_recruiter_id"]) != uid:
+            raise HTTPException(403, "Not authorized to view this application")
+    else:
+        raise HTTPException(403, "Not authorized to view this application")
     notes = await get_notes(application_id)
     return {**app, "notes": notes}
 
 
-async def by_job(job_id: int, page: int) -> dict:
+async def by_job(job_id: int, page: int, actor: dict) -> dict:
+    if actor.get("role") != "recruiter":
+        raise HTTPException(403, "Only the posting recruiter can list applicants for a job")
+    owner = await get_job_recruiter_id(job_id)
+    if owner is None:
+        raise HTTPException(404, "Job not found")
+    if str(owner) != str(actor["user_id"]):
+        raise HTTPException(403, "Not authorized to view applications for this job")
     rows, total = await apps_by_job(job_id, page)
     return {"applications": rows, "total": total, "page": page, "page_size": PAGE_SIZE}
 
 
-async def by_member(member_id: int, page: int) -> dict:
+async def by_member(member_id: int, page: int, actor: dict) -> dict:
+    if actor.get("role") != "member" or str(actor["user_id"]) != str(member_id):
+        raise HTTPException(403, "Not authorized to list these applications")
     rows, total = await apps_by_member(member_id, page)
     return {"applications": rows, "total": total, "page": page, "page_size": PAGE_SIZE}
 
@@ -52,13 +79,28 @@ async def update_app_status(application_id: int, new_status: str, actor_id) -> d
         raise HTTPException(400, f"Invalid transition: {app['status']} → {new_status}. Allowed: {allowed}")
     old_status = app["status"]
     await update_status(application_id, new_status)
-    await emit_status_changed(str(actor_id), application_id, old_status, new_status, app["job_id"], app["member_id"])
+    await emit_status_changed(
+        str(actor_id),
+        application_id,
+        old_status,
+        new_status,
+        app["job_id"],
+        app["member_id"],
+        app["job_recruiter_id"],
+    )
     return {"application_id": application_id, "old_status": old_status, "new_status": new_status}
 
 
-async def add_recruiter_note(application_id: int, recruiter_id: int, note_text: str) -> dict:
-    if not await get_application(application_id):
+async def add_recruiter_note(application_id: int, recruiter_id: int, note_text: str, actor: dict) -> dict:
+    if actor.get("role") != "recruiter":
+        raise HTTPException(403, "Only recruiters can add notes")
+    if str(actor["user_id"]) != str(recruiter_id):
+        raise HTTPException(403, "Cannot add notes on behalf of another recruiter")
+    app = await get_application(application_id)
+    if not app:
         raise HTTPException(404, "Application not found")
+    if str(app["job_recruiter_id"]) != str(recruiter_id):
+        raise HTTPException(403, "Not authorized to annotate this application")
     note_id = await add_note(application_id, recruiter_id, note_text)
     return {"note_id": note_id, "application_id": application_id}
 
@@ -75,5 +117,13 @@ async def withdraw(application_id: int, member_id) -> dict:
     old_status = app["status"]
     if not await withdraw_application(application_id):
         raise HTTPException(400, "Withdraw failed")
-    await emit_status_changed(str(member_id), application_id, old_status, "withdrawn", app["job_id"], app["member_id"])
+    await emit_status_changed(
+        str(member_id),
+        application_id,
+        old_status,
+        "withdrawn",
+        app["job_id"],
+        app["member_id"],
+        app["job_recruiter_id"],
+    )
     return {"application_id": application_id, "old_status": old_status, "new_status": "withdrawn"}

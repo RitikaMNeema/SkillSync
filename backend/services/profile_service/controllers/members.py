@@ -25,8 +25,10 @@ async def create(body: dict) -> dict:
 
 async def get(member_id: int) -> dict:
     cached = await cache_get(_profile_key(member_id))
-    if cached:
+    if cached and cached.get("email"):
         return cached
+    if cached and not cached.get("email"):
+        await cache_del(_profile_key(member_id))
     mysql_data = await get_member_by_id(member_id)
     if not mysql_data:
         raise HTTPException(404, "Member not found")

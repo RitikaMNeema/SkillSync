@@ -70,7 +70,7 @@ export function MemberDashboardPage() {
       <h1 className="text-2xl font-bold">Dashboard</h1>
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard title="Profile views" value={dashboard.profile_views_30d} subtitle="Past 30 days" />
-        <StatCard title="Search appearances" value={dashboard.profile_views_30d} subtitle="Derived from current analytics events" />
+        <StatCard title="Search appearances" value={dashboard.search_appearances_30d} subtitle="Past 30 days" />
         <StatCard title="Applications" value={applicationsCount} subtitle="Tracked from application service" />
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
@@ -93,11 +93,11 @@ export function MemberDashboardPage() {
         </ChartCard>
         <ChartCard title="Application status breakdown">
           <div className="h-72">
-            {dashboard.application_status_breakdown?.length ? (
+            {(dashboard.application_status_breakdown ?? []).length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={dashboard.application_status_breakdown} dataKey="count" innerRadius={60} outerRadius={100}>
-                    {dashboard.application_status_breakdown.map((entry) => (
+                  <Pie data={dashboard.application_status_breakdown ?? []} dataKey="count" innerRadius={60} outerRadius={100}>
+                    {(dashboard.application_status_breakdown ?? []).map((entry) => (
                       <Cell key={entry.status} fill={statusColors[entry.status] ?? "#0a66c2"} />
                     ))}
                   </Pie>

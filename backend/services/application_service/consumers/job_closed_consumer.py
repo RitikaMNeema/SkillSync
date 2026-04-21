@@ -26,6 +26,7 @@ async def start_job_closed_consumer() -> None:
                 "rejected",
                 job_id,
                 None,
+                envelope.get("actor_id"),
             )
 
     await start_consumer("application-service-job-closed", [topics.JOB_CLOSED], handler)

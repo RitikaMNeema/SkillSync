@@ -32,6 +32,7 @@ export interface EducationEntry {
 
 export interface MemberProfile {
   member_id: number;
+  email?: string | null;
   first_name: string;
   last_name: string;
   phone: string | null;

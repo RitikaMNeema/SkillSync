@@ -6,6 +6,7 @@ from models.thread import (
 )
 from models.message import create_message, list_messages, mark_read
 from producers.message_producer import emit_message_sent
+from websocket_hub import hub
 
 MAX_RETRIES   = 3
 RETRY_BASE_MS = 0.2
@@ -19,6 +20,17 @@ async def _send_with_retry(thread_id, sender_id, text, attempt=1) -> dict:
             raise
         await asyncio.sleep(RETRY_BASE_MS * (2 ** (attempt - 1)))
         return await _send_with_retry(thread_id, sender_id, text, attempt + 1)
+
+
+async def _best_effort_retry(op, attempt=1) -> bool:
+    try:
+        await op()
+        return True
+    except Exception:
+        if attempt >= MAX_RETRIES:
+            return False
+        await asyncio.sleep(RETRY_BASE_MS * (2 ** (attempt - 1)))
+        return await _best_effort_retry(op, attempt + 1)
 
 
 async def open_thread(participant_ids: list) -> dict:
@@ -50,8 +62,24 @@ async def send(thread_id: str, sender_id, text: str) -> dict:
         raise HTTPException(403, "Sender is not a participant")
     msg = await _send_with_retry(thread_id, sender_id, text)
     await update_last_message_at(thread_id, msg["timestamp"])
-    await emit_message_sent(sender_id, msg["message_id"], thread_id)
-    return msg
+    realtime_payload = {
+        "event": "message.created",
+        "data": {
+            **msg,
+            "timestamp": msg["timestamp"].isoformat() if hasattr(msg["timestamp"], "isoformat") else msg["timestamp"],
+        },
+    }
+
+    kafka_ok = await _best_effort_retry(lambda: emit_message_sent(sender_id, msg["message_id"], thread_id))
+    realtime_ok = await _best_effort_retry(lambda: hub.broadcast(thread_id, realtime_payload))
+
+    return {
+        **msg,
+        "delivery_status": {
+            "kafka": "sent" if kafka_ok else "failed",
+            "realtime": "sent" if realtime_ok else "failed",
+        },
+    }
 
 
 async def list_msgs(thread_id: str, page: int) -> dict:

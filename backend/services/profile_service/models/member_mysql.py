@@ -398,7 +398,13 @@ async def get_member_by_id(member_id: int) -> dict | None:
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "SELECT * FROM members WHERE member_id = %s AND is_deleted = 0", (member_id,)
+                """
+                SELECT m.*, u.email
+                FROM members m
+                LEFT JOIN users u ON u.id = m.member_id
+                WHERE m.member_id = %s AND m.is_deleted = 0
+                """,
+                (member_id,),
             )
             row = await cur.fetchone()
             if not row:

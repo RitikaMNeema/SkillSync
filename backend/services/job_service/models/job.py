@@ -58,6 +58,14 @@ async def close_job(job_id: int) -> bool:
             return cur.rowcount > 0
 
 
+async def delete_job(job_id: int) -> bool:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("DELETE FROM jobs WHERE job_id=%s", (job_id,))
+            return cur.rowcount > 0
+
+
 async def increment_views(job_id: int) -> None:
     pool = await get_pool()
     async with pool.acquire() as conn:

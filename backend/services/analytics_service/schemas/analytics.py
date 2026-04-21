@@ -14,10 +14,29 @@ class IngestRequest(BaseModel):
 
 class TopJobsRequest(BaseModel):
     month: str  # "YYYY-MM-DD"
+    recruiter_id: int | None = None
+
+
+class LowTractionJobsRequest(BaseModel):
+    month: str  # "YYYY-MM-DD"
+    recruiter_id: int | None = None
 
 
 class SavedJobsRequest(BaseModel):
     period: Literal["day", "week"] = "day"
+    month: str | None = None  # "YYYY-MM-DD"
+    recruiter_id: int | None = None
+
+
+class JobClicksRequest(BaseModel):
+    month: str | None = None  # "YYYY-MM-DD"
+    recruiter_id: int | None = None
+
+
+class GeoRequest(BaseModel):
+    month: str | None = None  # "YYYY-MM-DD"
+    recruiter_id: int | None = None
+    job_id: str | None = None
 
 
 class MemberDashboardRequest(BaseModel):

@@ -8,28 +8,28 @@ router = APIRouter()
 
 @router.post("/request", status_code=201)
 async def request(body: RequestBody, u=Depends(get_current_user)):
-    return {"success": True, "data": await ctrl.request(body.requester_id, body.receiver_id)}
+    return {"success": True, "data": await ctrl.request(body.requester_id, body.receiver_id, u["user_id"])}
 
 @router.post("/accept")
 async def accept(body: RequestIdBody, u=Depends(get_current_user)):
-    return {"success": True, "data": await ctrl.accept(body.request_id)}
+    return {"success": True, "data": await ctrl.accept(body.request_id, u["user_id"])}
 
 @router.post("/reject")
 async def reject(body: RequestIdBody, u=Depends(get_current_user)):
-    return {"success": True, "data": await ctrl.reject(body.request_id)}
+    return {"success": True, "data": await ctrl.reject(body.request_id, u["user_id"])}
 
 @router.post("/list")
 async def list_connections(body: UserIdBody, u=Depends(get_current_user)):
-    return {"success": True, "data": await ctrl.list_connections(body.user_id)}
+    return {"success": True, "data": await ctrl.list_connections(body.user_id, u["user_id"])}
 
 @router.post("/pending")
 async def pending(body: UserIdBody, u=Depends(get_current_user)):
-    return {"success": True, "data": await ctrl.pending(body.user_id)}
+    return {"success": True, "data": await ctrl.pending(body.user_id, u["user_id"])}
 
 @router.post("/mutual")
 async def mutual(body: MutualBody, u=Depends(get_current_user)):
-    return {"success": True, "data": await ctrl.mutual(body.user_id_1, body.user_id_2)}
+    return {"success": True, "data": await ctrl.mutual(body.user_id_1, body.user_id_2, u["user_id"])}
 
 @router.post("/remove")
 async def remove(body: RemoveBody, u=Depends(get_current_user)):
-    return {"success": True, "data": await ctrl.remove(body.user_id_1, body.user_id_2)}
+    return {"success": True, "data": await ctrl.remove(body.user_id_1, body.user_id_2, u["user_id"])}
