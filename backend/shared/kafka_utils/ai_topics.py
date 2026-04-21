@@ -1,0 +1,12 @@
+AI_REQUESTS_TOPIC = "ai.requests"
+AI_RESULTS_TOPIC = "ai.results"
+
+AI_EVENT_AGENT_REQUESTED = "agent_requested"
+AI_EVENT_PROFILE_PARSED = "profile_parsed"
+AI_EVENT_MATCH_COMPLETED = "match_completed"
+AI_EVENT_OUTREACH_DRAFTED = "outreach_drafted"
+AI_EVENT_APPROVAL_REQUIRED = "approval_required"
+AI_EVENT_APPROVED = "approved"
+AI_EVENT_REJECTED = "rejected"
+AI_EVENT_COMPLETED = "completed"
+AI_EVENT_FAILED = "failed"

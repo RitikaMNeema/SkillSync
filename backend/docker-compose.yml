@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   # ── Infrastructure ──────────────────────────────────────────────
   mysql:
@@ -12,7 +10,7 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     ports:
-      - "3307:3306"
+      - "3310:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./database/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -36,12 +34,43 @@ services:
       - mongo_data:/data/db
       - ./database/mongodb/init.js:/docker-entrypoint-initdb.d/init.js
     healthcheck:
-      test: ["CMD", "mongosh", "-u", "${MONGO_INITDB_ROOT_USERNAME}", "-p", "${MONGO_INITDB_ROOT_PASSWORD}", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')"]
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "-u",
+          "${MONGO_INITDB_ROOT_USERNAME}",
+          "-p",
+          "${MONGO_INITDB_ROOT_PASSWORD}",
+          "--authenticationDatabase",
+          "admin",
+          "--eval",
+          "db.adminCommand('ping')"
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 30s
 
+<<<<<<< HEAD
+=======
+  mongo-init:
+    image: mongo:7.0
+    container_name: linkedin_mongo_init
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      MONGO_HOST: mongo
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    volumes:
+      - ./database/mongodb/init.js:/init.js:ro
+      - ./database/mongodb/apply-init.sh:/apply-init.sh:ro
+    entrypoint: ["/bin/sh", "/apply-init.sh"]
+    restart: "no"
+
+>>>>>>> 892dff0 (Added Agentic AI service with Kafka orchestration, WebSocket streaming, and human-in-the-loop workflow)
   redis:
     image: redis:7.2-alpine
     container_name: linkedin_redis
@@ -71,7 +100,7 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
     ports:
@@ -285,6 +314,43 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  ai-service:
+    build:
+      context: .
+      dockerfile: services/ai_service/Dockerfile
+    container_name: linkedin_ai
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: ${AI_SERVICE_PORT}
+      PYTHONPATH: /app
+    ports:
+      - "${AI_SERVICE_PORT}:${AI_SERVICE_PORT}"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      mongo-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      profile-service:
+        condition: service_healthy
+      job-service:
+        condition: service_healthy
+      recruiter-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3010/ai/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+
 
 volumes:
   mysql_data:
