@@ -10,6 +10,8 @@ from shared.utils.trace_id import TraceMiddleware
 from models.member_mysql import ensure_member_profile_tables
 from routes.members import router
 from routes.posts import router as posts_router
+from models.member_mysql import ensure_member_profile_tables
+from models.post_mongo import ensure_post_indexes
 
 
 @asynccontextmanager
@@ -17,6 +19,7 @@ async def lifespan(app: FastAPI):
     await get_pool()
     await ensure_member_profile_tables()
     get_db()
+    await ensure_post_indexes()   
     await get_redis()
     yield
     await close_pool()

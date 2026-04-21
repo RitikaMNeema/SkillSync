@@ -1,29 +1,119 @@
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 
 from models.member_mysql import get_member_by_id
-from models.post_mongo import create_post, list_feed_posts, list_member_posts
+from models.post_mongo import (
+    create_post, list_feed_posts, list_member_posts, post_exists,
+)
+from models.post_interactions_mongo import (
+    toggle_like, create_comment, list_comments,
+)
+from models.post_media_mongo import upload_image
+from producers.post_producer import (
+    emit_post_created, emit_post_liked, emit_post_commented,
+)
+from models.post_mongo import (
+    create_post, list_feed_posts, list_member_posts, post_exists,
+    delete_post, get_post_owner,
+)
 
 
-async def create(body: dict) -> dict:
+async def create(body: dict, viewer_id: int) -> dict:
+    if body["member_id"] != viewer_id:
+        raise HTTPException(403, "Cannot create post for another member")
     member = await get_member_by_id(body["member_id"])
     if not member:
         raise HTTPException(404, "Member not found")
 
-    return await create_post(
+    post = await create_post(
         body["member_id"],
         member,
-        body["content"].strip(),
+        (body.get("content") or "").strip(),
         body["post_type"],
         body.get("media_url"),
     )
 
+    try:
+        await emit_post_created(
+            viewer_id, post["post_id"], post["post_type"],
+            has_media=bool(post.get("media_url")),
+        )
+    except Exception:
+        pass  # don't fail the request if Kafka is down
 
-async def feed(page: int) -> dict:
-    return await list_feed_posts(page)
+    return post
 
 
-async def by_member(member_id: int, page: int) -> dict:
+async def feed(page: int, viewer_id: int) -> dict:
+    return await list_feed_posts(page, viewer_id=viewer_id)
+
+
+async def by_member(member_id: int, page: int, viewer_id: int) -> dict:
     member = await get_member_by_id(member_id)
     if not member:
         raise HTTPException(404, "Member not found")
-    return await list_member_posts(member_id, page)
+    return await list_member_posts(member_id, page, viewer_id=viewer_id)
+
+
+async def like(post_id: str, member_id: int, viewer_id: int) -> dict:
+    if member_id != viewer_id:
+        raise HTTPException(403, "Cannot like on behalf of another member")
+    if not await post_exists(post_id):
+        raise HTTPException(404, "Post not found")
+
+    result = await toggle_like(post_id, member_id)
+    try:
+        await emit_post_liked(viewer_id, post_id, result["liked"], result["like_count"])
+    except Exception:
+        pass
+    return result
+
+
+async def comment(post_id: str, member_id: int, content: str, viewer_id: int) -> dict:
+    if member_id != viewer_id:
+        raise HTTPException(403, "Cannot comment on behalf of another member")
+    if not await post_exists(post_id):
+        raise HTTPException(404, "Post not found")
+
+    doc = await create_comment(post_id, member_id, content.strip())
+    try:
+        await emit_post_commented(viewer_id, post_id, doc["comment_id"])
+    except Exception:
+        pass
+    return doc
+
+
+async def comments(post_id: str, page: int) -> dict:
+    if not await post_exists(post_id):
+        raise HTTPException(404, "Post not found")
+    return await list_comments(post_id, page)
+
+
+async def upload(file: UploadFile) -> dict:
+    if not file.filename:
+        raise HTTPException(400, "Missing filename")
+    data = await file.read()
+    try:
+        media_url = await upload_image(data, file.filename, file.content_type or "")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"media_url": media_url}
+
+async def delete(post_id: str, member_id: int, viewer_id: int) -> dict:
+    if member_id != viewer_id:
+        raise HTTPException(403, "Cannot delete on behalf of another member")
+    owner = await get_post_owner(post_id)
+    if owner is None:
+        raise HTTPException(404, "Post not found")
+    if owner != viewer_id:
+        raise HTTPException(403, "You can only delete your own posts")
+
+    result = await delete_post(post_id)
+
+    # Fire-and-forget Kafka event
+    try:
+        from producers.post_producer import emit_post_deleted
+        await emit_post_deleted(viewer_id, post_id)
+    except Exception:
+        pass
+
+    return {"post_id": post_id, **result}

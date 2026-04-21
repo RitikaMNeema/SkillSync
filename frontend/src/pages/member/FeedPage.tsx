@@ -16,7 +16,7 @@ import { getApplicationsByMember } from "../../api/applications";
 import { listConnections, listPendingConnections, requestConnection } from "../../api/connections";
 import { getSavedJobs, getJob, saveJob, searchJobs, unsaveJob } from "../../api/jobs";
 import { getMember, searchMembers } from "../../api/members";
-import { createPost, getFeedPosts } from "../../api/posts";
+import { createPost, getFeedPosts, uploadPostImage } from "../../api/posts";
 import { searchRecruiters } from "../../api/recruiters";
 import { RightSidebar, Sidebar } from "../../components/layout/Sidebar";
 import { Avatar } from "../../components/ui/Avatar";
@@ -36,6 +36,8 @@ import type { FeedPost, PostType } from "../../types/post";
 import type { RecruiterProfile } from "../../types/recruiter";
 import { formatRelativeDate } from "../../utils/formatDate";
 import { getStatusColor } from "../../utils/getStatusColor";
+import { PostCard } from "../../components/posts/PostCard";
+
 
 const composerActions: Array<{ type: PostType; label: string; icon: typeof Image }> = [
   { type: "photo", label: "Photo", icon: Image },
@@ -67,6 +69,8 @@ export function FeedPage() {
   const [composerType, setComposerType] = useState<PostType>("post");
   const [composerText, setComposerText] = useState("");
   const [mediaUrl, setMediaUrl] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);  
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [posting, setPosting] = useState(false);
 
   async function loadFeed() {
@@ -148,29 +152,44 @@ export function FeedPage() {
   }, [dashboard]);
 
   async function handleCreatePost() {
-    if (!userId || !composerText.trim()) return;
-
-    setPosting(true);
-    const loadingToast = toast.loading("Publishing post...");
-    try {
-      const post = await createPost({
-        member_id: userId,
-        content: composerText.trim(),
-        post_type: composerType,
-        media_url: mediaUrl.trim() || undefined
-      });
-      setPosts((current) => [post, ...current].slice(0, 5));
-      setComposerText("");
-      setMediaUrl("");
-      setComposerType("post");
-      setComposerOpen(false);
-      toast.success("Post published", { id: loadingToast });
-    } catch {
-      toast.error("Could not publish your post", { id: loadingToast });
-    } finally {
-      setPosting(false);
-    }
+  if (!userId) return;
+  const hasText = composerText.trim().length > 0;
+  const hasMedia = imageFile !== null || mediaUrl.trim().length > 0;
+  if (!hasText && !hasMedia) {
+    toast.error("Add text or an image");
+    return;
   }
+
+  setPosting(true);
+  const loadingToast = toast.loading("Publishing post...");
+  try {
+    let finalMediaUrl = mediaUrl.trim() || undefined;
+    if (imageFile) {
+      setUploadingImage(true);
+      finalMediaUrl = await uploadPostImage(imageFile);
+      setUploadingImage(false);
+    }
+
+    const post = await createPost({
+      member_id: userId,
+      content: composerText.trim(),
+      post_type: imageFile ? "photo" : composerType,
+      media_url: finalMediaUrl
+    });
+    setPosts((current) => [post, ...current].slice(0, 5));
+    setComposerText("");
+    setMediaUrl("");
+    setImageFile(null);
+    setComposerType("post");
+    setComposerOpen(false);
+    toast.success("Post published", { id: loadingToast });
+  } catch {
+    toast.error("Could not publish your post", { id: loadingToast });
+  } finally {
+    setPosting(false);
+    setUploadingImage(false);
+  }
+}
 
   async function handleToggleSave(job: Job) {
     if (!userId) return;
@@ -303,23 +322,52 @@ export function FeedPage() {
                 onChange={(event) => setComposerText(event.target.value)}
                 placeholder={`Share a ${composerType} with your network`}
               />
-              {composerType !== "post" ? (
-                <Input value={mediaUrl} onChange={(event) => setMediaUrl(event.target.value)} placeholder="Optional media URL" />
-              ) : null}
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="ghost"
-                  type="button"
-                  onClick={() => {
-                    setComposerOpen(false);
-                    setComposerType("post");
-                    setMediaUrl("");
+          {composerType === "photo" ? (
+            <div className="space-y-2">
+              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-card border border-dashed px-4 py-3 text-sm text-text-secondary hover:bg-hover">
+                <Image className="h-4 w-4" />
+                {imageFile ? imageFile.name : "Choose an image"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    if (file && file.size > 5 * 1024 * 1024) {
+                      toast.error("Image must be under 5MB");
+                      return;
+                    }
+                    setImageFile(file);
                   }}
+                />
+              </label>
+              {imageFile ? (
+                <button
+                  type="button"
+                  className="text-xs text-text-secondary hover:text-text-primary"
+                  onClick={() => setImageFile(null)}
                 >
+                  Remove image
+                </button>
+              ) : null}
+            </div>
+          ) : composerType !== "post" ? (
+            <Input
+              value={mediaUrl}
+              onChange={(event) => setMediaUrl(event.target.value)}
+              placeholder="Optional media URL"
+            />
+          ) : null}
+              <div className="mt-3 flex justify-end gap-2">
+                <Button variant="ghost" type="button" onClick={() => setComposerOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="button" onClick={() => void handleCreatePost()} disabled={posting || !composerText.trim()}>
-                  Publish
+                <Button
+                  type="button"
+                  onClick={() => void handleCreatePost()}
+                  disabled={posting || uploadingImage || (!composerText.trim() && !imageFile)}
+                >
+                  {uploadingImage ? "Uploading…" : posting ? "Publishing…" : "Publish"}
                 </Button>
               </div>
             </div>
@@ -336,35 +384,19 @@ export function FeedPage() {
           {posts.length ? (
             <div className="space-y-4">
               {posts.map((post) => (
-                <div key={post.post_id} className="rounded-card border p-4">
-                  <div className="flex items-start gap-3">
-                    <Avatar
-                      src={post.author.profile_photo_url ?? undefined}
-                      alt={`${post.author.first_name ?? ""} ${post.author.last_name ?? ""}`}
-                      name={`${post.author.first_name ?? ""} ${post.author.last_name ?? ""}`}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="font-semibold">
-                            {post.author.first_name} {post.author.last_name}
-                          </p>
-                          <p className="text-sm text-text-secondary">{post.author.headline || "Member"}</p>
-                        </div>
-                        <div className="text-right">
-                          <Badge className="bg-slate-100 text-slate-600">{post.post_type}</Badge>
-                          <p className="mt-1 text-xs text-text-tertiary">{formatRelativeDate(post.created_at)}</p>
-                        </div>
-                      </div>
-                      <p className="mt-3 whitespace-pre-wrap text-sm text-text-primary">{post.content}</p>
-                      {post.media_url ? (
-                        <a href={post.media_url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm">
-                          Open attachment
-                        </a>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
+                <PostCard
+                  key={post.post_id}
+                  post={post}
+                  viewerId={userId!}
+                  onUpdate={(updated) =>
+                    setPosts((current) =>
+                      current.map((p) => (p.post_id === updated.post_id ? updated : p))
+                    )
+                  }
+                  onDelete={(postId) =>
+                    setPosts((current) => current.filter((p) => p.post_id !== postId))
+                  }
+                />
               ))}
             </div>
           ) : (
