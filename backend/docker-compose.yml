@@ -10,6 +10,8 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     # Same host ports as typical Docker DBs (e.g. Yelp): Workbench → localhost:3306
     # Stop other stacks using 3306/27017 before starting SkillSync (only one listener per port).
     ports:

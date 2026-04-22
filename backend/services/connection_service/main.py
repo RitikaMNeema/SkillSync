@@ -6,7 +6,7 @@ from shared.kafka_utils.producer import close_producer
 from shared.middleware.error_handler import register_error_handlers
 from shared.middleware.logger import LoggerMiddleware
 from shared.utils.trace_id import TraceMiddleware
-from routes.connections import router
+from services.connection_service.routes.connections import router
 
 
 @asynccontextmanager

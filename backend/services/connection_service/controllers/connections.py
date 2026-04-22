@@ -1,10 +1,10 @@
 from fastapi import HTTPException
-from models.connection import (
+from ..models.connection import (
     find_request, find_request_by_id, create_request, update_request_status,
     get_pending_requests, connection_exists, accept_connection_transaction,
     remove_connection_transaction, get_user_connections, get_mutual_connections,
 )
-from producers.connection_producer import emit_connection_requested, emit_connection_accepted
+from ..producers.connection_producer import emit_connection_requested, emit_connection_accepted
 from shared.redis_utils.cache import cache_get, cache_set, cache_del
 
 CONN_TTL = 120
@@ -13,13 +13,7 @@ CONN_TTL = 120
 def _conn_key(uid): return f"connections:{uid}"
 
 
-def _require_self(target_user_id, actor_id) -> None:
-    if str(target_user_id) != str(actor_id):
-        raise HTTPException(403, "Not authorized to act for another user")
-
-
-async def request(requester_id, receiver_id, actor_id) -> dict:
-    _require_self(requester_id, actor_id)
+async def request(requester_id, receiver_id) -> dict:
     if requester_id == receiver_id:
         raise HTTPException(400, "Cannot connect with yourself")
     existing = await find_request(requester_id, receiver_id)
@@ -35,11 +29,10 @@ async def request(requester_id, receiver_id, actor_id) -> dict:
     return {"request_id": rid, "status": "pending"}
 
 
-async def accept(request_id, actor_id) -> dict:
+async def accept(request_id) -> dict:
     req = await find_request_by_id(request_id)
     if not req:
         raise HTTPException(404, "Connection request not found")
-    _require_self(req["receiver_id"], actor_id)
     if req["status"] != "pending":
         raise HTTPException(400, f"Request already {req['status']}")
     await accept_connection_transaction(req["requester_id"], req["receiver_id"], request_id)
@@ -49,19 +42,27 @@ async def accept(request_id, actor_id) -> dict:
     return {"request_id": request_id, "status": "accepted"}
 
 
-async def reject(request_id, actor_id) -> dict:
+async def reject(request_id) -> dict:
     req = await find_request_by_id(request_id)
     if not req:
         raise HTTPException(404, "Connection request not found")
-    _require_self(req["receiver_id"], actor_id)
     if req["status"] != "pending":
         raise HTTPException(400, f"Request already {req['status']}")
     await update_request_status(request_id, "rejected")
     return {"request_id": request_id, "status": "rejected"}
 
 
-async def list_connections(user_id, actor_id) -> list:
-    _require_self(user_id, actor_id)
+async def withdraw(request_id) -> dict:
+    req = await find_request_by_id(request_id)
+    if not req:
+        raise HTTPException(404, "Connection request not found")
+    if req["status"] != "pending":
+        raise HTTPException(400, f"Cannot withdraw a request that is {req['status']}")
+    await update_request_status(request_id, "withdrawn")
+    return {"request_id": request_id, "status": "withdrawn"}
+
+
+async def list_connections(user_id) -> list:
     cached = await cache_get(_conn_key(user_id))
     if cached:
         return cached
@@ -70,23 +71,18 @@ async def list_connections(user_id, actor_id) -> list:
     return conns
 
 
-async def pending(user_id, actor_id) -> list:
-    _require_self(user_id, actor_id)
+async def pending(user_id) -> list:
     return await get_pending_requests(user_id)
 
 
-async def mutual(uid1, uid2, actor_id) -> dict:
-    if str(actor_id) not in {str(uid1), str(uid2)}:
-        raise HTTPException(403, "Not authorized to inspect unrelated users")
+async def mutual(uid1, uid2) -> dict:
     if uid1 == uid2:
         raise HTTPException(400, "user_id_1 and user_id_2 must differ")
     result = await get_mutual_connections(uid1, uid2)
     return {"mutual_connections": result, "count": len(result)}
 
 
-async def remove(uid1, uid2, actor_id) -> dict:
-    if str(actor_id) not in {str(uid1), str(uid2)}:
-        raise HTTPException(403, "Not authorized to remove this connection")
+async def remove(uid1, uid2) -> dict:
     if not await connection_exists(uid1, uid2):
         raise HTTPException(404, "Connection does not exist")
     await remove_connection_transaction(uid1, uid2)
