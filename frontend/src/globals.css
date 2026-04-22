@@ -76,7 +76,7 @@
   }
 
   .linkedin-input {
-    @apply h-10 rounded-input border border-[#8c8c8c] px-3 text-base text-text-primary placeholder:text-text-tertiary focus:border-brand focus:shadow-[0_0_0_1px_#0a66c2];
+    @apply h-10 rounded-full border border-[#8c8c8c] px-3 text-base text-text-primary placeholder:text-text-tertiary focus:border-brand focus:shadow-[0_0_0_1px_#0a66c2];
   }
 
   .linkedin-textarea {

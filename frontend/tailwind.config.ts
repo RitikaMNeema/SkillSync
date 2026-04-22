@@ -48,7 +48,7 @@ const config: Config = {
       },
       borderRadius: {
         card: "8px",
-        input: "4px",
+        input: "9999px",
         pill: "24px",
         badge: "12px"
       },

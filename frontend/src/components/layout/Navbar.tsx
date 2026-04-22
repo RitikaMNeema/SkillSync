@@ -88,7 +88,7 @@ export function Navbar() {
             <form className="relative hidden md:block" onSubmit={handleSearch}>
               <Search className="pointer-events-none absolute left-5 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-[#1f1f1f]" strokeWidth={2.5} />
               <Input
-                className="h-[46px] w-[min(34vw,540px)] min-w-[260px] rounded-full border-[2px] border-[#b0b4b8] bg-white pl-[4.25rem] pr-6 text-[17px] placeholder:text-[#666666] focus:border-[#666666] focus:shadow-none"
+                className="h-[46px] w-[min(34vw,540px)] min-w-[260px] rounded-full border-[2px] border-[#b0b4b8] bg-white !pl-11 pr-6 text-[17px] placeholder:text-[#666666] focus:border-[#666666] focus:shadow-none"
                 placeholder="I'm looking for..."
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
