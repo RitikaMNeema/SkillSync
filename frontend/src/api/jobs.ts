@@ -8,6 +8,7 @@ export async function searchJobs(payload: {
   employment_type?: string;
   work_mode?: string;
   industry?: string;
+  seniority_level?: string;
   page?: number;
 }) {
   const response = await api.post<ApiResponse<JobListResponse>>("/jobs/search", payload);

@@ -19,7 +19,8 @@ const initialFilters: JobFilterState = {
   location: "",
   employment_type: "",
   work_mode: "",
-  industry: ""
+  industry: "",
+  seniority_level: ""
 };
 
 export function JobSearchPage() {
@@ -33,13 +34,20 @@ export function JobSearchPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setFilters({
+    const next = {
       keyword: searchParams.get("keyword") ?? "",
       location: searchParams.get("location") ?? "",
       employment_type: searchParams.get("employment_type") ?? "",
       work_mode: searchParams.get("work_mode") ?? "",
-      industry: searchParams.get("industry") ?? ""
-    });
+      industry: searchParams.get("industry") ?? "",
+      seniority_level: searchParams.get("seniority_level") ?? ""
+    };
+    // Only update if values actually changed to avoid an extra debounce cycle on mount
+    setFilters((current: JobFilterState) =>
+      Object.keys(next).every((k) => current[k as keyof JobFilterState] === next[k as keyof JobFilterState])
+        ? current
+        : next
+    );
   }, [searchParams]);
 
   function runSearch() {
@@ -53,21 +61,23 @@ export function JobSearchPage() {
   useEffect(() => {
     setLoading(true);
     setError("");
-    void searchJobs({ ...debounced, page: 1 }).then(
-      (data) => {
+    void searchJobs({ ...debounced, page: 1 })
+      .then((data) => {
         setJobs(data.jobs);
-        setLoading(false);
-      },
-      () => {
+      })
+      .catch(() => {
         setError("Could not load jobs.");
+      })
+      .finally(() => {
         setLoading(false);
-      }
-    );
+      });
   }, [debounced]);
 
   useEffect(() => {
     if (!userId) return;
-    void getSavedJobs(userId).then((data) => setSavedIds(data.jobs.map((job) => job.job_id)));
+    void getSavedJobs(userId)
+      .then((data) => setSavedIds(data.jobs.map((job: Job) => job.job_id)))
+      .catch(() => {/* saved state is non-critical; silently ignore */});
   }, [userId]);
 
   async function toggleSave(job: Job) {

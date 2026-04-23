@@ -73,7 +73,7 @@ async def increment_views(job_id: int) -> None:
             await cur.execute("UPDATE jobs SET views_count=views_count+1 WHERE job_id=%s", (job_id,))
 
 
-async def search_jobs(keyword, location, employment_type, work_mode, industry, page) -> tuple[list, int]:
+async def search_jobs(keyword, location, employment_type, work_mode, industry, seniority_level, page) -> tuple[list, int]:
     conditions = ["j.status='open'"]
     values = []
     if keyword:
@@ -87,6 +87,8 @@ async def search_jobs(keyword, location, employment_type, work_mode, industry, p
         conditions.append("j.work_mode=%s"); values.append(work_mode)
     if industry:
         conditions.append("c.industry LIKE %s"); values.append(f"%{industry}%")
+    if seniority_level:
+        conditions.append("j.seniority_level=%s"); values.append(seniority_level)
     where = "WHERE " + " AND ".join(conditions)
     offset = (page - 1) * PAGE_SIZE
     pool = await get_pool()

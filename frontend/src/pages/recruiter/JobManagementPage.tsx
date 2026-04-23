@@ -1,10 +1,10 @@
-import { Eye, Pencil, Trash2, Users, X } from "lucide-react";
+import { Eye, Pencil, Trash2, Users, X, Lock } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { Link, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
-import { createJob, deleteJob, getJobsByRecruiter, updateJob } from "../../api/jobs";
-import { getApplicationsByJob } from "../../api/applications";
+import { closeJob, createJob, deleteJob, getAllJobsByRecruiter, updateJob } from "../../api/jobs";
+import { getAllApplicationsByJob } from "../../api/applications";
 import { getMember } from "../../api/members";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -67,48 +67,45 @@ export function JobManagementPage() {
 
   useEffect(() => {
     if (!recruiterId) return;
-    void getJobsByRecruiter(recruiterId).then(async (data) => {
-      setJobs(data.jobs);
-      const rows = await Promise.all(
-        data.jobs.map(async (job) => {
-          try {
-            const details = await getApplicationsByJob(job.job_id);
-            return {
-              job,
-              applications: details.applications
-            };
-          } catch {
-            return {
-              job,
-              applications: [] as Application[]
-            };
-          }
-        })
-      );
-      const stats = rows.map((row) => [row.job.job_id, row.applications.filter((application) => application.status === "reviewing").length] as const);
-      const flattenedRows = rows.flatMap((row) =>
-        row.applications.map((application) => ({
-          job: row.job,
-          application
-        }))
-      );
-      const uniqueMemberIds = [...new Set(flattenedRows.map((row) => row.application.member_id))];
-      const memberEntries = await Promise.all(
-        uniqueMemberIds.map(async (memberId) => {
-          try {
-            const profile = await getMember(memberId);
-            const fullName = `${profile.first_name} ${profile.last_name}`.trim();
-            return [memberId, fullName || `Member #${memberId}`] as const;
-          } catch {
-            return [memberId, `Member #${memberId}`] as const;
-          }
-        })
-      );
-      setReviewingCountByJob(Object.fromEntries(stats));
-      setApplicationRows(flattenedRows);
-      setMemberNameById(Object.fromEntries(memberEntries));
-      setLoading(false);
-    });
+    void (async () => {
+      try {
+        const allJobs = await getAllJobsByRecruiter(recruiterId);
+        setJobs(allJobs);
+        const rows = await Promise.all(
+          allJobs.map(async (job) => {
+            try {
+              const details = await getAllApplicationsByJob(job.job_id);
+              return { job, applications: details.applications };
+            } catch {
+              return { job, applications: [] as Application[] };
+            }
+          })
+        );
+        const stats = rows.map((row) => [row.job.job_id, row.applications.filter((a) => a.status === "reviewing").length] as const);
+        const flattenedRows = rows.flatMap((row) =>
+          row.applications.map((application) => ({ job: row.job, application }))
+        );
+        const uniqueMemberIds = [...new Set(flattenedRows.map((row) => row.application.member_id))];
+        const memberEntries = await Promise.all(
+          uniqueMemberIds.map(async (memberId) => {
+            try {
+              const profile = await getMember(memberId);
+              const fullName = `${profile.first_name} ${profile.last_name}`.trim();
+              return [memberId, fullName || `Member #${memberId}`] as const;
+            } catch {
+              return [memberId, `Member #${memberId}`] as const;
+            }
+          })
+        );
+        setReviewingCountByJob(Object.fromEntries(stats));
+        setApplicationRows(flattenedRows);
+        setMemberNameById(Object.fromEntries(memberEntries));
+      } catch {
+        toast.error("Could not load job postings");
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [recruiterId]);
 
   const filteredJobs = useMemo(() => {
@@ -274,6 +271,18 @@ export function JobManagementPage() {
     }
   }
 
+  async function handleCloseJob(job: Job) {
+    const confirmed = window.confirm(`Close posting "${job.title}"? This will auto-reject all pending applications.`);
+    if (!confirmed) return;
+    try {
+      await closeJob(job.job_id);
+      setJobs((current) => current.map((item: Job) => item.job_id === job.job_id ? { ...item, status: "closed" } : item));
+      toast.success("Posting closed");
+    } catch {
+      toast.error("Could not close posting");
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-3">
@@ -434,6 +443,17 @@ export function JobManagementPage() {
                   <Pencil className="h-3.5 w-3.5" />
                   Edit
                 </Button>
+                {(job.status ?? "open") === "open" ? (
+                  <Button
+                    variant="ghost"
+                    className="h-8 px-2 text-xs text-amber-700 hover:bg-amber-50"
+                    onClick={() => void handleCloseJob(job)}
+                    title="Close posting"
+                  >
+                    <Lock className="h-3.5 w-3.5" />
+                    Close
+                  </Button>
+                ) : null}
                 <Button
                   variant="ghost"
                   className="h-8 px-2 text-xs text-[#cc1016] hover:bg-red-50"

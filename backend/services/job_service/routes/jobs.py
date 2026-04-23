@@ -24,7 +24,7 @@ async def update(body: UpdateJobRequest, u=Depends(get_current_user)):
 
 @router.post("/search")
 async def search(body: SearchJobsRequest, u=Depends(get_current_user)):
-    return {"success": True, "data": await ctrl.search(body.keyword, body.location, body.employment_type, body.work_mode, body.industry, body.page)}
+    return {"success": True, "data": await ctrl.search(body.keyword, body.location, body.employment_type, body.work_mode, body.industry, body.seniority_level, body.page)}
 
 @router.post("/close")
 async def close(body: JobIdRequest, u=Depends(get_current_user)):

@@ -157,7 +157,8 @@ export function RecruiterDashboardPage() {
         setLoading(false);
         setBootstrapped(true);
       });
-  }, [recruiterId, selectedMonthStart, savedPeriod, selectedGeoJobId, bootstrapped]);
+  // bootstrapped intentionally excluded: it's set inside this effect and must not retrigger it
+  }, [recruiterId, selectedMonthStart, savedPeriod, selectedGeoJobId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return (

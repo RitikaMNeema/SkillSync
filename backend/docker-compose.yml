@@ -41,9 +41,10 @@ services:
       retries: 10
       start_period: 30s
 
-  mongo-init:
+  mongo-init-docker:
     image: mongo:7.0
-    container_name: linkedin_mongo_init
+    container_name: linkedin_mongo_init_docker
+    profiles: ["docker-db"]
     depends_on:
       mongo:
         condition: service_healthy
@@ -340,10 +341,8 @@ services:
     ports:
       - "${AI_SERVICE_PORT}:${AI_SERVICE_PORT}"
     depends_on:
-      mysql:
-        condition: service_healthy
-      mongo:
-        condition: service_healthy
+      mysql-init:
+        condition: service_completed_successfully
       mongo-init:
         condition: service_completed_successfully
       redis:

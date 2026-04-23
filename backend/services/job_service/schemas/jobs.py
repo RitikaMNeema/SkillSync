@@ -39,6 +39,7 @@ class SearchJobsRequest(BaseModel):
     employment_type: Optional[str] = None
     work_mode: Optional[str] = None
     industry: Optional[str] = None
+    seniority_level: Optional[str] = None
     page: int = 1
 
 

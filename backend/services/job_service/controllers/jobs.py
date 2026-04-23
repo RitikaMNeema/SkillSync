@@ -44,12 +44,12 @@ async def update(job_id: int, fields: dict, actor_id=None) -> dict:
     return await get_job(job_id)
 
 
-async def search(keyword, location, employment_type, work_mode, industry, page) -> dict:
-    key = _search_key(f"{keyword}-{location}-{employment_type}-{work_mode}-{industry}-{page}")
+async def search(keyword, location, employment_type, work_mode, industry, seniority_level, page) -> dict:
+    key = _search_key(f"{keyword}-{location}-{employment_type}-{work_mode}-{industry}-{seniority_level}-{page}")
     cached = await cache_get(key)
     if cached:
         return cached
-    rows, total = await search_jobs(keyword, location, employment_type, work_mode, industry, page)
+    rows, total = await search_jobs(keyword, location, employment_type, work_mode, industry, seniority_level, page)
     result = {"jobs": rows, "total": total, "page": page, "page_size": PAGE_SIZE}
     await cache_set(key, result, SEARCH_TTL)
     return result

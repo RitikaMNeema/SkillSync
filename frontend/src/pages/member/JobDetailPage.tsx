@@ -2,7 +2,7 @@ import { Bookmark, Share2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { useParams } from "react-router-dom";
-import { getJob, saveJob, trackJobView } from "../../api/jobs";
+import { getJob, getSavedJobs, saveJob, unsaveJob, trackJobView } from "../../api/jobs";
 import { ApplyModal } from "../../components/jobs/ApplyModal";
 import { RightSidebar } from "../../components/layout/Sidebar";
 import { Badge } from "../../components/ui/Badge";
@@ -21,6 +21,8 @@ export function JobDetailPage() {
   const [loading, setLoading] = useState(true);
   const [applyOpen, setApplyOpen] = useState(false);
   const [applied, setApplied] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [savePending, setSavePending] = useState(false);
 
   useEffect(() => {
     if (!job_id) {
@@ -40,6 +42,35 @@ export function JobDetailPage() {
       })
       .finally(() => setLoading(false));
   }, [job_id, userId]);
+
+  useEffect(() => {
+    if (!userId || !job_id) return;
+    void getSavedJobs(userId)
+      .then((data) => {
+        setSaved(data.jobs.some((j: Job) => j.job_id === Number(job_id)));
+      })
+      .catch(() => undefined);
+  }, [userId, job_id]);
+
+  async function handleSaveToggle() {
+    if (!userId || !job || savePending) return;
+    setSavePending(true);
+    try {
+      if (saved) {
+        await unsaveJob(userId, job.job_id);
+        setSaved(false);
+        toast.success("Removed from saved jobs");
+      } else {
+        await saveJob(userId, job.job_id);
+        setSaved(true);
+        toast.success("Job saved");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update saved jobs");
+    } finally {
+      setSavePending(false);
+    }
+  }
 
   if (loading || !job) {
     return (
@@ -85,13 +116,11 @@ export function JobDetailPage() {
               </Button>
               <Button
                 variant="secondary"
-                onClick={() => {
-                  if (!userId) return;
-                  void saveJob(userId, job.job_id).then(() => toast.success("Saved"));
-                }}
+                disabled={savePending}
+                onClick={() => void handleSaveToggle()}
               >
-                <Bookmark className="h-4 w-4" />
-                Save
+                <Bookmark className={`h-4 w-4 ${saved ? "fill-current" : ""}`} />
+                {saved ? "Saved" : "Save"}
               </Button>
               <Button variant="secondary">
                 <Share2 className="h-4 w-4" />

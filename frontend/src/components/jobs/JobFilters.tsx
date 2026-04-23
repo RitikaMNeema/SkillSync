@@ -8,6 +8,7 @@ export interface JobFilterState {
   employment_type: string;
   work_mode: string;
   industry: string;
+  seniority_level: string;
 }
 
 export function JobFilters({
@@ -29,8 +30,9 @@ export function JobFilters({
       </div>
       <div className="space-y-4">
         {[
-          ["Experience level", "employment_type"],
-          ["Remote", "work_mode"],
+          ["Experience level", "seniority_level"],
+          ["Employment type", "employment_type"],
+          ["Remote / Work mode", "work_mode"],
           ["Company / Industry", "industry"]
         ].map(([label, field]) => (
           <div key={field} className="space-y-2 border-t pt-4 first:border-t-0 first:pt-0">
