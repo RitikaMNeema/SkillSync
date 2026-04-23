@@ -10,6 +10,8 @@ async def create_profile(member_id: int, data: dict = None) -> None:
             "$set": {
                 "about": d.get("about", ""),
                 "freeform_experience": d.get("freeform_experience", {}),
+                "languages": d.get("languages", []),
+                "followed_skills": d.get("followed_skills", []),
             }
         },
         upsert=True,

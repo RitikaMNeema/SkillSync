@@ -1,6 +1,6 @@
 import api from "./axios";
 import type { ApiResponse } from "../types/common";
-import type { MemberProfile, MemberSearchResponse } from "../types/member";
+import type { LanguageEntry, MemberProfile, MemberSearchResponse } from "../types/member";
 
 export async function getMember(member_id: number) {
   const response = await api.post<ApiResponse<MemberProfile>>("/members/get", { member_id });
@@ -8,7 +8,7 @@ export async function getMember(member_id: number) {
 }
 
 export async function createMember(
-  payload: Partial<MemberProfile> & { member_id: number; first_name: string; last_name: string },
+  payload: Partial<MemberProfile> & { member_id: number; first_name: string; last_name: string; headline: string },
   authToken?: string
 ) {
   const response = await api.post<ApiResponse<{ member_id: number }>>("/members/create", payload, {
@@ -25,6 +25,10 @@ export async function updateMember(
     freeform_experience?: unknown;
     open_to?: string | null;
     profile_language?: string | null;
+    birthday?: string | null;
+    website?: string | null;
+    languages?: LanguageEntry[] | null;
+    followed_skills?: string[] | null;
   }
 ) {
   const response = await api.post<ApiResponse<{ member_id: number; updated: boolean }>>("/members/update", payload);
@@ -73,6 +77,23 @@ export async function uploadProfilePhoto(member_id: number, file: File) {
   if (import.meta.env.DEV) {
     console.debug("[upload:photo] ok", response.data);
   }
+  return response.data.data;
+}
+
+export async function uploadCoverPhoto(member_id: number, file: File) {
+  const formData = new FormData();
+  formData.append("member_id", String(member_id));
+  formData.append("photo", file);
+  const response = await api.post<
+    ApiResponse<{ member_id: number; cover_photo_url: string; cover_photo_file_id: string }>
+  >("/members/uploadCover", formData);
+  return response.data.data;
+}
+
+export async function deleteCoverPhoto(member_id: number) {
+  const response = await api.post<ApiResponse<{ member_id: number; deleted: boolean }>>("/members/deleteCover", {
+    member_id
+  });
   return response.data.data;
 }
 

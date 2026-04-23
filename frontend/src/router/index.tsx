@@ -13,6 +13,7 @@ import { JobDetailPage } from "../pages/member/JobDetailPage";
 import { JobSearchPage } from "../pages/member/JobSearchPage";
 import { MemberDashboardPage } from "../pages/member/MemberDashboardPage";
 import { ProfilePage } from "../pages/member/ProfilePage";
+import { ProfileSectionDetailsPage } from "../pages/member/ProfileSectionDetailsPage";
 import { PublicProfileSlugPage } from "../pages/member/PublicProfileSlugPage";
 import { SavedJobsPage } from "../pages/member/SavedJobsPage";
 import { MessagesPage } from "../pages/messages/MessagesPage";
@@ -70,6 +71,7 @@ export const router = createBrowserRouter([
         children: [
           { path: "/feed", element: <FeedPage /> },
           { path: "/profile/:member_id", element: <ProfilePage /> },
+          { path: "/profile/:member_id/details/:section", element: <ProfileSectionDetailsPage /> },
           { path: "/jobs", element: <JobSearchPage /> },
           { path: "/jobs/:job_id", element: <JobDetailPage /> },
           { path: "/saved-jobs", element: <SavedJobsPage /> },
