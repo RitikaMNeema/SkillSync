@@ -1,19 +1,25 @@
+version: '3.9'
+
+# When app services run in Compose, override .env REDIS_HOST=127.0.0.1 → redis service.
+x-redis-in-docker: &redis-in-docker
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+
 services:
   # ── Infrastructure ──────────────────────────────────────────────
   mysql:
     image: mysql:8.0
     container_name: linkedin_mysql
     restart: unless-stopped
-    profiles: ["docker-db"]
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    # Same host ports as typical Docker DBs (e.g. Yelp): Workbench → localhost:3306
+    # Same host ports as typical Docker DBs (e.g. Yelp): Workbench -> localhost:3306
     # Stop other stacks using 3306/27017 before starting SkillSync (only one listener per port).
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./database/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -28,19 +34,25 @@ services:
     image: mongo:7.0
     container_name: linkedin_mongo
     restart: unless-stopped
-    profiles: ["docker-db"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
     ports:
-      - "27017:27017"
+      - "27018:27017"
     volumes:
       - mongo_data:/data/db
       - ./database/mongodb/init.js:/docker-entrypoint-initdb.d/init.js
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "-u", "${MONGO_INITDB_ROOT_USERNAME}", "-p", "${MONGO_INITDB_ROOT_PASSWORD}", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 30s
 
+  # Applies database/mongodb/init.js on every `docker compose up`.
+  # The mongo image only runs /docker-entrypoint-initdb.d/ when /data/db is empty;
+  # this one-shot job keeps linkedin_db + indexes in sync for existing volumes.
+  mongo-init:
   mongo-init-docker:
     image: mongo:7.0
     container_name: linkedin_mongo_init_docker
@@ -87,11 +99,11 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
     ports:
-      - "9094:9092"
+      - "9093:9092"
     volumes:
       - kafka_data:/var/lib/kafka/data
     healthcheck:
@@ -101,11 +113,11 @@ services:
       retries: 10
       start_period: 30s
 
-  # Creates linkedin_db + schema in local/Homebrew MySQL (host.docker.internal:3306)
-  # so app services can start without manual SQL.
-  mysql-init:
+  # Optional: seed MySQL/Mongo on the host (Homebrew). Not used by default app stack.
+  mysql-init-host:
+    profiles: ["host-db"]
     image: mysql:8.0
-    container_name: linkedin_mysql_init
+    container_name: linkedin_mysql_init_host
     restart: "no"
     env_file: .env
     volumes:
@@ -115,11 +127,10 @@ services:
       mysql -hhost.docker.internal -P3306 -uroot -p$$MYSQL_ROOT_PASSWORD -e "CREATE DATABASE IF NOT EXISTS linkedin_db;";
       mysql --force -hhost.docker.internal -P3306 -uroot -p$$MYSQL_ROOT_PASSWORD linkedin_db < /init.sql'
 
-  # Creates Mongo collections/indexes in local/Homebrew Mongo (host.docker.internal:27017)
-  # so app services can start with required structures without manual commands.
-  mongo-init:
+  mongo-init-host:
+    profiles: ["host-db"]
     image: mongo:7.0
-    container_name: linkedin_mongo_init
+    container_name: linkedin_mongo_init_host
     restart: "no"
     volumes:
       - ./database/mongodb/init.js:/init.js:ro
@@ -138,11 +149,12 @@ services:
     environment:
       PORT: ${AUTH_SERVICE_PORT}
       PYTHONPATH: /app
+      <<: *redis-in-docker
     ports:
       - "${AUTH_SERVICE_PORT}:${AUTH_SERVICE_PORT}"
     depends_on:
-      mysql-init:
-        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -162,11 +174,14 @@ services:
     environment:
       PORT: ${PROFILE_SERVICE_PORT}
       PYTHONPATH: /app
+      <<: *redis-in-docker
     ports:
       - "${PROFILE_SERVICE_PORT}:${PROFILE_SERVICE_PORT}"
     depends_on:
-      mysql-init:
-        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
       mongo-init:
         condition: service_completed_successfully
       redis:
@@ -193,8 +208,8 @@ services:
     ports:
       - "${RECRUITER_SERVICE_PORT}:${RECRUITER_SERVICE_PORT}"
     depends_on:
-      mysql-init:
-        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${RECRUITER_SERVICE_PORT}/health')"]
       interval: 10s
@@ -212,11 +227,12 @@ services:
     environment:
       PORT: ${CONNECTION_SERVICE_PORT}
       PYTHONPATH: /app
+      <<: *redis-in-docker
     ports:
       - "${CONNECTION_SERVICE_PORT}:${CONNECTION_SERVICE_PORT}"
     depends_on:
-      mysql-init:
-        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
       redis:
         condition: service_healthy
       kafka:
@@ -238,11 +254,12 @@ services:
     environment:
       PORT: ${JOB_SERVICE_PORT}
       PYTHONPATH: /app
+      <<: *redis-in-docker
     ports:
       - "${JOB_SERVICE_PORT}:${JOB_SERVICE_PORT}"
     depends_on:
-      mysql-init:
-        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
       redis:
         condition: service_healthy
       kafka:
@@ -264,11 +281,14 @@ services:
     environment:
       PORT: ${APPLICATION_SERVICE_PORT}
       PYTHONPATH: /app
+      <<: *redis-in-docker
     ports:
       - "${APPLICATION_SERVICE_PORT}:${APPLICATION_SERVICE_PORT}"
     depends_on:
-      mysql-init:
-        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
       kafka:
         condition: service_healthy
     healthcheck:
@@ -291,6 +311,8 @@ services:
     ports:
       - "${MESSAGING_SERVICE_PORT}:${MESSAGING_SERVICE_PORT}"
     depends_on:
+      mongo:
+        condition: service_healthy
       mongo-init:
         condition: service_completed_successfully
       kafka:
@@ -312,9 +334,12 @@ services:
     environment:
       PORT: ${ANALYTICS_SERVICE_PORT}
       PYTHONPATH: /app
+      <<: *redis-in-docker
     ports:
       - "${ANALYTICS_SERVICE_PORT}:${ANALYTICS_SERVICE_PORT}"
     depends_on:
+      mongo:
+        condition: service_healthy
       mongo-init:
         condition: service_completed_successfully
       redis:
@@ -361,7 +386,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 25s
-
 
 volumes:
   mysql_data:

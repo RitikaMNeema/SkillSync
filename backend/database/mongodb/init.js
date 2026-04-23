@@ -1,31 +1,48 @@
-// MongoDB initialization — runs once on first container start
+// MongoDB schema for linkedin_db — safe to run multiple times (compose "mongo-init" job).
+// The mongo image only runs files in /docker-entrypoint-initdb.d/ on a *brand-new* data volume;
+// this script is also executed by the mongo-init service so existing volumes get the schema.
+
 db = db.getSiblingDB('linkedin_db');
 
+function ensureCollection(name) {
+  const existing = db.getCollectionNames();
+  if (!existing.includes(name)) {
+    db.createCollection(name);
+    print('Created collection: ' + name);
+  } else {
+    print('Collection already exists: ' + name);
+  }
+}
+
+function ensureIndex(collName, keys, options) {
+  db.getCollection(collName).createIndex(keys, options || {});
+}
+
 // ── profiles_unstructured ────────────────────────────────────────
-db.createCollection('profiles_unstructured');
-db.profiles_unstructured.createIndex({ member_id: 1 }, { unique: true });
+ensureCollection('profiles_unstructured');
+ensureIndex('profiles_unstructured', { member_id: 1 }, { unique: true });
 
 // ── threads ──────────────────────────────────────────────────────
-db.createCollection('threads');
-db.threads.createIndex({ thread_id: 1 }, { unique: true });
-db.threads.createIndex({ participant_ids: 1 });
-db.threads.createIndex({ last_message_at: -1 });
+ensureCollection('threads');
+ensureIndex('threads', { thread_id: 1 }, { unique: true });
+ensureIndex('threads', { participant_ids: 1 }, {});
+ensureIndex('threads', { last_message_at: -1 }, {});
 
 // ── messages ─────────────────────────────────────────────────────
-db.createCollection('messages');
-db.messages.createIndex({ message_id: 1 }, { unique: true });
-db.messages.createIndex({ thread_id: 1, timestamp: 1 });
+ensureCollection('messages');
+ensureIndex('messages', { message_id: 1 }, { unique: true });
+ensureIndex('messages', { thread_id: 1, timestamp: 1 }, {});
 
 // ── events ───────────────────────────────────────────────────────
-db.createCollection('events');
-db.events.createIndex({ idempotency_key: 1 }, { unique: true });
-db.events.createIndex({ event_type: 1 });
-db.events.createIndex({ timestamp: -1 });
-db.events.createIndex({ actor_id: 1 });
+ensureCollection('events');
+ensureIndex('events', { idempotency_key: 1 }, { unique: true });
+ensureIndex('events', { event_type: 1 }, {});
+ensureIndex('events', { timestamp: -1 }, {});
+ensureIndex('events', { actor_id: 1 }, {});
 
 // ── analytics_aggregations ───────────────────────────────────────
-db.createCollection('analytics_aggregations');
-db.analytics_aggregations.createIndex({ type: 1, window: 1 });
-db.analytics_aggregations.createIndex({ computed_at: -1 });
+ensureCollection('analytics_aggregations');
+ensureIndex('analytics_aggregations', { type: 1, window: 1 }, {});
+ensureIndex('analytics_aggregations', { computed_at: -1 }, {});
 
-print('MongoDB linkedin_db initialized with collections and indexes.');
+print('MongoDB linkedin_db schema applied (idempotent).');

@@ -25,11 +25,14 @@ export function ExperienceCard({
 
   function educationDateLabel(item: EducationEntry) {
     const start = [shortMonth(item.start_month), item.start_year].filter((v) => v !== null && v !== undefined && `${v}` !== "").join(" ");
-    const end = [shortMonth(item.end_month), item.end_year ?? item.year].filter((v) => v !== null && v !== undefined && `${v}` !== "").join(" ");
+    const endRaw = [shortMonth(item.end_month), item.end_year].filter((v) => v !== null && v !== undefined && `${v}` !== "").join(" ");
+    const year = item.year;
+    // If a start date is set but no end date, assume the user checked "Present".
+    const end = endRaw || (start && !item.end_year && !year ? "Present" : "");
     if (start && end) return `${start} - ${end}`;
     if (start) return start;
-    if (end) return end;
-    if (item.year !== null && item.year !== undefined && `${item.year}` !== "") return String(item.year);
+    if (endRaw) return endRaw;
+    if (year !== null && year !== undefined && `${year}` !== "") return String(year);
     return "";
   }
 

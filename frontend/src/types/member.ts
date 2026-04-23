@@ -1,5 +1,7 @@
 import type { JsonValue } from "./common";
 
+export type OpenToOption = "job" | "hiring" | "services" | "volunteer";
+
 export interface ExperienceEntry {
   title?: string | null;
   employment_type?: string | null;
@@ -32,7 +34,6 @@ export interface EducationEntry {
 
 export interface MemberProfile {
   member_id: number;
-  email?: string | null;
   first_name: string;
   last_name: string;
   phone: string | null;
@@ -45,7 +46,15 @@ export interface MemberProfile {
   education: EducationEntry[] | null;
   skills: string[] | null;
   profile_photo_url: string | null;
+  profile_photo_file_id?: string | null;
   resume_url?: string | null;
+  resume_file_id?: string | null;
+  resume_file_name?: string | null;
+  resume_content_type?: string | null;
+  resume_uploaded_at?: string | null;
+  open_to?: OpenToOption | null;
+  profile_language?: string | null;
+  profile_slug?: string | null;
   connections_count?: number;
   profile_views?: number;
   is_deleted?: number;

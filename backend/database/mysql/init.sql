@@ -201,3 +201,14 @@ CREATE TABLE IF NOT EXISTS application_notes (
   CONSTRAINT fk_note_app       FOREIGN KEY (application_id) REFERENCES applications (application_id) ON DELETE CASCADE,
   CONSTRAINT fk_note_recruiter FOREIGN KEY (recruiter_id)   REFERENCES recruiters (recruiter_id)     ON DELETE CASCADE
 );
+
+-- ── members profile extensions (additive only; base members DDL unchanged above) ──
+ALTER TABLE members
+  ADD COLUMN profile_photo_file_id VARCHAR(64) NULL AFTER profile_photo_url,
+  ADD COLUMN resume_file_id VARCHAR(64) NULL AFTER resume_url,
+  ADD COLUMN resume_file_name VARCHAR(255) NULL AFTER resume_file_id,
+  ADD COLUMN resume_content_type VARCHAR(100) NULL AFTER resume_file_name,
+  ADD COLUMN resume_uploaded_at TIMESTAMP NULL DEFAULT NULL AFTER resume_content_type,
+  ADD COLUMN open_to VARCHAR(32) NULL AFTER resume_uploaded_at,
+  ADD COLUMN profile_language VARCHAR(64) NULL AFTER open_to,
+  ADD COLUMN profile_slug VARCHAR(160) NULL AFTER profile_language;

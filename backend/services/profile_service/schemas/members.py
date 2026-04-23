@@ -25,6 +25,8 @@ class GetMemberRequest(BaseModel):
 
 
 class UpdateMemberRequest(BaseModel):
+    model_config = {"extra": "ignore"}
+
     member_id: int
     first_name: Optional[str] = None
     last_name: Optional[str] = None
@@ -40,6 +42,9 @@ class UpdateMemberRequest(BaseModel):
     profile_photo_url: Optional[str] = None
     about: Optional[str] = None
     freeform_experience: Optional[Any] = None
+    open_to: Optional[str] = None
+    profile_language: Optional[str] = None
+    profile_slug: Optional[str] = None
 
 
 class DeleteMemberRequest(BaseModel):

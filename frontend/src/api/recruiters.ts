@@ -2,21 +2,26 @@ import api from "./axios";
 import type { ApiResponse } from "../types/common";
 import type { RecruiterProfile, RecruiterSearchResponse } from "../types/recruiter";
 
-export async function createRecruiter(payload: {
-  recruiter_id: number;
-  name: string;
-  email: string;
-  phone?: string;
-  role?: string;
-  access_level?: string;
-  company?: {
+export async function createRecruiter(
+  payload: {
+    recruiter_id: number;
     name: string;
-    industry?: string;
-    size?: string;
-  };
-  company_id?: number;
-}) {
-  const response = await api.post<ApiResponse<RecruiterProfile>>("/recruiters/create", payload);
+    email: string;
+    phone?: string;
+    role?: string;
+    access_level?: string;
+    company?: {
+      name: string;
+      industry?: string;
+      size?: string;
+    };
+    company_id?: number;
+  },
+  authToken?: string
+) {
+  const response = await api.post<ApiResponse<RecruiterProfile>>("/recruiters/create", payload, {
+    headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined
+  });
   return response.data.data;
 }
 

@@ -15,7 +15,7 @@ import { getMemberDashboard, getTopJobs } from "../../api/analytics";
 import { getApplicationsByMember } from "../../api/applications";
 import { listConnections, listPendingConnections, requestConnection } from "../../api/connections";
 import { getSavedJobs, getJob, saveJob, searchJobs, unsaveJob } from "../../api/jobs";
-import { getMember, searchMembers } from "../../api/members";
+import { createMember, getMember, searchMembers } from "../../api/members";
 import { createPost, getFeedPosts, uploadPostImage } from "../../api/posts";
 import { searchRecruiters } from "../../api/recruiters";
 import { RightSidebar, Sidebar } from "../../components/layout/Sidebar";
@@ -35,8 +35,8 @@ import type { MemberProfile, MemberSearchItem } from "../../types/member";
 import type { FeedPost, PostType } from "../../types/post";
 import type { RecruiterProfile } from "../../types/recruiter";
 import { formatRelativeDate } from "../../utils/formatDate";
+import { getHttpStatus } from "../../utils/getApiErrorMessage";
 import { getStatusColor } from "../../utils/getStatusColor";
-import { PostCard } from "../../components/posts/PostCard";
 
 const composerActions: Array<{ type: PostType; label: string; icon: typeof Image }> = [
   { type: "photo", label: "Photo", icon: Image },
@@ -51,7 +51,6 @@ function currentMonthKey() {
 export function FeedPage() {
   const navigate = useNavigate();
   const userId = authStore((state) => state.userId);
-
   const [profile, setProfile] = useState<MemberProfile | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [savedJobIds, setSavedJobIds] = useState<number[]>([]);
@@ -65,7 +64,6 @@ export function FeedPage() {
   const [connectedUserIds, setConnectedUserIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerType, setComposerType] = useState<PostType>("post");
   const [composerText, setComposerText] = useState("");
@@ -81,7 +79,19 @@ export function FeedPage() {
     setError("");
 
     try {
-      const member = await getMember(userId);
+      let member: MemberProfile;
+      try {
+        member = await getMember(userId);
+      } catch (memberError) {
+        if (getHttpStatus(memberError) !== 404) throw memberError;
+        // Some users can authenticate before a member profile row exists.
+        await createMember({
+          member_id: userId,
+          first_name: "First",
+          last_name: "Last"
+        });
+        member = await getMember(userId);
+      }
       setProfile(member);
 
       const keyword = member.skills?.[0] || member.headline?.split(" ")[0] || undefined;
@@ -124,16 +134,10 @@ export function FeedPage() {
         ...connectionResults.map((connection) => connection.connected_user_id),
         ...pendingResults.map((request) => request.requester_id)
       ]);
-
-      setPeopleSuggestions(
-        memberResults.filter((memberItem) => !blockedIds.has(memberItem.member_id)).slice(0, 3)
-      );
+      setPeopleSuggestions(memberResults.filter((memberItem) => !blockedIds.has(memberItem.member_id)).slice(0, 3));
 
       if (results[9].status === "fulfilled" && results[9].value.length > 0) {
-        const topJobResults = await Promise.allSettled(
-          results[9].value.slice(0, 3).map((metric) => getJob(Number(metric.job_id)))
-        );
-
+        const topJobResults = await Promise.allSettled(results[9].value.slice(0, 3).map((metric) => getJob(Number(metric.job_id))));
         setTrendingJobs(
           topJobResults
             .filter((result): result is PromiseFulfilledResult<Job> => result.status === "fulfilled")
@@ -163,7 +167,6 @@ export function FeedPage() {
 
     const hasText = composerText.trim().length > 0;
     const hasMedia = imageFile !== null || mediaUrl.trim().length > 0;
-
     if (!hasText && !hasMedia) {
       toast.error("Add text or an image");
       return;
@@ -171,10 +174,8 @@ export function FeedPage() {
 
     setPosting(true);
     const loadingToast = toast.loading("Publishing post...");
-
     try {
       let finalMediaUrl = mediaUrl.trim() || undefined;
-
       if (imageFile) {
         setUploadingImage(true);
         finalMediaUrl = await uploadPostImage(imageFile);
@@ -187,14 +188,12 @@ export function FeedPage() {
         post_type: imageFile ? "photo" : composerType,
         media_url: finalMediaUrl
       });
-
       setPosts((current) => [post, ...current].slice(0, 5));
       setComposerText("");
       setMediaUrl("");
       setImageFile(null);
       setComposerType("post");
       setComposerOpen(false);
-
       toast.success("Post published", { id: loadingToast });
     } catch {
       toast.error("Could not publish your post", { id: loadingToast });
@@ -218,7 +217,6 @@ export function FeedPage() {
         await saveJob(userId, job.job_id);
         setSavedJobIds((current) => [...current, job.job_id]);
       }
-
       toast.success(saved ? "Removed from saved jobs" : "Saved job", { id: loadingToast });
     } catch {
       toast.error("Could not update saved jobs", { id: loadingToast });
@@ -229,7 +227,6 @@ export function FeedPage() {
     if (!userId) return;
 
     const loadingToast = toast.loading("Sending invitation...");
-
     try {
       await requestConnection(userId, memberId);
       setPendingConnectionIds((current) => [...current, memberId]);
@@ -280,7 +277,6 @@ export function FeedPage() {
               name={`${profile.first_name} ${profile.last_name}`}
               size="xl"
             />
-
             <button
               type="button"
               className="mt-3 block text-left hover:underline"
@@ -291,13 +287,11 @@ export function FeedPage() {
               </p>
               <p className="text-sm text-text-secondary">{profile.headline || "Complete your profile headline"}</p>
             </button>
-
             <div className="mt-4 space-y-2 border-t pt-4 text-sm">
               <div className="flex justify-between">
                 <span>Profile views</span>
                 <span>{profile.profile_views ?? 0}</span>
               </div>
-
               <button
                 type="button"
                 className="flex w-full justify-between text-left hover:text-brand"
@@ -307,19 +301,12 @@ export function FeedPage() {
                 <span>{profile.connections_count ?? 0}</span>
               </button>
             </div>
-
-            <Button
-              fullWidth
-              variant="secondary"
-              className="mt-4"
-              onClick={() => navigate(`/profile/${profile.member_id}`)}
-            >
+            <Button fullWidth variant="secondary" className="mt-4" onClick={() => navigate(`/profile/${profile.member_id}`)}>
               View profile
             </Button>
           </div>
         </Card>
       </Sidebar>
-
       <div className="space-y-4">
         <Card>
           <div className="flex gap-3">
@@ -336,34 +323,25 @@ export function FeedPage() {
               Start a post, {profile.first_name}
             </button>
           </div>
-
           <div className="mt-4 flex justify-between text-sm text-text-secondary">
             {composerActions.map(({ type, label, icon: Icon }) => (
-              <button
-                key={type}
-                type="button"
-                className="inline-flex items-center gap-2 hover:text-brand"
-                onClick={() => openComposer(type)}
-              >
+              <button key={type} type="button" className="inline-flex items-center gap-2 hover:text-brand" onClick={() => openComposer(type)}>
                 <Icon className="h-4 w-4" />
                 {label}
               </button>
             ))}
           </div>
-
           {composerOpen ? (
             <div className="mt-4 space-y-3 border-t pt-4">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold capitalize text-text-secondary">{composerType} post</p>
                 <Badge className="bg-brand-light text-brand">{composerType}</Badge>
               </div>
-
               <Textarea
                 value={composerText}
                 onChange={(event) => setComposerText(event.target.value)}
                 placeholder={`Share a ${composerType} with your network`}
               />
-
               {composerType === "photo" ? (
                 <div className="space-y-2">
                   <label className="flex cursor-pointer items-center justify-center gap-2 rounded-card border border-dashed px-4 py-3 text-sm text-text-secondary hover:bg-hover">
@@ -383,7 +361,6 @@ export function FeedPage() {
                       }}
                     />
                   </label>
-
                   {imageFile ? (
                     <button
                       type="button"
@@ -401,18 +378,25 @@ export function FeedPage() {
                   placeholder="Optional media URL"
                 />
               ) : null}
-
-              <div className="mt-3 flex justify-end gap-2">
-                <Button variant="ghost" type="button" onClick={() => setComposerOpen(false)}>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  type="button"
+                  onClick={() => {
+                    setComposerOpen(false);
+                    setComposerType("post");
+                    setMediaUrl("");
+                    setImageFile(null);
+                  }}
+                >
                   Cancel
                 </Button>
-
                 <Button
                   type="button"
                   onClick={() => void handleCreatePost()}
-                  disabled={posting || uploadingImage || (!composerText.trim() && !imageFile)}
+                  disabled={posting || uploadingImage || (!composerText.trim() && !imageFile && !mediaUrl.trim())}
                 >
-                  {uploadingImage ? "Uploading…" : posting ? "Publishing…" : "Publish"}
+                  {uploadingImage ? "Uploading..." : "Publish"}
                 </Button>
               </div>
             </div>
@@ -426,23 +410,38 @@ export function FeedPage() {
               Create one
             </Button>
           </div>
-
           {posts.length ? (
             <div className="space-y-4">
               {posts.map((post) => (
-                <PostCard
-                  key={post.post_id}
-                  post={post}
-                  viewerId={userId!}
-                  onUpdate={(updated) =>
-                    setPosts((current) =>
-                      current.map((p) => (p.post_id === updated.post_id ? updated : p))
-                    )
-                  }
-                  onDelete={(postId) =>
-                    setPosts((current) => current.filter((p) => p.post_id !== postId))
-                  }
-                />
+                <div key={post.post_id} className="rounded-card border p-4">
+                  <div className="flex items-start gap-3">
+                    <Avatar
+                      src={post.author.profile_photo_url ?? undefined}
+                      alt={`${post.author.first_name ?? ""} ${post.author.last_name ?? ""}`}
+                      name={`${post.author.first_name ?? ""} ${post.author.last_name ?? ""}`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="font-semibold">
+                            {post.author.first_name} {post.author.last_name}
+                          </p>
+                          <p className="text-sm text-text-secondary">{post.author.headline || "Member"}</p>
+                        </div>
+                        <div className="text-right">
+                          <Badge className="bg-slate-100 text-slate-600">{post.post_type}</Badge>
+                          <p className="mt-1 text-xs text-text-tertiary">{formatRelativeDate(post.created_at)}</p>
+                        </div>
+                      </div>
+                      <p className="mt-3 whitespace-pre-wrap text-sm text-text-primary">{post.content}</p>
+                      {post.media_url ? (
+                        <a href={post.media_url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm">
+                          Open attachment
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
               ))}
             </div>
           ) : (
@@ -459,38 +458,21 @@ export function FeedPage() {
         <Card>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold">Jobs based on your profile</h2>
-            <Button
-              variant="ghost"
-              onClick={() =>
-                goToJobs({
-                  keyword: profile.skills?.[0] || "",
-                  location: profile.location_city || ""
-                })
-              }
-            >
+            <Button variant="ghost" onClick={() => goToJobs({ keyword: profile.skills?.[0] || "", location: profile.location_city || "" })}>
               See all
             </Button>
           </div>
-
           {jobs.length ? (
             <div className="space-y-3">
               {jobs.map((job) => (
                 <div key={job.job_id} className="flex items-center justify-between gap-3 rounded-card p-3 hover:bg-hover">
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 text-left"
-                    onClick={() => navigate(`/jobs/${job.job_id}`)}
-                  >
+                  <button type="button" className="min-w-0 flex-1 text-left" onClick={() => navigate(`/jobs/${job.job_id}`)}>
                     <p className="font-semibold">{job.title}</p>
                     <p className="text-sm text-text-secondary">
                       {job.company_name} {job.location ? `· ${job.location}` : ""}
                     </p>
                   </button>
-
-                  <Button
-                    variant={savedJobIds.includes(job.job_id) ? "secondary" : "ghost"}
-                    onClick={() => void handleToggleSave(job)}
-                  >
+                  <Button variant={savedJobIds.includes(job.job_id) ? "secondary" : "ghost"} onClick={() => void handleToggleSave(job)}>
                     {savedJobIds.includes(job.job_id) ? "Saved" : "Save"}
                   </Button>
                 </div>
@@ -514,7 +496,6 @@ export function FeedPage() {
               See all
             </Button>
           </div>
-
           {applications.length ? (
             <div className="space-y-3">
               {applications.map((application) => (
@@ -526,12 +507,9 @@ export function FeedPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold">
-                        {application.job_title || `Application #${application.application_id}`}
-                      </p>
+                      <p className="font-semibold">{application.job_title || `Application #${application.application_id}`}</p>
                       <p className="text-sm text-text-secondary">
-                        {application.company_name || "Company"} ·{" "}
-                        {formatRelativeDate(application.application_datetime)}
+                        {application.company_name || "Company"} · {formatRelativeDate(application.application_datetime)}
                       </p>
                     </div>
                     <Badge className={getStatusColor(application.status)}>{application.status}</Badge>
@@ -550,7 +528,6 @@ export function FeedPage() {
           )}
         </Card>
       </div>
-
       <RightSidebar>
         <div className="space-y-4">
           <Card>
@@ -558,7 +535,6 @@ export function FeedPage() {
               <h3 className="text-lg font-semibold">Add to your feed</h3>
               <Sparkles className="h-5 w-5 text-brand" />
             </div>
-
             {recruiterSuggestions.length ? (
               <div className="space-y-3">
                 {recruiterSuggestions.map((recruiter) => (
@@ -568,25 +544,14 @@ export function FeedPage() {
                       <p className="text-sm text-text-secondary">{recruiter.name}</p>
                       <p className="text-sm text-text-secondary">{recruiter.industry || "Company"}</p>
                     </div>
-
-                    <Button
-                      variant="secondary"
-                      onClick={() =>
-                        goToJobs({
-                          industry: recruiter.industry || "",
-                          location: profile.location_city || ""
-                        })
-                      }
-                    >
+                    <Button variant="secondary" onClick={() => goToJobs({ industry: recruiter.industry || "", location: profile.location_city || "" })}>
                       View jobs
                     </Button>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-text-secondary">
-                Recruiter and company suggestions will appear here as data grows.
-              </p>
+              <p className="text-sm text-text-secondary">Recruiter and company suggestions will appear here as data grows.</p>
             )}
           </Card>
 
@@ -594,21 +559,15 @@ export function FeedPage() {
             <h3 className="text-lg font-semibold">LinkedIn News</h3>
             <div className="mt-3 space-y-3 text-sm">
               <div className="rounded-card bg-hover p-3">
-                <p className="font-semibold text-text-primary">
-                  {dashboard?.profile_views_30d ?? 0} profile views in the last 30 days
-                </p>
-                <p className="mt-1 text-text-secondary">
-                  Your profile visibility is now connected to backend analytics.
-                </p>
+                <p className="font-semibold text-text-primary">{dashboard?.profile_views_30d ?? 0} profile views in the last 30 days</p>
+                <p className="mt-1 text-text-secondary">Your profile visibility is now connected to backend analytics.</p>
               </div>
-
               {applicationSummary.map((item) => (
                 <div key={item.status} className="flex items-center justify-between rounded-card border p-3">
                   <span className="font-medium capitalize">{item.status}</span>
                   <Badge className={getStatusColor(item.status)}>{item.count}</Badge>
                 </div>
               ))}
-
               {trendingJobs.map((job) => (
                 <button
                   key={job.job_id}
@@ -628,29 +587,20 @@ export function FeedPage() {
 
           <Card>
             <h3 className="text-lg font-semibold">People you may know</h3>
-
             {peopleSuggestions.length ? (
               <div className="mt-4 space-y-3">
                 {peopleSuggestions.map((member) => (
                   <div key={member.member_id} className="flex items-start justify-between gap-3">
-                    <button
-                      type="button"
-                      className="min-w-0 flex-1 text-left"
-                      onClick={() => navigate(`/profile/${member.member_id}`)}
-                    >
+                    <button type="button" className="min-w-0 flex-1 text-left" onClick={() => navigate(`/profile/${member.member_id}`)}>
                       <p className="font-semibold">
                         {member.first_name} {member.last_name}
                       </p>
                       <p className="text-sm text-text-secondary">{member.headline || "Member"}</p>
                     </button>
-
                     <Button
                       variant="secondary"
                       onClick={() => void handleConnect(member.member_id)}
-                      disabled={
-                        pendingConnectionIds.includes(member.member_id) ||
-                        connectedUserIds.includes(member.member_id)
-                      }
+                      disabled={pendingConnectionIds.includes(member.member_id) || connectedUserIds.includes(member.member_id)}
                     >
                       {connectedUserIds.includes(member.member_id)
                         ? "Connected"
@@ -663,9 +613,7 @@ export function FeedPage() {
               </div>
             ) : (
               <div className="mt-4 flex items-center justify-between">
-                <span className="text-sm text-text-secondary">
-                  You are caught up on connection suggestions right now.
-                </span>
+                <span className="text-sm text-text-secondary">You are caught up on connection suggestions right now.</span>
                 <Plus className="h-5 w-5 text-brand" />
               </div>
             )}

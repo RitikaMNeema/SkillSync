@@ -2,6 +2,7 @@ import { Navigate, createBrowserRouter } from "react-router-dom";
 import { App } from "../App";
 import { AppShell } from "../components/layout/AppShell";
 import { authStore } from "../context/AuthContext";
+import { ForgotPasswordPage } from "../pages/auth/ForgotPasswordPage";
 import { LoginPage } from "../pages/auth/LoginPage";
 import { RegisterPage } from "../pages/auth/RegisterPage";
 import { LandingPage } from "../pages/marketing/LandingPage";
@@ -12,6 +13,7 @@ import { JobDetailPage } from "../pages/member/JobDetailPage";
 import { JobSearchPage } from "../pages/member/JobSearchPage";
 import { MemberDashboardPage } from "../pages/member/MemberDashboardPage";
 import { ProfilePage } from "../pages/member/ProfilePage";
+import { PublicProfileSlugPage } from "../pages/member/PublicProfileSlugPage";
 import { SavedJobsPage } from "../pages/member/SavedJobsPage";
 import { MessagesPage } from "../pages/messages/MessagesPage";
 import { AIHiringPage } from "../pages/recruiter/AIHiringPage";
@@ -45,6 +47,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <RootPage /> },
       { path: "/login", element: <LoginPage /> },
+      { path: "/forgot-password", element: <ForgotPasswordPage /> },
       { path: "/register", element: <RegisterPage /> },
       {
         element: (
@@ -54,7 +57,8 @@ export const router = createBrowserRouter([
         ),
         children: [
           { path: "/connections", element: <ConnectionsPage /> },
-          { path: "/messages", element: <MessagesPage /> }
+          { path: "/messages", element: <MessagesPage /> },
+          { path: "/in/:profile_slug", element: <PublicProfileSlugPage /> }
         ]
       },
       {

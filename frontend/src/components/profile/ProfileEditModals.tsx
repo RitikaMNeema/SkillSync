@@ -1,4 +1,6 @@
 import { Search, X } from "lucide-react";
+import { forwardRef } from "react";
+import type { ReactNode, SelectHTMLAttributes } from "react";
 import { useForm } from "react-hook-form";
 import type { EducationEntry, ExperienceEntry } from "../../types/member";
 import { Button } from "../ui/Button";
@@ -21,6 +23,29 @@ const months = [
 
 const years = Array.from({ length: 60 }, (_, index) => new Date().getFullYear() + 1 - index);
 
+/** January -> 1 .. December -> 12; empty / unknown -> 0. */
+function monthIndex(name?: string | null): number {
+  if (!name) return 0;
+  const idx = months.findIndex((m) => m.toLowerCase() === name.toLowerCase());
+  return idx >= 0 ? idx + 1 : 0;
+}
+
+/** Compare (startYear, startMonth) vs (endYear, endMonth). Returns a number <0/=0/>0. */
+function compareYearMonth(
+  startYear: number | null,
+  startMonth: string | null,
+  endYear: number | null,
+  endMonth: string | null
+): number {
+  if (!startYear || !endYear) return 0; // Need both years to compare.
+  if (startYear !== endYear) return startYear - endYear;
+  // Same year: only meaningful if both months set.
+  const sm = monthIndex(startMonth);
+  const em = monthIndex(endMonth);
+  if (sm && em) return sm - em;
+  return 0;
+}
+
 function ModalShell({
   title,
   onClose,
@@ -30,8 +55,8 @@ function ModalShell({
 }: {
   title: string;
   onClose: () => void;
-  children: React.ReactNode;
-  footer: React.ReactNode;
+  children: ReactNode;
+  footer: ReactNode;
   widthClass?: string;
 }) {
   return (
@@ -50,23 +75,24 @@ function ModalShell({
   );
 }
 
-function FieldLabel({ children }: { children: React.ReactNode }) {
+function FieldLabel({ children }: { children: ReactNode }) {
   return <label className="mb-2 block text-[1rem] font-semibold text-[#2f2f2f]">{children}</label>;
 }
 
-function Select({
-  children,
-  ...props
-}: React.SelectHTMLAttributes<HTMLSelectElement>) {
+const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(function Select(
+  { children, ...props },
+  ref
+) {
   return (
     <select
+      ref={ref}
       {...props}
       className="linkedin-input h-[50px] w-full rounded-[10px] border-[#b8c0c7] bg-white px-4 text-[1rem] text-[#1f1f1f] focus:shadow-none"
     >
       {children}
     </select>
   );
-}
+});
 
 function ModalFooter({
   onDelete,
@@ -99,6 +125,48 @@ interface SkillFormValues {
   skill: string;
 }
 
+interface AboutFormValues {
+  about: string;
+}
+
+export function EditAboutModal({
+  onClose,
+  onSave,
+  initialValue
+}: {
+  onClose: () => void;
+  onSave: (about: string) => Promise<void>;
+  initialValue?: string | null;
+}) {
+  const { register, handleSubmit, watch, formState } = useForm<AboutFormValues>({
+    defaultValues: { about: initialValue ?? "" }
+  });
+  const length = watch("about")?.length ?? 0;
+
+  return (
+    <ModalShell
+      title="Edit about"
+      widthClass="max-w-[960px]"
+      onClose={onClose}
+      footer={<ModalFooter submitLabel="Save" formId="edit-about-form" disabled={formState.isSubmitting} />}
+    >
+      <form
+        id="edit-about-form"
+        className="space-y-4"
+        onSubmit={handleSubmit(async (values) => onSave(values.about.trim()))}
+      >
+        <FieldLabel>About</FieldLabel>
+        <Textarea
+          {...register("about", { maxLength: 2600 })}
+          placeholder="You can write about your years of experience, industry, or skills. People also talk about their achievements or previous job experiences."
+          className="min-h-[260px] rounded-[10px] border-[#b8c0c7] px-4 py-3 text-[1rem] placeholder:text-[#8b8b8b] focus:shadow-none"
+        />
+        <p className="text-right text-sm text-[#777777]">{length}/2600</p>
+      </form>
+    </ModalShell>
+  );
+}
+
 export function AddSkillModal({ onClose, onSave }: { onClose: () => void; onSave: (skill: string) => Promise<void> }) {
   const { register, handleSubmit, formState } = useForm<SkillFormValues>();
 
@@ -117,7 +185,7 @@ export function AddSkillModal({ onClose, onSave }: { onClose: () => void; onSave
             <Input
               {...register("skill", { required: true })}
               placeholder="Skill (ex: Project Management)"
-              className="h-[50px] rounded-[10px] border-[#b8c0c7] pl-12 text-[1rem] placeholder:text-[#8b8b8b] focus:shadow-none"
+              className="h-[50px] rounded-[10px] border-[#b8c0c7] pl-14 text-[1rem] placeholder:text-[#8b8b8b] focus:shadow-none"
             />
           </div>
         </div>
@@ -130,6 +198,7 @@ interface EducationFormValues {
   school: string;
   degree: string;
   field_of_study: string;
+  is_current: boolean;
   start_month: string;
   start_year: string;
   end_month: string;
@@ -149,11 +218,15 @@ export function AddEducationModal({
   initialValues?: EducationEntry | null;
   onDelete?: (() => Promise<void>) | null;
 }) {
-  const { register, handleSubmit, watch, formState } = useForm<EducationFormValues>({
+  const { register, handleSubmit, watch, formState, setError, clearErrors } = useForm<EducationFormValues>({
     defaultValues: {
       school: initialValues?.school ?? "",
       degree: initialValues?.degree ?? "",
       field_of_study: initialValues?.field_of_study ?? initialValues?.field ?? "",
+      is_current:
+        initialValues == null
+          ? false
+          : !initialValues.end_year && !initialValues.end_month,
       start_month: initialValues?.start_month ?? "",
       start_year: initialValues?.start_year ? String(initialValues.start_year) : "",
       end_month: initialValues?.end_month ?? "",
@@ -164,6 +237,8 @@ export function AddEducationModal({
   });
   const gradeLength = watch("grade")?.length ?? 0;
   const activitiesLength = watch("activities")?.length ?? 0;
+  const isCurrent = watch("is_current");
+  const dateError = formState.errors.end_year?.message as string | undefined;
 
   return (
     <ModalShell
@@ -182,21 +257,30 @@ export function AddEducationModal({
       <form
         id="add-education-form"
         className="space-y-7"
-        onSubmit={handleSubmit(async (values) =>
-          onSave({
+        onSubmit={handleSubmit(async (values) => {
+          clearErrors("end_year");
+          const startYear = values.start_year ? Number(values.start_year) : null;
+          const endYear = values.is_current ? null : values.end_year ? Number(values.end_year) : null;
+          const endMonth = values.is_current ? null : values.end_month || null;
+          const diff = compareYearMonth(startYear, values.start_month || null, endYear, endMonth);
+          if (diff > 0) {
+            setError("end_year", { type: "validate", message: "End date must be after the start date" });
+            return;
+          }
+          await onSave({
             school: values.school.trim(),
             degree: values.degree.trim() || null,
             field: values.field_of_study.trim() || null,
             field_of_study: values.field_of_study.trim() || null,
             start_month: values.start_month || null,
-            start_year: values.start_year ? Number(values.start_year) : null,
-            end_month: values.end_month || null,
-            end_year: values.end_year ? Number(values.end_year) : null,
-            year: values.end_year ? Number(values.end_year) : null,
+            start_year: startYear,
+            end_month: endMonth,
+            end_year: endYear,
+            year: endYear,
             grade: values.grade.trim() || null,
             activities: values.activities.trim() || null
-          })
-        )}
+          });
+        })}
       >
         <div>
           <FieldLabel>School*</FieldLabel>
@@ -240,33 +324,41 @@ export function AddEducationModal({
             </div>
           </div>
 
-          <div>
-            <p className="mb-3 text-[1.1rem] font-semibold text-[#2f2f2f]">End date (or expected)</p>
-            <div className="grid gap-5 md:grid-cols-2">
-              <div>
-                <FieldLabel>Month</FieldLabel>
-                <Select {...register("end_month")}>
-                  <option value="">Month</option>
-                  {months.map((month) => (
-                    <option key={month} value={month}>
-                      {month}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div>
-                <FieldLabel>Year</FieldLabel>
-                <Select {...register("end_year")}>
-                  <option value="">Year</option>
-                  {years.map((year) => (
-                    <option key={year} value={year}>
-                      {year}
-                    </option>
-                  ))}
-                </Select>
+          <label className="flex items-center gap-3 text-[1.05rem] font-semibold text-[#454545]">
+            <input type="checkbox" {...register("is_current")} className="h-6 w-6 rounded border-[#7b7b7b] accent-[#0c7c59]" />
+            <span>I am currently studying here (Present)</span>
+          </label>
+
+          {!isCurrent ? (
+            <div>
+              <p className="mb-3 text-[1.1rem] font-semibold text-[#2f2f2f]">End date (or expected)</p>
+              <div className="grid gap-5 md:grid-cols-2">
+                <div>
+                  <FieldLabel>Month</FieldLabel>
+                  <Select {...register("end_month")}>
+                    <option value="">Month</option>
+                    {months.map((month) => (
+                      <option key={month} value={month}>
+                        {month}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <FieldLabel>Year</FieldLabel>
+                  <Select {...register("end_year")}>
+                    <option value="">Year</option>
+                    {years.map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
               </div>
             </div>
-          </div>
+          ) : null}
+          {dateError ? <p className="text-sm text-red-600">{dateError}</p> : null}
         </div>
 
         <div>
@@ -313,7 +405,7 @@ export function AddExperienceModal({
   initialValues?: ExperienceEntry | null;
   onDelete?: (() => Promise<void>) | null;
 }) {
-  const { register, handleSubmit, watch, formState } = useForm<ExperienceFormValues>({
+  const { register, handleSubmit, watch, formState, setError, clearErrors } = useForm<ExperienceFormValues>({
     defaultValues: {
       title: initialValues?.title ?? "",
       employment_type: initialValues?.employment_type ?? "",
@@ -329,6 +421,7 @@ export function AddExperienceModal({
     }
   });
   const isCurrent = watch("is_current");
+  const expDateError = formState.errors.end_year?.message as string | undefined;
 
   return (
     <ModalShell
@@ -347,21 +440,30 @@ export function AddExperienceModal({
       <form
         id="add-experience-form"
         className="space-y-7"
-        onSubmit={handleSubmit(async (values) =>
-          onSave({
+        onSubmit={handleSubmit(async (values) => {
+          clearErrors("end_year");
+          const startYear = values.start_year ? Number(values.start_year) : null;
+          const endMonth = values.is_current ? null : values.end_month || null;
+          const endYear = values.is_current ? null : values.end_year ? Number(values.end_year) : null;
+          const diff = compareYearMonth(startYear, values.start_month || null, endYear, endMonth);
+          if (diff > 0) {
+            setError("end_year", { type: "validate", message: "End date must be after the start date" });
+            return;
+          }
+          await onSave({
             title: values.title.trim(),
             employment_type: values.employment_type || null,
             company: values.company.trim(),
             is_current: Boolean(values.is_current),
             start_month: values.start_month || null,
-            start_year: values.start_year ? Number(values.start_year) : null,
-            end_month: values.is_current ? null : values.end_month || null,
-            end_year: values.is_current ? null : values.end_year ? Number(values.end_year) : null,
+            start_year: startYear,
+            end_month: endMonth,
+            end_year: endYear,
             location: values.location.trim() || null,
             location_type: values.location_type || null,
             description: values.description.trim() || null
-          })
-        )}
+          });
+        })}
       >
         <div>
           <FieldLabel>Title*</FieldLabel>
@@ -446,6 +548,7 @@ export function AddExperienceModal({
               </div>
             </div>
           ) : null}
+          {expDateError ? <p className="text-sm text-red-600">{expDateError}</p> : null}
         </div>
 
         <div>

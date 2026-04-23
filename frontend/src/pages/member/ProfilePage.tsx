@@ -1,11 +1,18 @@
-import { BriefcaseBusiness, GraduationCap, Sparkles } from "lucide-react";
-import { useEffect, useState } from "react";
+import { BriefcaseBusiness, GraduationCap, Pencil, Sparkles } from "lucide-react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import toast from "react-hot-toast";
 import { useParams } from "react-router-dom";
 import { getMember, updateMember } from "../../api/members";
-import { RightSidebar, Sidebar } from "../../components/layout/Sidebar";
-import { AddEducationModal, AddExperienceModal, AddSkillModal } from "../../components/profile/ProfileEditModals";
+import { RightSidebar } from "../../components/layout/Sidebar";
+import {
+  AddEducationModal,
+  AddExperienceModal,
+  AddSkillModal,
+  EditAboutModal
+} from "../../components/profile/ProfileEditModals";
+import { AddProfileSectionModal, type ProfileSectionKey } from "../../components/profile/AddProfileSectionModal";
 import { ProfileCompletionCard } from "../../components/profile/ProfileCompletionCard";
+import { ProfileLanguageCard } from "../../components/profile/ProfileLanguageCard";
 import { Alert } from "../../components/ui/Alert";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -16,6 +23,7 @@ import { ExperienceCard } from "../../components/profile/ExperienceCard";
 import { ProfileHeader } from "../../components/profile/ProfileHeader";
 import { ResumeUpload } from "../../components/profile/ResumeUpload";
 import { SkillTag } from "../../components/profile/SkillTag";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 export function ProfilePage() {
   const { member_id } = useParams();
@@ -23,12 +31,19 @@ export function ProfilePage() {
   const [member, setMember] = useState<MemberProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [activeModal, setActiveModal] = useState<{ type: "experience" | "education" | "skills"; index?: number } | null>(null);
+  const [activeModal, setActiveModal] = useState<{ type: "experience" | "education" | "skills" | "about"; index?: number } | null>(null);
+  const [addSectionOpen, setAddSectionOpen] = useState(false);
   const [dismissedCards, setDismissedCards] = useState({
     experience: false,
     education: false,
     skills: false
   });
+  const aboutRef = useRef<HTMLDivElement | null>(null);
+  const experienceRef = useRef<HTMLDivElement | null>(null);
+  const educationRef = useRef<HTMLDivElement | null>(null);
+  const skillsRef = useRef<HTMLDivElement | null>(null);
+  const resumeRef = useRef<HTMLDivElement | null>(null);
+  const languageRef = useRef<HTMLDivElement | null>(null);
 
   async function loadMemberProfile() {
     if (!member_id) return;
@@ -92,6 +107,67 @@ export function ProfilePage() {
     }
   }
 
+  async function saveAbout(about: string) {
+    if (!member) return;
+    const loadingToast = toast.loading("Saving about...");
+    try {
+      await updateMember({
+        member_id: member.member_id,
+        about,
+        summary: about
+      });
+      await loadMemberProfile();
+      setActiveModal(null);
+      toast.success("About updated", { id: loadingToast });
+    } catch {
+      toast.error("Could not save about", { id: loadingToast });
+    }
+  }
+
+  async function saveLanguage(language: string) {
+    if (!member) return;
+    try {
+      await updateMember({ member_id: member.member_id, profile_language: language });
+      setMember({ ...member, profile_language: language });
+      toast.success("Profile language updated");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err) || "Could not update language");
+    }
+  }
+
+  function scrollTo(ref: RefObject<HTMLElement | null>) {
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function handleAddSection(key: ProfileSectionKey) {
+    setAddSectionOpen(false);
+    switch (key) {
+      case "photo":
+        document.querySelector<HTMLInputElement>("input[data-avatar-upload]")?.click();
+        break;
+      case "about":
+        setActiveModal({ type: "about" });
+        break;
+      case "education":
+        setActiveModal({ type: "education" });
+        break;
+      case "experience":
+        setActiveModal({ type: "experience" });
+        break;
+      case "skills":
+        setActiveModal({ type: "skills" });
+        break;
+      case "resume":
+        scrollTo(resumeRef);
+        break;
+      case "language":
+        scrollTo(languageRef);
+        break;
+      default:
+        toast("This section is coming soon", { icon: "ℹ️" });
+    }
+  }
+
   async function saveSkill(skill: string) {
     if (!member || !skill) return;
     const existingSkills = member.skills ?? [];
@@ -148,8 +224,7 @@ export function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="grid gap-6 lg:grid-cols-[225px_minmax(0,1fr)_300px]">
-        <CardSkeleton />
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <CardSkeleton />
         <CardSkeleton />
       </div>
@@ -163,19 +238,40 @@ export function ProfilePage() {
   const showEducationPrompt = isOwnProfile && !member.education?.length && !dismissedCards.education;
   const showSkillsPrompt = isOwnProfile && !member.skills?.length && !dismissedCards.skills;
 
+  const aboutText = member.unstructured?.about || member.summary || "";
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[225px_minmax(0,1fr)_300px]">
-      <Sidebar>
-        <Card className="rounded-[22px] border border-[#dde3ea] bg-white p-5 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
-          <p className="text-lg font-semibold text-[#1f1f1f]">Profile details</p>
-          <p className="mt-3 text-sm leading-6 text-[#555555]">{member.summary || "Add a summary to help visitors understand your experience faster."}</p>
-        </Card>
-      </Sidebar>
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
       <div className="space-y-4 animate-fade-in">
-        <ProfileHeader member={member} isOwnProfile={isOwnProfile} />
-        <Card className="rounded-[22px] border border-[#dde3ea] bg-white p-6 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
-          <h2 className="mb-3 text-[1.5rem] font-semibold tracking-[-0.03em] text-[#1f1f1f]">About</h2>
-          <p className="text-sm leading-7 text-[#555555]">{member.unstructured?.about || member.summary || "No about section yet."}</p>
+        <ProfileHeader
+          member={member}
+          isOwnProfile={isOwnProfile}
+          onProfileUpdated={(next) => setMember(next)}
+          onAddSection={() => setAddSectionOpen(true)}
+        />
+        <Card ref={aboutRef} className="rounded-[22px] border border-[#dde3ea] bg-white p-6 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <h2 className="text-[1.5rem] font-semibold tracking-[-0.03em] text-[#1f1f1f]">About</h2>
+            {isOwnProfile ? (
+              <button
+                type="button"
+                aria-label="Edit about"
+                className="rounded-full p-2 text-[#434343] transition hover:bg-[#f3f6f8]"
+                onClick={() => setActiveModal({ type: "about" })}
+              >
+                <Pencil className="h-5 w-5" />
+              </button>
+            ) : null}
+          </div>
+          {aboutText ? (
+            <p className="whitespace-pre-wrap text-sm leading-7 text-[#555555]">{aboutText}</p>
+          ) : (
+            <p className="text-sm leading-7 text-[#8a8a8a]">
+              {isOwnProfile
+                ? "Add a summary so recruiters and connections can understand your background at a glance."
+                : "No about section yet."}
+            </p>
+          )}
         </Card>
         {showExperiencePrompt || showEducationPrompt || showSkillsPrompt ? (
           <section className="space-y-4">
@@ -225,19 +321,23 @@ export function ProfilePage() {
             </div>
           </section>
         ) : null}
-        <ExperienceCard
-          title="Experience"
-          items={member.experience ?? []}
-          onAdd={isOwnProfile ? () => setActiveModal({ type: "experience" }) : undefined}
-          onEdit={isOwnProfile ? (index) => setActiveModal({ type: "experience", index }) : undefined}
-        />
-        <ExperienceCard
-          title="Education"
-          items={member.education ?? []}
-          onAdd={isOwnProfile ? () => setActiveModal({ type: "education" }) : undefined}
-          onEdit={isOwnProfile ? (index) => setActiveModal({ type: "education", index }) : undefined}
-        />
-        <Card className="rounded-[22px] border border-[#dde3ea] bg-white p-6 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
+        <div ref={experienceRef}>
+          <ExperienceCard
+            title="Experience"
+            items={member.experience ?? []}
+            onAdd={isOwnProfile ? () => setActiveModal({ type: "experience" }) : undefined}
+            onEdit={isOwnProfile ? (index) => setActiveModal({ type: "experience", index }) : undefined}
+          />
+        </div>
+        <div ref={educationRef}>
+          <ExperienceCard
+            title="Education"
+            items={member.education ?? []}
+            onAdd={isOwnProfile ? () => setActiveModal({ type: "education" }) : undefined}
+            onEdit={isOwnProfile ? (index) => setActiveModal({ type: "education", index }) : undefined}
+          />
+        </div>
+        <Card ref={skillsRef} className="rounded-[22px] border border-[#dde3ea] bg-white p-6 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
           <div className="mb-5 flex items-center justify-between gap-4">
             <h2 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#1f1f1f]">Skills</h2>
             {isOwnProfile ? (
@@ -256,9 +356,14 @@ export function ProfilePage() {
             <p className="text-sm text-[#6b7280]">No skills added yet.</p>
           )}
         </Card>
-        {member.member_id === currentUserId ? <ResumeUpload memberId={member.member_id} /> : null}
+        {member.member_id === currentUserId ? (
+          <div ref={resumeRef}>
+            <ResumeUpload memberId={member.member_id} />
+          </div>
+        ) : null}
       </div>
       <RightSidebar>
+        <div className="space-y-4">
         <Card className="rounded-[22px] border border-[#dde3ea] bg-white p-5 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
           <h3 className="text-lg font-semibold text-[#1f1f1f]">Activity</h3>
           <div className="mt-4 space-y-3">
@@ -272,6 +377,15 @@ export function ProfilePage() {
             </div>
           </div>
         </Card>
+        <div ref={languageRef}>
+          <ProfileLanguageCard
+            language={member.profile_language}
+            slug={member.profile_slug}
+            isOwnProfile={isOwnProfile}
+            onLanguageChange={saveLanguage}
+          />
+        </div>
+        </div>
       </RightSidebar>
       {activeModal?.type === "experience" ? (
         <AddExperienceModal
@@ -290,6 +404,19 @@ export function ProfilePage() {
         />
       ) : null}
       {activeModal?.type === "skills" ? <AddSkillModal onClose={() => setActiveModal(null)} onSave={saveSkill} /> : null}
+      {activeModal?.type === "about" ? (
+        <EditAboutModal
+          onClose={() => setActiveModal(null)}
+          onSave={saveAbout}
+          initialValue={member.unstructured?.about || member.summary || ""}
+        />
+      ) : null}
+      {addSectionOpen ? (
+        <AddProfileSectionModal
+          onClose={() => setAddSectionOpen(false)}
+          onSelect={handleAddSection}
+        />
+      ) : null}
     </div>
   );
 }

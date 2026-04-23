@@ -62,6 +62,36 @@ PROFILE_DETAIL_TABLES_SQL = [
     """,
 ]
 
+# Column additions required by file-upload / profile-polish flows. Applied
+# idempotently at startup because MySQL < 8.0.19 does not support
+# "ADD COLUMN IF NOT EXISTS".
+MEMBER_FILE_COLUMNS: list[tuple[str, str]] = [
+    ("profile_photo_file_id", "VARCHAR(64)"),
+    ("resume_file_id", "VARCHAR(64)"),
+    ("resume_file_name", "VARCHAR(255)"),
+    ("resume_content_type", "VARCHAR(100)"),
+    ("resume_uploaded_at", "TIMESTAMP NULL DEFAULT NULL"),
+    ("open_to", "VARCHAR(32)"),
+    ("profile_language", "VARCHAR(64)"),
+    ("profile_slug", "VARCHAR(160)"),
+]
+
+OPEN_TO_VALUES = {"job", "hiring", "services", "volunteer"}
+
+
+def build_profile_slug(first_name: str | None, last_name: str | None, member_id: int) -> str:
+    """LinkedIn-style slug: `{first-name}-{last-name}-{memberId}` — lowercase, dash-separated."""
+    parts: list[str] = []
+    for value in (first_name, last_name):
+        if not value:
+            continue
+        token = "".join(ch.lower() if ch.isalnum() else "-" for ch in value)
+        token = "-".join(segment for segment in token.split("-") if segment)
+        if token:
+            parts.append(token)
+    prefix = "-".join(parts) if parts else f"user-{member_id}"
+    return f"{prefix}-{member_id}"
+
 
 def _safe_int(value: Any) -> int | None:
     if value in (None, ""):
@@ -204,6 +234,7 @@ def _experience_response_entry(entry: dict) -> dict:
 
 
 def _education_response_entry(entry: dict) -> dict:
+    end_year = entry.get("end_year")
     return {
         "school": entry.get("school"),
         "degree": entry.get("degree"),
@@ -212,8 +243,8 @@ def _education_response_entry(entry: dict) -> dict:
         "start_month": entry.get("start_month"),
         "start_year": entry.get("start_year"),
         "end_month": entry.get("end_month"),
-        "end_year": entry.get("end_year"),
-        "year": entry.get("end_year") or entry.get("start_year"),
+        "end_year": end_year,
+        "year": end_year,
         "grade": entry.get("grade"),
         "activities": entry.get("activities"),
     }
@@ -223,8 +254,30 @@ async def ensure_member_profile_tables() -> None:
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = DATABASE() AND table_name = 'members' LIMIT 1
+                """
+            )
+            if await cur.fetchone() is None:
+                raise RuntimeError("Missing MySQL table `members`; run `database/mysql/init.sql`.")
             for sql in PROFILE_DETAIL_TABLES_SQL:
                 await cur.execute(sql)
+
+            await cur.execute(
+                """SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members'"""
+            )
+            rows = await cur.fetchall() or []
+            existing: set[str] = set()
+            for row in rows:
+                name = row.get("COLUMN_NAME") or row.get("column_name")
+                if name:
+                    existing.add(name.lower())
+            for col, col_type in MEMBER_FILE_COLUMNS:
+                if col.lower() not in existing:
+                    await cur.execute(f"ALTER TABLE members ADD COLUMN {col} {col_type}")
 
 
 async def member_exists(member_id: int) -> bool:
@@ -424,6 +477,16 @@ async def get_member_by_id(member_id: int) -> dict | None:
             row["experience"] = experience_entries or legacy_experience_entries
             row["education"] = education_entries or legacy_education_entries
             row["skills"] = skill_entries or legacy_skill_entries
+
+            if not row.get("profile_slug"):
+                slug = build_profile_slug(row.get("first_name"), row.get("last_name"), member_id)
+                await cur.execute(
+                    "UPDATE members SET profile_slug = %s WHERE member_id = %s AND (profile_slug IS NULL OR profile_slug = '') AND is_deleted = 0",
+                    (slug, member_id),
+                )
+                row["profile_slug"] = slug
+            if not row.get("profile_language"):
+                row["profile_language"] = "English"
             return row
 
 
@@ -432,6 +495,11 @@ async def update_member(member_id: int, fields: dict) -> None:
     experience_entries = _normalize_experience(fields.get("experience")) if "experience" in fields else None
     education_entries = _normalize_education(fields.get("education")) if "education" in fields else None
     skills = _normalize_skills(fields.get("skills")) if "skills" in fields else None
+
+    if "open_to" in fields:
+        value = fields["open_to"]
+        if value not in (None, "") and value not in OPEN_TO_VALUES:
+            fields = {**fields, "open_to": None}
 
     json_fields = {"experience", "education", "skills"}
     allowed = {
@@ -447,11 +515,17 @@ async def update_member(member_id: int, fields: dict) -> None:
         "education",
         "skills",
         "profile_photo_url",
+        "open_to",
+        "profile_language",
+        "profile_slug",
     }
+    nullable_clearable = {"open_to"}
     clauses: list[str] = []
     values: list[Any] = []
     for key, value in fields.items():
-        if key not in allowed or value is None:
+        if key not in allowed:
+            continue
+        if value is None and key not in nullable_clearable:
             continue
 
         if key == "experience":
@@ -495,6 +569,77 @@ async def update_resume_url(member_id: int, resume_url: str) -> None:
         async with conn.cursor() as cur:
             await cur.execute(
                 "UPDATE members SET resume_url = %s WHERE member_id = %s", (resume_url, member_id)
+            )
+
+
+async def get_member_resume_meta(member_id: int) -> dict | None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """SELECT resume_file_id, resume_file_name, resume_content_type, resume_uploaded_at
+                   FROM members WHERE member_id = %s AND is_deleted = 0""",
+                (member_id,),
+            )
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
+async def set_resume_file(
+    member_id: int,
+    file_id: str,
+    file_name: str,
+    content_type: str,
+) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """UPDATE members
+                   SET resume_file_id = %s, resume_file_name = %s,
+                       resume_content_type = %s, resume_uploaded_at = CURRENT_TIMESTAMP
+                   WHERE member_id = %s AND is_deleted = 0""",
+                (file_id, file_name, content_type, member_id),
+            )
+
+
+async def clear_resume_file(member_id: int) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """UPDATE members
+                   SET resume_file_id = NULL, resume_file_name = NULL,
+                       resume_content_type = NULL, resume_uploaded_at = NULL
+                   WHERE member_id = %s AND is_deleted = 0""",
+                (member_id,),
+            )
+
+
+async def get_member_photo_file_id(member_id: int) -> str | None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT profile_photo_file_id FROM members WHERE member_id = %s AND is_deleted = 0",
+                (member_id,),
+            )
+            row = await cur.fetchone()
+            if not row:
+                return None
+            fid = (row or {}).get("profile_photo_file_id")
+            return str(fid) if fid else None
+
+
+async def set_photo_file(member_id: int, file_id: str, url: str) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """UPDATE members
+                   SET profile_photo_file_id = %s, profile_photo_url = %s
+                   WHERE member_id = %s AND is_deleted = 0""",
+                (file_id, url, member_id),
             )
 
 

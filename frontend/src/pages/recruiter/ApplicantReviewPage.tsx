@@ -197,7 +197,7 @@ export function ApplicantReviewPage() {
   }, [applications, memberProfilesById, search]);
 
   const statusOptions = selected ? selectableApplicationStatuses(selected.status) : [];
-  const selectedEmail = (profile?.email ?? "").trim();
+  const selectedEmail = "";
   const selectedPhone = (profile?.phone ?? "").trim();
   const openResumeUrl = resolveResumeUrl(selected?.resume_url);
 

@@ -1,5 +1,9 @@
 import os
+
 import aiomysql
+from shared.env import load_env
+
+load_env()
 
 _pool: aiomysql.Pool | None = None
 
