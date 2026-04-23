@@ -648,9 +648,9 @@ async def search_members(keyword, skill, location, page, page_size=PAGE_SIZE) ->
     values = []
 
     if keyword:
-        conditions.append("(m.headline LIKE %s OR m.summary LIKE %s OR m.first_name LIKE %s OR m.last_name LIKE %s)")
+        conditions.append("(m.headline LIKE %s OR m.summary LIKE %s OR m.first_name LIKE %s OR m.last_name LIKE %s OR JSON_SEARCH(m.skills, 'one', %s) IS NOT NULL)")
         like = f"%{keyword}%"
-        values += [like, like, like, like]
+        values += [like, like, like, like, keyword]
     if skill:
         conditions.append('JSON_SEARCH(m.skills, "one", %s) IS NOT NULL')
         values.append(skill)

@@ -4,6 +4,15 @@ from decimal import Decimal
 
 from shared.redis_utils.client import get_redis
 
+
+class _Encoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, Decimal):
+            return float(o)
+        if isinstance(o, (datetime, date)):
+            return o.isoformat()
+        return super().default(o)
+
 DEFAULT_TTL = 300
 
 
