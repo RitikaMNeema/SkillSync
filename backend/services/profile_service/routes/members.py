@@ -20,7 +20,7 @@ log = logging.getLogger("profile_service.uploads")
 
 @router.post("/create", status_code=201)
 async def create(body: CreateMemberRequest, u=Depends(get_current_user)):
-    data = await ctrl.create(body.model_dump())
+    data = await ctrl.create(body.model_dump(), u["user_id"])
     return {"success": True, "data": data}
 
 
@@ -34,7 +34,10 @@ async def get(body: GetMemberRequest, u=Depends(get_current_user)):
 async def update(body: UpdateMemberRequest, u=Depends(get_current_user)):
     # Do not use exclude_none=True: nested experience/education entries must keep
     # explicit nulls/keys so dates are not dropped before persistence.
-    data = await ctrl.update(body.model_dump(exclude_none=False), u["user_id"])
+    payload = body.model_dump(exclude_none=False)
+    # So Mongo `followed_skills` is only updated when the client sends that key (Pydantic v2).
+    payload["__pydantic_fields_set__"] = set(body.model_fields_set)
+    data = await ctrl.update(payload, u["user_id"])
     return {"success": True, "data": data}
 
 
@@ -102,6 +105,47 @@ async def download_photo(member_id: int):
         media_type=content_type,
         headers={"Cache-Control": "public, max-age=60"},
     )
+
+
+@router.post("/uploadCover")
+async def upload_cover(
+    member_id: int = Form(...),
+    photo: UploadFile = File(...),
+    u=Depends(get_current_user),
+):
+    log.info(
+        "uploadCover: member_id=%s actor_id=%s filename=%s content_type=%s",
+        member_id,
+        u.get("user_id"),
+        photo.filename,
+        photo.content_type,
+    )
+    data = await photo.read()
+    result = await ctrl.upload_cover_file(
+        member_id=member_id,
+        actor_id=u["user_id"],
+        filename=photo.filename or f"cover_{member_id}",
+        content_type=photo.content_type or "application/octet-stream",
+        data=data,
+    )
+    return {"success": True, "data": result}
+
+
+@router.get("/cover/{member_id}")
+async def download_cover(member_id: int):
+    stream, info = await ctrl.stream_cover_file(member_id)
+    content_type = (info.get("metadata") or {}).get("content_type") or "image/jpeg"
+    return StreamingResponse(
+        stream,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=60"},
+    )
+
+
+@router.post("/deleteCover")
+async def delete_cover(body: GetResumeRequest, u=Depends(get_current_user)):
+    data = await ctrl.delete_cover_file(body.member_id, u["user_id"])
+    return {"success": True, "data": data}
 
 
 # ── Resume (GridFS) ───────────────────────────────────────────────────────────

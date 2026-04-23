@@ -33,7 +33,7 @@ const registerBaseSchema = z.object({
   lastName: z.string().optional(),
   phone: z.string().optional(),
   location: z.string().optional(),
-  headline: z.string().optional(),
+  headline: z.string().max(220, "Headline must be 220 characters or fewer").optional(),
   name: z.string().optional(),
   companyName: z.string().optional(),
   companyIndustry: z.string().optional(),
@@ -43,6 +43,14 @@ const registerBaseSchema = z.object({
 const schema = registerBaseSchema.refine((data) => data.password === data.confirmPassword, {
   message: "Passwords must match",
   path: ["confirmPassword"]
+}).superRefine((data, ctx) => {
+  if (data.role === "member" && !data.headline?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Headline is required",
+      path: ["headline"]
+    });
+  }
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -342,9 +350,15 @@ export function RegisterPage() {
                     />
                     <Input
                       {...register("headline")}
-                      placeholder="Headline"
+                      placeholder="Headline*"
                       className="h-[56px] rounded-[4px] border-[#888888] px-4 focus:shadow-none"
                     />
+                    {errors.headline?.message ? (
+                      <p className="mt-1.5 flex gap-1.5 text-sm text-red-700" role="alert">
+                        <span aria-hidden>•</span>
+                        <span>{errors.headline.message}</span>
+                      </p>
+                    ) : null}
                   </>
                 ) : (
                   <>
