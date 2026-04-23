@@ -20,12 +20,12 @@ export default defineConfig(({ mode }) => {
       ...proxyLong
     },
     "/api/members": {
-      target: "http://localhost:3002",
+      target: "http://localhost:3003",
       rewrite: (path: string) => path.replace(/^\/api/, ""),
       ...proxyLong
     },
     "/api/posts": {
-      target: "http://localhost:3002",
+      target: "http://localhost:3003",
       rewrite: (path: string) => path.replace(/^\/api/, ""),
       ...proxyLong
     },

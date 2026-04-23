@@ -1,12 +1,12 @@
-version: '3.9'
 
-# When app services run in Compose, override .env REDIS_HOST=127.0.0.1 → redis service.
+
+# When app services run in Compose, override .env REDIS_HOST=127.0.0.1 -> redis service.
 x-redis-in-docker: &redis-in-docker
   REDIS_HOST: redis
   REDIS_PORT: 6379
 
 services:
-  # ── Infrastructure ──────────────────────────────────────────────
+  # Infrastructure
   mysql:
     image: mysql:8.0
     container_name: linkedin_mysql
@@ -16,8 +16,6 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    # Same host ports as typical Docker DBs (e.g. Yelp): Workbench -> localhost:3306
-    # Stop other stacks using 3306/27017 before starting SkillSync (only one listener per port).
     ports:
       - "3307:3306"
     volumes:
@@ -53,10 +51,8 @@ services:
   # The mongo image only runs /docker-entrypoint-initdb.d/ when /data/db is empty;
   # this one-shot job keeps linkedin_db + indexes in sync for existing volumes.
   mongo-init:
-  mongo-init-docker:
     image: mongo:7.0
     container_name: linkedin_mongo_init_docker
-    profiles: ["docker-db"]
     depends_on:
       mongo:
         condition: service_healthy
@@ -138,7 +134,7 @@ services:
       sh -c 'until mongosh --host host.docker.internal --port 27017 --eval "db.adminCommand({ ping: 1 })" >/dev/null 2>&1; do echo "waiting for local mongo..."; sleep 2; done;
       mongosh --host host.docker.internal --port 27017 /init.js'
 
-  # ── Services ─────────────────────────────────────────────────────
+  # Services
   auth-service:
     build:
       context: .
@@ -366,8 +362,8 @@ services:
     ports:
       - "${AI_SERVICE_PORT}:${AI_SERVICE_PORT}"
     depends_on:
-      mysql-init:
-        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
       mongo-init:
         condition: service_completed_successfully
       redis:
