@@ -34,3 +34,7 @@ class LoginRequest(BaseModel):
 
 class ValidateRequest(BaseModel):
     token: str
+
+
+class EmailCheckRequest(BaseModel):
+    email: str
