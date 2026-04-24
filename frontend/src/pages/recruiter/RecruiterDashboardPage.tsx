@@ -3,7 +3,14 @@ import { useEffect, useMemo, useState } from "react";
 import { BarChart3, CalendarDays, FileText, Users } from "lucide-react";
 import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
-import { getGeoDistribution, getJobClicks, getLowTractionJobs, getRecruiterDashboard, getSavedJobsTrend, getTopJobs } from "../../api/analytics";
+import {
+  getGeoDistribution,
+  getJobClicks,
+  getLowTractionJobs,
+  getRecruiterDashboard,
+  getSavedJobsTrend,
+  getTopJobs
+} from "../../api/analytics";
 import { getApplicationsByJob } from "../../api/applications";
 import { getAllJobsByRecruiter } from "../../api/jobs";
 import { authStore } from "../../context/AuthContext";
@@ -41,9 +48,10 @@ export function RecruiterDashboardPage() {
   const [saves, setSaves] = useState<Array<{ period: string; count: number }>>([]);
   const [geo, setGeo] = useState<Array<{ city: string | null; state: string | null; count: number }>>([]);
   const [stats, setStats] = useState<Record<string, number>>({});
-  const selectedMonth = new Date().toISOString().slice(0, 7);
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [savedPeriod, setSavedPeriod] = useState<"day" | "week">("day");
   const [selectedGeoJobId, setSelectedGeoJobId] = useState<string>("all");
+  const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
   const selectedMonthStart = `${selectedMonth}-01`;
   const monthWindowLabel = formatMonthYearUtc(selectedMonth);
   const savesTotal = saves.reduce((sum, point) => sum + point.count, 0);
@@ -90,7 +98,7 @@ export function RecruiterDashboardPage() {
     if (!bootstrapped) {
       setLoading(true);
     }
-    void Promise.all([
+    void Promise.allSettled([
       getTopJobs(selectedMonthStart, recruiterId),
       getLowTractionJobs(selectedMonthStart, recruiterId),
       getJobClicks(selectedMonthStart, recruiterId),
@@ -98,7 +106,23 @@ export function RecruiterDashboardPage() {
       getGeoDistribution(selectedMonthStart, recruiterId, selectedGeoJobId === "all" ? undefined : selectedGeoJobId),
       getRecruiterDashboard(recruiterId)
     ])
-      .then(async ([top, low, clickData, savesData, geoData, dashboard]) => {
+      .then(async ([topRes, lowRes, clicksRes, savesRes, geoRes, dashboardRes]) => {
+        const nextErrors: Record<string, string> = {};
+        if (topRes.status !== "fulfilled") nextErrors.top = "Top postings unavailable";
+        if (lowRes.status !== "fulfilled") nextErrors.low = "Low traction data unavailable";
+        if (clicksRes.status !== "fulfilled") nextErrors.clicks = "Click metrics unavailable";
+        if (savesRes.status !== "fulfilled") nextErrors.saves = "Saved trend unavailable";
+        if (geoRes.status !== "fulfilled") nextErrors.geo = "Geo breakdown unavailable";
+        if (dashboardRes.status !== "fulfilled") nextErrors.summary = "Summary metrics unavailable";
+        setCardErrors(nextErrors);
+
+        const top = topRes.status === "fulfilled" ? topRes.value : [];
+        const low = lowRes.status === "fulfilled" ? lowRes.value : [];
+        const clickData = clicksRes.status === "fulfilled" ? clicksRes.value : [];
+        const savesData = savesRes.status === "fulfilled" ? savesRes.value : [];
+        const geoData = geoRes.status === "fulfilled" ? geoRes.value : [];
+        const dashboard = dashboardRes.status === "fulfilled" ? dashboardRes.value : [];
+
         const recruiterJobs = await getAllJobsByRecruiter(recruiterId);
         setActiveJobsCount(recruiterJobs.filter((job) => (job.status ?? "open") === "open").length);
         setJobNameById(
@@ -150,9 +174,7 @@ export function RecruiterDashboardPage() {
         }
         setStats(derivedStats);
       })
-      .catch((error: unknown) => {
-        toast.error(error instanceof Error ? error.message : "Could not load dashboard");
-      })
+      .catch((error: unknown) => toast.error(error instanceof Error ? error.message : "Could not load dashboard"))
       .finally(() => {
         setLoading(false);
         setBootstrapped(true);
@@ -176,6 +198,26 @@ export function RecruiterDashboardPage() {
           <div>
             <h1 className="text-2xl font-bold">Welcome back</h1>
             <p className="text-sm text-text-secondary">Recruiter dashboard for {monthWindowLabel}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="month"
+              className="linkedin-input h-9 px-3 text-sm"
+              value={selectedMonth}
+              onChange={(event) => setSelectedMonth(event.target.value)}
+              aria-label="Analytics month"
+            />
+            <button
+              type="button"
+              className="rounded-md border border-[#d0d7de] px-3 py-2 text-xs text-text-secondary hover:bg-[#f7f9fb]"
+              onClick={() => {
+                setSelectedMonth(new Date().toISOString().slice(0, 7));
+                setSelectedGeoJobId("all");
+                setSavedPeriod("day");
+              }}
+            >
+              Reset filters
+            </button>
           </div>
         </div>
       </div>
@@ -287,7 +329,10 @@ export function RecruiterDashboardPage() {
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
-              <EmptyChart message="No saved-jobs trend data yet." hint="Saved job activity for recruiter-owned jobs will appear here." />
+              <EmptyChart
+                message={cardErrors.saves || "No saved-jobs trend data yet."}
+                hint={`Scope: ${monthWindowLabel} · ${savedPeriod === "day" ? "Daily" : "Weekly"} · recruiter-owned jobs.`}
+              />
             )}
           </div>
         </ChartCard>
@@ -333,7 +378,10 @@ export function RecruiterDashboardPage() {
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <EmptyChart message="No city-level application data yet." hint="Application events need city/state data for geo breakdown." />
+            <EmptyChart
+              message={cardErrors.geo || "No city-level application data yet."}
+              hint={`Scope: ${monthWindowLabel}${selectedGeoJobId === "all" ? " · all recruiter jobs" : ` · selected job ${getJobLabel(selectedGeoJobId)}`}.`}
+            />
           )}
         </div>
       </ChartCard>

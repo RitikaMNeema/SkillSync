@@ -41,7 +41,7 @@ services:
       - mongo_data:/data/db
       - ./database/mongodb/init.js:/docker-entrypoint-initdb.d/init.js
     healthcheck:
-      test: ["CMD", "mongosh", "-u", "${MONGO_INITDB_ROOT_USERNAME}", "-p", "${MONGO_INITDB_ROOT_PASSWORD}", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping').ok\" || mongosh --quiet -u ${MONGO_INITDB_ROOT_USERNAME} -p ${MONGO_INITDB_ROOT_PASSWORD} --authenticationDatabase admin --eval \"db.adminCommand('ping').ok\""]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -88,7 +88,7 @@ services:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:9093,CONTROLLER://0.0.0.0:9094
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://127.0.0.1:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://127.0.0.1:9094
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9094
@@ -99,7 +99,7 @@ services:
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
     ports:
-      - "9093:9093"
+      - "9094:9093"
     volumes:
       - kafka_data:/var/lib/kafka/data
     healthcheck:
@@ -178,8 +178,6 @@ services:
         condition: service_healthy
       mongo:
         condition: service_healthy
-      mongo-init:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
       kafka:
@@ -309,8 +307,6 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
-      mongo-init:
-        condition: service_completed_successfully
       kafka:
         condition: service_healthy
     healthcheck:
@@ -336,8 +332,6 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
-      mongo-init:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
       kafka:
@@ -364,8 +358,8 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-      mongo-init:
-        condition: service_completed_successfully
+      mongo:
+        condition: service_healthy
       redis:
         condition: service_healthy
       kafka:

@@ -31,3 +31,20 @@ export interface MessageListResponse {
   page: number;
   page_size: number;
 }
+
+
+export interface ThreadPreference {
+  thread_id: string;
+  user_id: string;
+  starred?: boolean;
+  muted?: boolean;
+  archived?: boolean;
+  force_unread?: boolean;
+  hidden?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ThreadPreferencesResponse {
+  preferences: Record<string, ThreadPreference>;
+}

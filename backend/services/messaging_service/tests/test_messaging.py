@@ -145,6 +145,14 @@ async def test_list_messages_paginated():
 
 
 @pytest.mark.anyio
+async def test_list_messages_forbidden_for_non_participant():
+    with patch("controllers.messaging.get_thread", new=AsyncMock(return_value={**_THREAD, "participant_ids": ["5", "6"]})):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.post("/messages/list", json={"thread_id": "t-123", "page": 1})
+        assert resp.status_code == 403
+
+
+@pytest.mark.anyio
 async def test_mark_read():
     with patch("controllers.messaging.get_thread", new=AsyncMock(return_value=_THREAD)), \
          patch("controllers.messaging.mark_read",  new=AsyncMock(return_value=3)):
@@ -175,3 +183,24 @@ def test_message_send_receive_over_websocket():
                 assert payload["event"] == "message.created"
                 assert payload["data"]["thread_id"] == "t-123"
                 assert payload["data"]["text"] == "Hello!"
+
+
+@pytest.mark.anyio
+async def test_get_thread_preferences():
+    with patch("controllers.messaging.get_preferences_for_user", new=AsyncMock(return_value={"t-123": {"starred": True}})):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.post("/threads/preferences", json={})
+        assert resp.status_code == 200
+        assert resp.json()["data"]["preferences"]["t-123"]["starred"] is True
+
+
+@pytest.mark.anyio
+async def test_update_thread_preferences():
+    pref = {"thread_id": "t-123", "user_id": "1", "starred": True}
+    with patch("controllers.messaging.get_thread", new=AsyncMock(return_value=_THREAD)), \
+         patch("controllers.messaging.upsert_preferences", new=AsyncMock(return_value=pref)):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.post("/threads/preferences/update", json={"thread_id": "t-123", "starred": True})
+        assert resp.status_code == 200
+        assert resp.json()["data"]["thread_id"] == "t-123"
+        assert resp.json()["data"]["starred"] is True

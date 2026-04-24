@@ -26,7 +26,7 @@ async def create(body: CreateMemberRequest, u=Depends(get_current_user)):
 
 @router.post("/get")
 async def get(body: GetMemberRequest, u=Depends(get_current_user)):
-    data = await ctrl.get(body.member_id)
+    data = await ctrl.get(body.member_id, u["user_id"])
     return {"success": True, "data": data}
 
 
@@ -49,7 +49,7 @@ async def delete(body: DeleteMemberRequest, u=Depends(get_current_user)):
 
 @router.post("/search")
 async def search(body: SearchMembersRequest, u=Depends(get_current_user)):
-    data = await ctrl.search(body.keyword, body.skill, body.location, body.page)
+    data = await ctrl.search(body.keyword, body.skill, body.location, body.page, u["user_id"])
     return {"success": True, "data": data}
 
 

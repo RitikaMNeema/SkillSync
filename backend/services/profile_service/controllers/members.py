@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from fastapi import HTTPException
@@ -22,7 +23,7 @@ from models.member_mysql import (
 )
 from models.profile_mongo import create_profile, get_profile, update_profile
 from models import files_mongo
-from producers.profile_producer import emit_profile_updated
+from producers.profile_producer import emit_member_search_appeared, emit_profile_updated, emit_profile_viewed
 from shared.redis_utils.cache import cache_get, cache_set, cache_del
 
 PROFILE_TTL = 300
@@ -38,6 +39,36 @@ def _search_key(params):
     return f"profile:search:{params}"
 
 
+async def _emit_profile_view_event(actor_id: int | None, member_id: int) -> None:
+    if actor_id is None or str(actor_id) == str(member_id):
+        return
+    try:
+        await emit_profile_viewed(actor_id, member_id)
+    except Exception:
+        log.exception("emit_profile_viewed failed for member_id=%s actor_id=%s", member_id, actor_id)
+
+
+async def _emit_search_appearance_events(actor_id: int | None, rows: list, keyword, skill, location) -> None:
+    if actor_id is None or not rows:
+        return
+    tasks = [
+        emit_member_search_appeared(
+            actor_id,
+            row.get("member_id"),
+            keyword=keyword,
+            skill=skill,
+            location=location,
+        )
+        for row in rows
+        if row.get("member_id") is not None and str(row.get("member_id")) != str(actor_id)
+    ]
+    if tasks:
+        outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+        for outcome in outcomes:
+            if isinstance(outcome, Exception):
+                log.exception("emit_member_search_appeared failed", exc_info=outcome)
+
+
 async def create(body: dict, actor_id: int) -> dict:
     member_id = body["member_id"]
     if member_id != actor_id:
@@ -51,11 +82,12 @@ async def create(body: dict, actor_id: int) -> dict:
     return {"member_id": member_id}
 
 
-async def get(member_id: int) -> dict:
+async def get(member_id: int, actor_id: int | None = None) -> dict:
     cached = await cache_get(_profile_key(member_id))
     # Drop pre-migration cached entries that don't have the new columns yet so
     # the sidebar URL / open-to / language flow through on the first read.
     if cached and "profile_slug" in cached and "open_to" in cached:
+        await _emit_profile_view_event(actor_id, member_id)
         return cached
     if cached:
         await cache_del(_profile_key(member_id))
@@ -65,6 +97,7 @@ async def get(member_id: int) -> dict:
     mongo_data = await get_profile(member_id)
     profile = {**mysql_data, "unstructured": mongo_data or {}}
     await cache_set(_profile_key(member_id), profile, PROFILE_TTL)
+    await _emit_profile_view_event(actor_id, member_id)
     return profile
 
 
@@ -118,14 +151,16 @@ async def delete(member_id: int) -> dict:
     return {"member_id": member_id, "deleted": True}
 
 
-async def search(keyword, skill, location, page) -> dict:
+async def search(keyword, skill, location, page, actor_id: int | None = None) -> dict:
     key = _search_key(f"{keyword}-{skill}-{location}-{page}")
     cached = await cache_get(key)
     if cached:
+        await _emit_search_appearance_events(actor_id, cached.get("members") or [], keyword, skill, location)
         return cached
     rows, total = await search_members(keyword, skill, location, page)
     result = {"members": rows, "total": total, "page": page, "page_size": PAGE_SIZE}
     await cache_set(key, result, SEARCH_TTL)
+    await _emit_search_appearance_events(actor_id, rows, keyword, skill, location)
     return result
 
 
