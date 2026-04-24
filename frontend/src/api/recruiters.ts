@@ -14,6 +14,7 @@ export async function createRecruiter(
       name: string;
       industry?: string;
       size?: string;
+      location?: string;
     };
     company_id?: number;
   },

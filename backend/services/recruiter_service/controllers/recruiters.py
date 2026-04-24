@@ -1,4 +1,6 @@
 from fastapi import HTTPException
+from pymysql.err import IntegrityError
+
 from models.recruiter import (
     find_company, create_company, update_company,
     recruiter_exists, create_recruiter, get_recruiter,
@@ -13,18 +15,43 @@ async def create(body: dict) -> dict:
         raise HTTPException(409, "Recruiter profile already exists")
 
     company_id = body.get("company_id")
-    if not company_id:
-        if not body.get("company"):
-            raise HTTPException(400, "Provide company_id or company object")
-        c = body["company"]
-        company_id = await create_company(c["name"], c.get("industry"), c.get("size"))
-    else:
-        if not await find_company(company_id):
-            raise HTTPException(404, "Company not found")
+    try:
+        if not company_id:
+            if not body.get("company"):
+                raise HTTPException(400, "Provide company_id or company object")
+            c = body["company"]
+            loc = (c.get("location") or "").strip() or None
+            if loc and len(loc) > 255:
+                loc = loc[:255]
+            company_id = await create_company(
+                c["name"],
+                (c.get("industry") or "").strip() or None,
+                (c.get("size") or "").strip() or None,
+                loc,
+            )
+        else:
+            if not await find_company(company_id):
+                raise HTTPException(404, "Company not found")
 
-    await create_recruiter(rid, company_id, body["name"], body["email"],
-                           body.get("phone"), body.get("role"), body.get("access_level"))
-    return await get_recruiter(rid)
+        await create_recruiter(
+            rid,
+            company_id,
+            body["name"],
+            body["email"],
+            body.get("phone"),
+            body.get("role"),
+            body.get("access_level"),
+        )
+    except IntegrityError as exc:
+        raise HTTPException(
+            409,
+            "Could not create recruiter profile (duplicate or invalid reference). Check company and account data.",
+        ) from exc
+
+    row = await get_recruiter(rid)
+    if not row:
+        raise HTTPException(500, "Recruiter profile was created but could not be loaded")
+    return row
 
 
 async def get(recruiter_id: int) -> dict:

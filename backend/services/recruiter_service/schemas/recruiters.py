@@ -6,6 +6,7 @@ class CompanyIn(BaseModel):
     name: str
     industry: Optional[str] = None
     size: Optional[str] = None
+    location: Optional[str] = None
 
 
 class CreateRecruiterRequest(BaseModel):

@@ -19,6 +19,10 @@ export interface AuthPayload {
   email?: string;
 }
 
+export interface EmailExistsPayload {
+  exists: boolean;
+}
+
 export async function login(payload: LoginPayload) {
   const response = await api.post<ApiResponse<AuthPayload>>("/auth/login", payload);
   return response.data.data;
@@ -36,5 +40,10 @@ export async function validateToken(token: string) {
 
 export async function logout() {
   const response = await api.post<ApiResponse<{ message: string }>>("/auth/logout", {});
+  return response.data.data;
+}
+
+export async function checkEmailExists(email: string) {
+  const response = await api.post<ApiResponse<EmailExistsPayload>>("/auth/email-exists", { email });
   return response.data.data;
 }

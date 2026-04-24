@@ -60,6 +60,19 @@ PROFILE_DETAIL_TABLES_SQL = [
       CONSTRAINT fk_skills_member FOREIGN KEY (member_id) REFERENCES members (member_id) ON DELETE CASCADE
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS member_skill_mappings (
+      mapping_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      member_id BIGINT UNSIGNED NOT NULL,
+      skill_name VARCHAR(255) NOT NULL,
+      source_type VARCHAR(20) NOT NULL,
+      source_order INT UNSIGNED NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      KEY idx_skill_map_member (member_id, source_type, source_order),
+      KEY idx_skill_map_skill (member_id, skill_name),
+      CONSTRAINT fk_skill_map_member FOREIGN KEY (member_id) REFERENCES members (member_id) ON DELETE CASCADE
+    )
+    """,
 ]
 
 # Column additions required by file-upload / profile-polish flows. Applied
@@ -67,6 +80,7 @@ PROFILE_DETAIL_TABLES_SQL = [
 # "ADD COLUMN IF NOT EXISTS".
 MEMBER_FILE_COLUMNS: list[tuple[str, str]] = [
     ("profile_photo_file_id", "VARCHAR(64)"),
+    ("cover_photo_file_id", "VARCHAR(64)"),
     ("resume_file_id", "VARCHAR(64)"),
     ("resume_file_name", "VARCHAR(255)"),
     ("resume_content_type", "VARCHAR(100)"),
@@ -74,9 +88,18 @@ MEMBER_FILE_COLUMNS: list[tuple[str, str]] = [
     ("open_to", "VARCHAR(32)"),
     ("profile_language", "VARCHAR(64)"),
     ("profile_slug", "VARCHAR(160)"),
+    ("cover_photo_url", "VARCHAR(512)"),
+    ("birthday", "DATE NULL"),
+    ("website", "VARCHAR(512)"),
 ]
 
 OPEN_TO_VALUES = {"job", "hiring", "services", "volunteer"}
+SKILL_CANONICAL_MAP = {
+    "power bi": "Microsoft Power BI",
+    "microsoft power bi": "Microsoft Power BI",
+    "css": "Cascading Style Sheets (CSS)",
+    "js": "JavaScript",
+}
 
 
 def build_profile_slug(first_name: str | None, last_name: str | None, member_id: int) -> str:
@@ -149,6 +172,7 @@ def _normalize_experience(entries: Any) -> list[dict]:
                 "location": _safe_str(_first(entry, "location")),
                 "location_type": _safe_str(_first(entry, "location_type", "locationType")),
                 "description": _safe_str(_first(entry, "description")),
+                "skill_ids": _normalize_skill_ids(entry),
             }
         )
     return normalized
@@ -181,6 +205,7 @@ def _normalize_education(entries: Any) -> list[dict]:
                 "end_year": end_year_val,
                 "grade": _safe_str(_first(entry, "grade")),
                 "activities": _safe_str(_first(entry, "activities", "activities_and_societies", "activitiesAndSocieties")),
+                "skill_ids": _normalize_skill_ids(entry),
             }
         )
     return normalized
@@ -190,11 +215,30 @@ def _normalize_skills(entries: Any) -> list[str]:
     if not isinstance(entries, list):
         return []
     normalized: list[str] = []
+    seen: set[str] = set()
     for entry in entries:
         skill = _safe_str(entry)
         if skill:
-            normalized.append(skill)
+            canonical = SKILL_CANONICAL_MAP.get(skill.lower(), skill)
+            key = canonical.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(canonical)
     return normalized
+
+
+def _normalize_skill_ids(entry: dict) -> list[str]:
+    raw = _first(entry, "skill_ids", "skillIds", "skills")
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        tokens = [piece.strip() for piece in raw.split(",")]
+    elif isinstance(raw, list):
+        tokens = [str(piece).strip() for piece in raw if piece is not None]
+    else:
+        return []
+    return _normalize_skills(tokens)
 
 
 def _serialize_json(value: Any) -> str | None:
@@ -228,6 +272,7 @@ def _experience_response_entry(entry: dict) -> dict:
         "location": entry.get("location"),
         "location_type": entry.get("location_type"),
         "description": entry.get("description"),
+        "skill_ids": entry.get("skill_ids") or [],
         "start": _experience_display_start(entry),
         "end": "Present" if entry.get("is_current") else _experience_display_end(entry),
     }
@@ -247,6 +292,7 @@ def _education_response_entry(entry: dict) -> dict:
         "year": end_year,
         "grade": entry.get("grade"),
         "activities": entry.get("activities"),
+        "skill_ids": entry.get("skill_ids") or [],
     }
 
 
@@ -285,6 +331,14 @@ async def member_exists(member_id: int) -> bool:
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute("SELECT member_id FROM members WHERE member_id = %s", (member_id,))
+            return await cur.fetchone() is not None
+
+
+async def user_exists(user_id: int) -> bool:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
             return await cur.fetchone() is not None
 
 
@@ -366,11 +420,41 @@ async def _replace_member_skills(cur, member_id: int, skills: list[str]) -> None
     )
 
 
+async def _replace_member_skill_mappings(
+    cur,
+    member_id: int,
+    experience_entries: list[dict],
+    education_entries: list[dict],
+) -> None:
+    await cur.execute("DELETE FROM member_skill_mappings WHERE member_id = %s", (member_id,))
+    values: list[tuple[int, str, str, int]] = []
+    for index, entry in enumerate(experience_entries):
+        for skill in entry.get("skill_ids") or []:
+            values.append((member_id, skill, "experience", index))
+    for index, entry in enumerate(education_entries):
+        for skill in entry.get("skill_ids") or []:
+            values.append((member_id, skill, "education", index))
+    if not values:
+        return
+    await cur.executemany(
+        """
+        INSERT INTO member_skill_mappings (member_id, skill_name, source_type, source_order)
+        VALUES (%s, %s, %s, %s)
+        """,
+        values,
+    )
+
+
 async def create_member(member_id: int, fields: dict) -> None:
     await ensure_member_profile_tables()
     experience_entries = _normalize_experience(fields.get("experience"))
     education_entries = _normalize_education(fields.get("education"))
-    skills = _normalize_skills(fields.get("skills"))
+    mapped_skills = [
+        skill
+        for entry in [*experience_entries, *education_entries]
+        for skill in (entry.get("skill_ids") or [])
+    ]
+    skills = _normalize_skills([*(fields.get("skills") or []), *mapped_skills])
 
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -378,8 +462,8 @@ async def create_member(member_id: int, fields: dict) -> None:
             await cur.execute(
                 """INSERT INTO members
                    (member_id, first_name, last_name, phone, location_city, location_state,
-                    location_country, headline, summary, experience, education, skills, profile_photo_url)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    location_country, headline, summary, birthday, website, experience, education, skills, profile_photo_url)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     member_id,
                     fields.get("first_name"),
@@ -390,6 +474,8 @@ async def create_member(member_id: int, fields: dict) -> None:
                     fields.get("location_country"),
                     fields.get("headline"),
                     fields.get("summary"),
+                    fields.get("birthday"),
+                    fields.get("website"),
                     _serialize_json(experience_entries),
                     _serialize_json(education_entries),
                     _serialize_json(skills),
@@ -399,6 +485,7 @@ async def create_member(member_id: int, fields: dict) -> None:
             await _replace_member_experience(cur, member_id, experience_entries)
             await _replace_member_education(cur, member_id, education_entries)
             await _replace_member_skills(cur, member_id, skills)
+            await _replace_member_skill_mappings(cur, member_id, experience_entries, education_entries)
 
 
 async def _get_member_experience(cur, member_id: int) -> list[dict]:
@@ -445,6 +532,19 @@ async def _get_member_skills(cur, member_id: int) -> list[str]:
     return [row["skill_name"] for row in rows]
 
 
+async def _get_member_skill_mappings(cur, member_id: int) -> list[dict]:
+    await cur.execute(
+        """
+        SELECT skill_name, source_type, source_order
+        FROM member_skill_mappings
+        WHERE member_id = %s
+        ORDER BY mapping_id ASC
+        """,
+        (member_id,),
+    )
+    return await cur.fetchall()
+
+
 async def get_member_by_id(member_id: int) -> dict | None:
     await ensure_member_profile_tables()
     pool = await get_pool()
@@ -473,10 +573,38 @@ async def get_member_by_id(member_id: int) -> dict | None:
             experience_entries = await _get_member_experience(cur, member_id)
             education_entries = await _get_member_education(cur, member_id)
             skill_entries = await _get_member_skills(cur, member_id)
+            mapping_rows = await _get_member_skill_mappings(cur, member_id)
 
             row["experience"] = experience_entries or legacy_experience_entries
             row["education"] = education_entries or legacy_education_entries
             row["skills"] = skill_entries or legacy_skill_entries
+            effective_experience = row["experience"] or []
+            effective_education = row["education"] or []
+            skill_map: dict[tuple[str, int], list[str]] = {}
+            for mapping in mapping_rows:
+                source_type = mapping.get("source_type")
+                source_order = int(mapping.get("source_order") or 0)
+                key = (source_type, source_order)
+                skill_map.setdefault(key, []).append(mapping.get("skill_name"))
+            for index, entry in enumerate(effective_experience):
+                entry["skill_ids"] = skill_map.get(("experience", index), entry.get("skill_ids") or [])
+            for index, entry in enumerate(effective_education):
+                entry["skill_ids"] = skill_map.get(("education", index), entry.get("skill_ids") or [])
+
+            skill_sources: dict[str, list[str]] = {}
+            for index, entry in enumerate(effective_experience):
+                label = entry.get("company") or "Experience"
+                for skill in entry.get("skill_ids") or []:
+                    skill_sources.setdefault(skill, [])
+                    if label not in skill_sources[skill]:
+                        skill_sources[skill].append(label)
+            for index, entry in enumerate(effective_education):
+                label = entry.get("school") or "Education"
+                for skill in entry.get("skill_ids") or []:
+                    skill_sources.setdefault(skill, [])
+                    if label not in skill_sources[skill]:
+                        skill_sources[skill].append(label)
+            row["skill_mappings"] = skill_sources
 
             if not row.get("profile_slug"):
                 slug = build_profile_slug(row.get("first_name"), row.get("last_name"), member_id)
@@ -495,6 +623,16 @@ async def update_member(member_id: int, fields: dict) -> None:
     experience_entries = _normalize_experience(fields.get("experience")) if "experience" in fields else None
     education_entries = _normalize_education(fields.get("education")) if "education" in fields else None
     skills = _normalize_skills(fields.get("skills")) if "skills" in fields else None
+    if experience_entries is not None or education_entries is not None:
+        exp_for_map = experience_entries or []
+        edu_for_map = education_entries or []
+        mapped_skills = [skill for entry in [*exp_for_map, *edu_for_map] for skill in (entry.get("skill_ids") or [])]
+        if skills is None:
+            skills = _normalize_skills(mapped_skills)
+            fields = {**fields, "skills": skills}
+        else:
+            skills = _normalize_skills([*skills, *mapped_skills])
+            fields = {**fields, "skills": skills}
 
     if "open_to" in fields:
         value = fields["open_to"]
@@ -511,6 +649,8 @@ async def update_member(member_id: int, fields: dict) -> None:
         "location_country",
         "headline",
         "summary",
+        "birthday",
+        "website",
         "experience",
         "education",
         "skills",
@@ -519,7 +659,15 @@ async def update_member(member_id: int, fields: dict) -> None:
         "profile_language",
         "profile_slug",
     }
-    nullable_clearable = {"open_to"}
+    nullable_clearable = {
+        "open_to",
+        "phone",
+        "location_city",
+        "location_state",
+        "location_country",
+        "birthday",
+        "website",
+    }
     clauses: list[str] = []
     values: list[Any] = []
     for key, value in fields.items():
@@ -554,6 +702,45 @@ async def update_member(member_id: int, fields: dict) -> None:
                 await _replace_member_education(cur, member_id, education_entries)
             if skills is not None:
                 await _replace_member_skills(cur, member_id, skills)
+            if experience_entries is not None or education_entries is not None:
+                await cur.execute(
+                    """
+                    SELECT title, employment_type, company, is_current, start_month, start_year,
+                           end_month, end_year, location, location_type, description
+                    FROM experience
+                    WHERE member_id = %s
+                    ORDER BY sort_order ASC, experience_id ASC
+                    """,
+                    (member_id,),
+                )
+                exp_rows = [_experience_response_entry(row) for row in await cur.fetchall()]
+                await cur.execute(
+                    """
+                    SELECT school, degree, field_of_study, start_month, start_year,
+                           end_month, end_year, grade, activities
+                    FROM education
+                    WHERE member_id = %s
+                    ORDER BY sort_order ASC, education_id ASC
+                    """,
+                    (member_id,),
+                )
+                edu_rows = [_education_response_entry(row) for row in await cur.fetchall()]
+                existing_mappings = await _get_member_skill_mappings(cur, member_id)
+                existing_skill_map: dict[tuple[str, int], list[str]] = {}
+                for mapping in existing_mappings:
+                    key = (mapping.get("source_type"), int(mapping.get("source_order") or 0))
+                    existing_skill_map.setdefault(key, []).append(mapping.get("skill_name"))
+                for idx, entry in enumerate(exp_rows):
+                    entry["skill_ids"] = existing_skill_map.get(("experience", idx), [])
+                for idx, entry in enumerate(edu_rows):
+                    entry["skill_ids"] = existing_skill_map.get(("education", idx), [])
+                if experience_entries is not None:
+                    for idx, entry in enumerate(exp_rows):
+                        entry["skill_ids"] = (experience_entries[idx].get("skill_ids") if idx < len(experience_entries) else []) or []
+                if education_entries is not None:
+                    for idx, entry in enumerate(edu_rows):
+                        entry["skill_ids"] = (education_entries[idx].get("skill_ids") if idx < len(education_entries) else []) or []
+                await _replace_member_skill_mappings(cur, member_id, exp_rows, edu_rows)
 
 
 async def soft_delete_member(member_id: int) -> None:
@@ -631,6 +818,21 @@ async def get_member_photo_file_id(member_id: int) -> str | None:
             return str(fid) if fid else None
 
 
+async def get_member_cover_file_id(member_id: int) -> str | None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT cover_photo_file_id FROM members WHERE member_id = %s AND is_deleted = 0",
+                (member_id,),
+            )
+            row = await cur.fetchone()
+            if not row:
+                return None
+            fid = (row or {}).get("cover_photo_file_id")
+            return str(fid) if fid else None
+
+
 async def set_photo_file(member_id: int, file_id: str, url: str) -> None:
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -643,14 +845,38 @@ async def set_photo_file(member_id: int, file_id: str, url: str) -> None:
             )
 
 
+async def set_cover_file(member_id: int, file_id: str, url: str) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """UPDATE members
+                   SET cover_photo_file_id = %s, cover_photo_url = %s
+                   WHERE member_id = %s AND is_deleted = 0""",
+                (file_id, url, member_id),
+            )
+
+
+async def clear_cover_file(member_id: int) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """UPDATE members
+                   SET cover_photo_file_id = NULL, cover_photo_url = NULL
+                   WHERE member_id = %s AND is_deleted = 0""",
+                (member_id,),
+            )
+
+
 async def search_members(keyword, skill, location, page, page_size=PAGE_SIZE) -> tuple[list, int]:
     conditions = ["m.is_deleted = 0"]
     values = []
 
     if keyword:
-        conditions.append("(m.headline LIKE %s OR m.summary LIKE %s OR m.first_name LIKE %s OR m.last_name LIKE %s)")
+        conditions.append("(m.headline LIKE %s OR m.summary LIKE %s OR m.first_name LIKE %s OR m.last_name LIKE %s OR JSON_SEARCH(m.skills, 'one', %s) IS NOT NULL)")
         like = f"%{keyword}%"
-        values += [like, like, like, like]
+        values += [like, like, like, like, keyword]
     if skill:
         conditions.append('JSON_SEARCH(m.skills, "one", %s) IS NOT NULL')
         values.append(skill)
@@ -668,7 +894,7 @@ async def search_members(keyword, skill, location, page, page_size=PAGE_SIZE) ->
             await cur.execute(
                 f"""SELECT m.member_id, m.first_name, m.last_name, m.headline,
                            m.location_city, m.location_state, m.location_country,
-                           m.skills, m.connections_count
+                           m.skills, m.connections_count, m.profile_photo_url
                     FROM members m {where}
                     ORDER BY m.member_id DESC LIMIT %s OFFSET %s""",
                 [*values, page_size, offset],

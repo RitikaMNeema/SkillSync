@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from schemas.auth import RegisterRequest, LoginRequest, ValidateRequest
+from schemas.auth import RegisterRequest, LoginRequest, ValidateRequest, EmailCheckRequest
 import controllers.auth as ctrl
 
 router = APIRouter()
@@ -30,4 +30,10 @@ async def logout(request: Request):
 @router.post("/validate")
 async def validate(body: ValidateRequest):
     data = await ctrl.validate(body.token)
+    return {"success": True, "data": data}
+
+
+@router.post("/email-exists")
+async def email_exists(body: EmailCheckRequest):
+    data = await ctrl.email_exists(body.email)
     return {"success": True, "data": data}

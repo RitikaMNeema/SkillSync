@@ -16,6 +16,7 @@ export interface ExperienceEntry {
   location?: string | null;
   location_type?: string | null;
   description?: string | null;
+  skill_ids?: string[] | null;
 }
 
 export interface EducationEntry {
@@ -30,6 +31,13 @@ export interface EducationEntry {
   year?: number | string | null;
   grade?: string | null;
   activities?: string | null;
+  skill_ids?: string[] | null;
+}
+
+export interface LanguageEntry {
+  name: string;
+  proficiency: string;
+  score?: string | null;
 }
 
 export interface MemberProfile {
@@ -37,6 +45,9 @@ export interface MemberProfile {
   first_name: string;
   last_name: string;
   phone: string | null;
+  email?: string | null;
+  birthday?: string | null;
+  website?: string | null;
   location_city: string | null;
   location_state: string | null;
   location_country: string | null;
@@ -47,6 +58,8 @@ export interface MemberProfile {
   skills: string[] | null;
   profile_photo_url: string | null;
   profile_photo_file_id?: string | null;
+  cover_photo_url?: string | null;
+  cover_photo_file_id?: string | null;
   resume_url?: string | null;
   resume_file_id?: string | null;
   resume_file_name?: string | null;
@@ -58,10 +71,14 @@ export interface MemberProfile {
   connections_count?: number;
   profile_views?: number;
   is_deleted?: number;
+  skill_mappings?: Record<string, string[]>;
   unstructured?: {
     member_id?: number;
     about?: string;
     freeform_experience?: JsonValue;
+    languages?: LanguageEntry[];
+    /** Display / job-recommendation follow for top skills (by exact skill name). */
+    followed_skills?: string[];
   };
 }
 
@@ -70,11 +87,14 @@ export interface MemberSearchItem {
   first_name: string;
   last_name: string;
   headline: string | null;
+  profile_photo_url?: string | null;
   location_city: string | null;
   location_state: string | null;
   location_country: string | null;
   skills: string[] | null;
   connections_count: number;
+  connection_degree?: "1st" | "2nd" | "3rd+" | null;
+  is_verified?: boolean | null;
 }
 
 export interface MemberSearchResponse {
