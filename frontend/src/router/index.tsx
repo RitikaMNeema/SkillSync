@@ -22,6 +22,7 @@ import { AIHiringPage } from "../pages/recruiter/AIHiringPage";
 import { ApplicantReviewPage } from "../pages/recruiter/ApplicantReviewPage";
 import { JobManagementPage } from "../pages/recruiter/JobManagementPage";
 import { RecruiterDashboardPage } from "../pages/recruiter/RecruiterDashboardPage";
+import { RecruiterProfilePage } from "../pages/recruiter/RecruiterProfilePage";
 import type { UserRole } from "../types/common";
 import { getHomePath } from "../utils/navigation";
 
@@ -60,9 +61,10 @@ export const router = createBrowserRouter([
         children: [
           { path: "/connections", element: <ConnectionsPage /> },
           { path: "/messages", element: <MessagesPage /> },
+          { path: "/search", element: <SearchResultsPage /> },
           { path: "/profile/:member_id", element: <ProfilePage /> },
-          { path: "/profile/:member_id/details/:section", element: <ProfileSectionDetailsPage /> },
-          { path: "/in/:profile_slug", element: <PublicProfileSlugPage /> }
+          { path: "/in/:profile_slug", element: <PublicProfileSlugPage /> },
+          { path: "/recruiters/:recruiter_id", element: <RecruiterProfilePage /> }
         ]
       },
       {
@@ -73,8 +75,8 @@ export const router = createBrowserRouter([
         ),
         children: [
           { path: "/feed", element: <FeedPage /> },
+          { path: "/profile/:member_id/details/:section", element: <ProfileSectionDetailsPage /> },
           { path: "/jobs", element: <JobSearchPage /> },
-          { path: "/search", element: <SearchResultsPage /> },
           { path: "/jobs/:job_id", element: <JobDetailPage /> },
           { path: "/saved-jobs", element: <SavedJobsPage /> },
           { path: "/applications", element: <ApplicationsPage /> },

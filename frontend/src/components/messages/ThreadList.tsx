@@ -10,7 +10,8 @@ export function ThreadList({
   threadLabels,
   unreadCountByThread,
   starredThreadIds,
-  previewByThread
+  previewByThread,
+  onStartNewMessage
 }: {
   threads: Thread[];
   activeThreadId: string | null;
@@ -19,11 +20,20 @@ export function ThreadList({
   unreadCountByThread?: Record<string, number>;
   starredThreadIds?: Record<string, boolean>;
   previewByThread?: Record<string, string>;
+  onStartNewMessage?: () => void;
 }) {
   if (!threads.length) {
     return (
-      <div className="rounded-card border border-dashed p-4 text-sm text-text-secondary">
-        No conversations yet. Click the pencil icon to start a new message.
+      <div className="flex min-h-[420px] flex-col items-center justify-center px-6 text-center">
+        <img
+          src="https://www.vecteezy.com/vector-art/59454813-convenient-cash-payment-delivery"
+          alt="No messages illustration"
+          className="h-24 w-24 rounded-full bg-[#f3f2ef] object-cover p-2"
+        />
+        <p className="mt-5 text-[28px] font-normal leading-tight text-[#1f1f1f]">No messages yet</p>
+        <p className="mt-3 max-w-[260px] text-[16px] leading-8 text-[#4b5563]">
+          Reach out and start a conversation to advance your career
+        </p>
       </div>
     );
   }

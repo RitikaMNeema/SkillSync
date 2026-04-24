@@ -43,10 +43,6 @@ export function Navbar() {
 
   function handleSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (role === "recruiter") {
-      navigate("/recruiter/jobs");
-      return;
-    }
     const keyword = query.trim();
     navigate(keyword ? `/search?q=${encodeURIComponent(keyword)}` : "/search");
   }

@@ -1,6 +1,7 @@
 import { MoreHorizontal, Pencil, Search, Star, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   getThreadPreferences,
   getThreadsByUser,
@@ -40,9 +41,13 @@ export function MessagesPage() {
     photoUrl?: string | null;
     summary?: string | null;
     locationLine?: string | null;
+    profileSlug?: string | null;
+    recruiterId?: number | null;
   };
 
   const userId = authStore((state) => state.userId);
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeThread, setActiveThread] = useState<Thread | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -68,6 +73,7 @@ export function MessagesPage() {
   const [forceUnreadThreadIds, setForceUnreadThreadIds] = useState<Record<string, boolean>>({});
   const [hiddenThreadIds, setHiddenThreadIds] = useState<Record<string, boolean>>({});
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const handledDeepLinkRef = useRef<string | null>(null);
 
   const dedupeTargets = useCallback((items: SearchTarget[]) => {
     const seen = new Set<string>();
@@ -128,7 +134,9 @@ export function MessagesPage() {
         subtitle: member.headline?.trim() || "Member",
         photoUrl: member.profile_photo_url ?? null,
         summary: member.summary?.trim() || null,
-        locationLine: locationLine || null
+        locationLine: locationLine || null,
+        profileSlug: member.profile_slug ?? null,
+        recruiterId: null
       };
     } catch {
       // keep trying recruiter endpoint
@@ -140,7 +148,9 @@ export function MessagesPage() {
         subtitle: recruiter.role?.trim() || recruiter.company_name || "Recruiter",
         photoUrl: null,
         summary: null,
-        locationLine: null
+        locationLine: null,
+        profileSlug: null,
+        recruiterId: recruiter.recruiter_id
       };
     } catch {
       return { name: `User ${id}`, subtitle: "Conversation", photoUrl: null };
@@ -199,10 +209,21 @@ export function MessagesPage() {
     const unreadCount = displayUnreadCountByThread[thread.thread_id] ?? 0;
     const archived = Boolean(archivedThreadIds[thread.thread_id]);
     const muted = Boolean(mutedThreadIds[thread.thread_id]);
+
+    // Unread should surface every unread thread, including archived ones.
+    if (activeFilter === "unread") {
+      if (unreadCount === 0) return false;
+      return !q || label.includes(q);
+    }
+
+    // Muted should surface every muted thread, including archived ones.
+    if (activeFilter === "muted") {
+      if (!muted) return false;
+      return !q || label.includes(q);
+    }
+
     if (activeFilter === "archived" && !archived) return false;
     if (activeFilter !== "archived" && archived) return false;
-    if (activeFilter === "unread" && unreadCount === 0) return false;
-    if (activeFilter === "muted" && !muted) return false;
     return !q || label.includes(q);
   });
 
@@ -285,6 +306,28 @@ export function MessagesPage() {
       }
     );
   }, [loadThreads, userId]);
+
+  useEffect(() => {
+    const targetUserIdRaw = searchParams.get("user");
+    if (!targetUserIdRaw || !userId) return;
+    if (handledDeepLinkRef.current === targetUserIdRaw) return;
+    const targetUserId = Number(targetUserIdRaw);
+    if (!Number.isFinite(targetUserId) || targetUserId <= 0 || targetUserId === userId) return;
+
+    const existingThreadId = threadIdByUserId[targetUserId];
+    if (existingThreadId) {
+      const existing = threads.find((thread) => thread.thread_id === existingThreadId);
+      if (existing) {
+        setActiveThread(existing);
+        setShowComposer(false);
+        handledDeepLinkRef.current = targetUserIdRaw;
+        return;
+      }
+    }
+
+    handledDeepLinkRef.current = targetUserIdRaw;
+    void handleCreateThread(targetUserId);
+  }, [handleCreateThread, searchParams, threadIdByUserId, threads, userId]);
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -507,6 +550,19 @@ export function MessagesPage() {
     }
   }
 
+  function handleOpenActiveProfile() {
+    if (!activeParticipantProfile) return;
+    if (activeParticipantProfile.profileSlug) {
+      navigate(`/in/${activeParticipantProfile.profileSlug}`);
+      return;
+    }
+    if (activeParticipantProfile.recruiterId) {
+      navigate(`/recruiters/${activeParticipantProfile.recruiterId}`);
+      return;
+    }
+    toast("Profile page is not available for this user yet.");
+  }
+
   if (loading) {
     return (
       <div className="grid min-h-[74vh] gap-0 overflow-hidden rounded-2xl border border-[#d9dee3] bg-white shadow-card md:grid-cols-[390px_minmax(0,1fr)]">
@@ -629,6 +685,12 @@ export function MessagesPage() {
               unreadCountByThread={displayUnreadCountByThread}
               starredThreadIds={starredThreadIds}
               previewByThread={previewByThread}
+              onStartNewMessage={() => {
+                setShowComposer(true);
+                setSearchQuery("");
+                setSearchResults([]);
+                setHasSearched(false);
+              }}
             />
           </div>
         </section>
@@ -637,7 +699,15 @@ export function MessagesPage() {
           <div className="border-b px-4 py-3">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-lg font-semibold text-[#1f1f1f]">{activeThread ? activeThreadLabel : "New message"}</p>
+                <p className="truncate text-lg font-semibold text-[#1f1f1f]">
+                  {activeThread ? (
+                    <button type="button" onClick={handleOpenActiveProfile} className="truncate text-left hover:underline">
+                      {activeThreadLabel}
+                    </button>
+                  ) : (
+                    "New message"
+                  )}
+                </p>
                 <p className="mt-0.5 truncate text-sm text-text-secondary">
                   {activeThread ? activeParticipantProfile?.subtitle || websocket.reason : "Type a name or multiple names"}
                 </p>
@@ -723,7 +793,9 @@ export function MessagesPage() {
                       <Avatar alt={activeParticipantProfile.name} name={activeAvatarName} src={activeParticipantProfile.photoUrl} size="2xl" />
                       <div className="min-w-0 flex-1 pt-1">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xl font-semibold text-[#1f1f1f]">{activeParticipantProfile.name}</span>
+                          <button type="button" onClick={handleOpenActiveProfile} className="text-xl font-semibold text-[#1f1f1f] hover:underline">
+                            {activeParticipantProfile.name}
+                          </button>
                           <LinkedInMark />
                         </div>
                         <p className="mt-2 text-sm leading-snug text-[#1f1f1f]">{activeParticipantProfile.subtitle}</p>
