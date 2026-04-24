@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS members (
   location_city     VARCHAR(100),
   location_state    VARCHAR(100),
   location_country  VARCHAR(100),
-  headline          VARCHAR(255),
+  headline          VARCHAR(220),
   summary           TEXT,
   experience        JSON,
   education         JSON,
@@ -96,6 +96,19 @@ CREATE TABLE IF NOT EXISTS skills (
 
 CREATE INDEX idx_skills_member ON skills (member_id, sort_order);
 CREATE INDEX idx_skills_name ON skills (skill_name);
+
+CREATE TABLE IF NOT EXISTS member_skill_mappings (
+  mapping_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  member_id BIGINT UNSIGNED NOT NULL,
+  skill_name VARCHAR(255) NOT NULL,
+  source_type VARCHAR(20) NOT NULL,
+  source_order INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_skill_map_member FOREIGN KEY (member_id) REFERENCES members (member_id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_skill_map_member ON member_skill_mappings (member_id, source_type, source_order);
+CREATE INDEX idx_skill_map_skill ON member_skill_mappings (member_id, skill_name);
 
 -- ── recruiters ───────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS recruiters (
@@ -205,10 +218,14 @@ CREATE TABLE IF NOT EXISTS application_notes (
 -- ── members profile extensions (additive only; base members DDL unchanged above) ──
 ALTER TABLE members
   ADD COLUMN profile_photo_file_id VARCHAR(64) NULL AFTER profile_photo_url,
+  ADD COLUMN cover_photo_file_id VARCHAR(64) NULL AFTER profile_photo_file_id,
+  ADD COLUMN cover_photo_url VARCHAR(512) NULL AFTER cover_photo_file_id,
   ADD COLUMN resume_file_id VARCHAR(64) NULL AFTER resume_url,
   ADD COLUMN resume_file_name VARCHAR(255) NULL AFTER resume_file_id,
   ADD COLUMN resume_content_type VARCHAR(100) NULL AFTER resume_file_name,
   ADD COLUMN resume_uploaded_at TIMESTAMP NULL DEFAULT NULL AFTER resume_content_type,
+  ADD COLUMN birthday DATE NULL AFTER summary,
+  ADD COLUMN website VARCHAR(512) NULL AFTER birthday,
   ADD COLUMN open_to VARCHAR(32) NULL AFTER resume_uploaded_at,
   ADD COLUMN profile_language VARCHAR(64) NULL AFTER open_to,
   ADD COLUMN profile_slug VARCHAR(160) NULL AFTER profile_language;

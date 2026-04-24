@@ -3,6 +3,7 @@ import logging
 from fastapi import HTTPException
 from models.member_mysql import (
     member_exists,
+    user_exists,
     create_member,
     get_member_by_id,
     update_member,
@@ -15,6 +16,9 @@ from models.member_mysql import (
     clear_resume_file,
     get_member_photo_file_id,
     set_photo_file,
+    get_member_cover_file_id,
+    set_cover_file,
+    clear_cover_file,
 )
 from models.profile_mongo import create_profile, get_profile, update_profile
 from models import files_mongo
@@ -34,12 +38,17 @@ def _search_key(params):
     return f"profile:search:{params}"
 
 
-async def create(body: dict) -> dict:
-    if await member_exists(body["member_id"]):
+async def create(body: dict, actor_id: int) -> dict:
+    member_id = body["member_id"]
+    if member_id != actor_id:
+        raise HTTPException(403, "Cannot create profile for another member")
+    if not await user_exists(member_id):
+        raise HTTPException(404, "User account not found for this member_id")
+    if await member_exists(member_id):
         raise HTTPException(409, "Member profile already exists")
-    await create_member(body["member_id"], body)
-    await create_profile(body["member_id"], body)
-    return {"member_id": body["member_id"]}
+    await create_member(member_id, body)
+    await create_profile(member_id, body)
+    return {"member_id": member_id}
 
 
 async def get(member_id: int) -> dict:
@@ -64,18 +73,31 @@ async def update(body: dict, actor_id) -> dict:
     if not await get_member_by_id(member_id):
         raise HTTPException(404, "Member not found")
 
+    fields_set: set = body.pop("__pydantic_fields_set__", set())
+    if not isinstance(fields_set, set):
+        fields_set = set(fields_set) if fields_set is not None else set()
+
     # Keep `open_to` explicit even when null so clearing works.
     always_pass_through = {"open_to"}
     mysql_fields = {
         k: v
         for k, v in body.items()
-        if k not in ("member_id", "about", "freeform_experience")
+        if k
+        not in (
+            "member_id",
+            "about",
+            "freeform_experience",
+            "followed_skills",
+        )
         and (v is not None or k in always_pass_through)
     }
     if mysql_fields:
         await update_member(member_id, mysql_fields)
 
-    mongo_update = {k: body[k] for k in ("about", "freeform_experience") if body.get(k) is not None}
+    mongo_update = {k: body[k] for k in ("about", "freeform_experience", "languages") if body.get(k) is not None}
+    if "followed_skills" in fields_set:
+        fs = body.get("followed_skills")
+        mongo_update["followed_skills"] = [] if fs is None else fs
     if mongo_update:
         await update_profile(member_id, mongo_update)
 
@@ -175,6 +197,59 @@ async def stream_photo_file(member_id: int):
         return await files_mongo.stream_photo(file_id)
     except FileNotFoundError:
         raise HTTPException(404, "Profile photo missing in storage")
+
+
+async def upload_cover_file(
+    member_id: int,
+    actor_id: int,
+    filename: str,
+    content_type: str,
+    data: bytes,
+) -> dict:
+    if member_id != actor_id:
+        raise HTTPException(403, "Cannot upload cover for another member")
+    if content_type not in ALLOWED_PHOTO_TYPES:
+        raise HTTPException(400, "Only JPEG, PNG, or WEBP images are allowed")
+    if len(data) == 0:
+        raise HTTPException(400, "Empty file")
+    if len(data) > MAX_PHOTO_BYTES:
+        raise HTTPException(413, "Image exceeds 5MB limit")
+    if not await get_member_by_id(member_id):
+        raise HTTPException(404, "Member not found")
+
+    existing = await get_member_cover_file_id(member_id)
+    new_file_id = await files_mongo.upload_photo(member_id, filename, content_type, data)
+    url = f"/api/members/cover/{member_id}?v={new_file_id}"
+    await set_cover_file(member_id, new_file_id, url)
+    if existing and existing != new_file_id:
+        await files_mongo.delete_photo(existing)
+    await cache_del(_profile_key(member_id))
+    return {
+        "member_id": member_id,
+        "cover_photo_url": url,
+        "cover_photo_file_id": new_file_id,
+    }
+
+
+async def stream_cover_file(member_id: int):
+    file_id = await get_member_cover_file_id(member_id)
+    if not file_id:
+        raise HTTPException(404, "No cover photo")
+    try:
+        return await files_mongo.stream_photo(file_id)
+    except FileNotFoundError:
+        raise HTTPException(404, "Cover photo missing in storage")
+
+
+async def delete_cover_file(member_id: int, actor_id: int) -> dict:
+    if member_id != actor_id:
+        raise HTTPException(403, "Forbidden")
+    file_id = await get_member_cover_file_id(member_id)
+    if file_id:
+        await files_mongo.delete_photo(file_id)
+    await clear_cover_file(member_id)
+    await cache_del(_profile_key(member_id))
+    return {"member_id": member_id, "deleted": True}
 
 
 async def upload_resume_file(

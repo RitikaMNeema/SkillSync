@@ -1,4 +1,5 @@
-from pydantic import BaseModel
+from datetime import date
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Any
 
 
@@ -10,14 +11,28 @@ class CreateMemberRequest(BaseModel):
     location_city: Optional[str] = None
     location_state: Optional[str] = None
     location_country: Optional[str] = None
-    headline: Optional[str] = None
+    headline: str = Field(..., min_length=1, max_length=220)
     summary: Optional[str] = None
+    birthday: Optional[date] = None
+    website: Optional[str] = Field(default=None, max_length=512)
+    languages: Optional[Any] = None
     experience: Optional[Any] = None
     education: Optional[Any] = None
     skills: Optional[Any] = None
     profile_photo_url: Optional[str] = None
     about: Optional[str] = None
     freeform_experience: Optional[Any] = None
+    followed_skills: Optional[Any] = None
+
+    @field_validator("headline")
+    @classmethod
+    def validate_headline(cls, value: str) -> str:
+        headline = value.strip()
+        if not headline:
+            raise ValueError("Headline is required")
+        if len(headline) > 220:
+            raise ValueError("Headline must be 220 characters or fewer")
+        return headline
 
 
 class GetMemberRequest(BaseModel):
@@ -34,17 +49,33 @@ class UpdateMemberRequest(BaseModel):
     location_city: Optional[str] = None
     location_state: Optional[str] = None
     location_country: Optional[str] = None
-    headline: Optional[str] = None
+    headline: Optional[str] = Field(default=None, max_length=220)
     summary: Optional[str] = None
+    birthday: Optional[date] = None
+    website: Optional[str] = Field(default=None, max_length=512)
+    languages: Optional[Any] = None
     experience: Optional[Any] = None
     education: Optional[Any] = None
     skills: Optional[Any] = None
     profile_photo_url: Optional[str] = None
     about: Optional[str] = None
     freeform_experience: Optional[Any] = None
+    followed_skills: Optional[Any] = None
     open_to: Optional[str] = None
     profile_language: Optional[str] = None
     profile_slug: Optional[str] = None
+
+    @field_validator("headline")
+    @classmethod
+    def validate_optional_headline(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        headline = value.strip()
+        if not headline:
+            raise ValueError("Headline is required")
+        if len(headline) > 220:
+            raise ValueError("Headline must be 220 characters or fewer")
+        return headline
 
 
 class DeleteMemberRequest(BaseModel):

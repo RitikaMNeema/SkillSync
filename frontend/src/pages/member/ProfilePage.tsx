@@ -1,37 +1,71 @@
-import { BriefcaseBusiness, GraduationCap, Pencil, Sparkles } from "lucide-react";
+import { BriefcaseBusiness, GraduationCap, Pencil, Plus, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import toast from "react-hot-toast";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { getMember, updateMember } from "../../api/members";
 import { RightSidebar } from "../../components/layout/Sidebar";
 import {
   AddEducationModal,
   AddExperienceModal,
-  AddSkillModal,
-  EditAboutModal
+  AddLanguageModal,
+  SkillFormModal,
+  SkillsListModal,
+  ContactInfoModal,
+  EditAboutModal,
+  EditContactInfoModal,
+  EditHeadlineModal,
+  type ContactInfoValues,
+  type SkillFormSavePayload
 } from "../../components/profile/ProfileEditModals";
 import { AddProfileSectionModal, type ProfileSectionKey } from "../../components/profile/AddProfileSectionModal";
 import { ProfileCompletionCard } from "../../components/profile/ProfileCompletionCard";
-import { ProfileLanguageCard } from "../../components/profile/ProfileLanguageCard";
 import { Alert } from "../../components/ui/Alert";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
-import type { EducationEntry, ExperienceEntry, MemberProfile } from "../../types/member";
+import type { EducationEntry, ExperienceEntry, LanguageEntry, MemberProfile } from "../../types/member";
 import { ExperienceCard } from "../../components/profile/ExperienceCard";
 import { ProfileHeader } from "../../components/profile/ProfileHeader";
 import { ResumeUpload } from "../../components/profile/ResumeUpload";
-import { SkillTag } from "../../components/profile/SkillTag";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+
+type ProfileActiveModal =
+  | { type: "experience" | "education" | "about" | "headline" | "contact_info" | "contact_edit" | "language"; index?: number }
+  | { type: "skills" }
+  | { type: "edit_skill"; skillName: string };
+
+function hasSkillInIds(ids: string[] | null | undefined, skill: string) {
+  return (ids ?? []).some((s) => s.toLowerCase() === skill.toLowerCase());
+}
+
+function experienceIndicesForSkill(experience: ExperienceEntry[] | null | undefined, skill: string): number[] {
+  if (!experience?.length) return [];
+  return experience.map((e, i) => (hasSkillInIds(e.skill_ids, skill) ? i : -1)).filter((i) => i >= 0);
+}
+
+function educationIndicesForSkill(education: EducationEntry[] | null | undefined, skill: string): number[] {
+  if (!education?.length) return [];
+  return education.map((e, i) => (hasSkillInIds(e.skill_ids, skill) ? i : -1)).filter((i) => i >= 0);
+}
+
+/** Add or remove `skill` from a `skill_ids` list; `skill` is the canonical profile string. */
+function applySkillToIds(ids: string[] | null | undefined, skill: string, selected: boolean): string[] {
+  const base = (ids ?? []).filter((s) => s.toLowerCase() !== skill.toLowerCase());
+  if (selected) return [...base, skill];
+  return base;
+}
 
 export function ProfilePage() {
   const { member_id } = useParams();
+  const navigate = useNavigate();
   const currentUserId = authStore((state) => state.userId);
   const [member, setMember] = useState<MemberProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [activeModal, setActiveModal] = useState<{ type: "experience" | "education" | "skills" | "about"; index?: number } | null>(null);
+  const [activeModal, setActiveModal] = useState<ProfileActiveModal | null>(null);
+  const [skillsListModalOpen, setSkillsListModalOpen] = useState(false);
+  const [showAllLanguages, setShowAllLanguages] = useState(false);
   const [addSectionOpen, setAddSectionOpen] = useState(false);
   const [dismissedCards, setDismissedCards] = useState({
     experience: false,
@@ -43,7 +77,6 @@ export function ProfilePage() {
   const educationRef = useRef<HTMLDivElement | null>(null);
   const skillsRef = useRef<HTMLDivElement | null>(null);
   const resumeRef = useRef<HTMLDivElement | null>(null);
-  const languageRef = useRef<HTMLDivElement | null>(null);
 
   async function loadMemberProfile() {
     if (!member_id) return;
@@ -63,13 +96,13 @@ export function ProfilePage() {
     void loadMemberProfile();
   }, [member_id]);
 
-  async function saveExperience(experience: ExperienceEntry) {
+  async function saveExperience(experience: ExperienceEntry, editIndex?: number) {
     if (!member) return;
     const loadingToast = toast.loading("Saving experience...");
     try {
       const currentItems = [...(member.experience ?? [])];
-      if (activeModal?.type === "experience" && activeModal.index !== undefined) {
-        currentItems.splice(activeModal.index, 1, experience);
+      if (editIndex !== undefined && editIndex >= 0) {
+        currentItems.splice(editIndex, 1, experience);
       } else {
         currentItems.unshift(experience);
       }
@@ -79,19 +112,19 @@ export function ProfilePage() {
       });
       await loadMemberProfile();
       setActiveModal(null);
-      toast.success(activeModal?.index !== undefined ? "Experience updated" : "Experience added", { id: loadingToast });
+      toast.success(editIndex !== undefined ? "Experience updated" : "Experience added", { id: loadingToast });
     } catch {
       toast.error("Could not save experience", { id: loadingToast });
     }
   }
 
-  async function saveEducation(education: EducationEntry) {
+  async function saveEducation(education: EducationEntry, editIndex?: number) {
     if (!member) return;
     const loadingToast = toast.loading("Saving education...");
     try {
       const currentItems = [...(member.education ?? [])];
-      if (activeModal?.type === "education" && activeModal.index !== undefined) {
-        currentItems.splice(activeModal.index, 1, education);
+      if (editIndex !== undefined && editIndex >= 0) {
+        currentItems.splice(editIndex, 1, education);
       } else {
         currentItems.unshift(education);
       }
@@ -101,7 +134,7 @@ export function ProfilePage() {
       });
       await loadMemberProfile();
       setActiveModal(null);
-      toast.success(activeModal?.index !== undefined ? "Education updated" : "Education added", { id: loadingToast });
+      toast.success(editIndex !== undefined ? "Education updated" : "Education added", { id: loadingToast });
     } catch {
       toast.error("Could not save education", { id: loadingToast });
     }
@@ -124,14 +157,66 @@ export function ProfilePage() {
     }
   }
 
-  async function saveLanguage(language: string) {
+  async function saveLanguage(languageEntry: LanguageEntry, editIndex?: number) {
     if (!member) return;
+    const existing = [...(member.unstructured?.languages ?? [])];
+    let nextLanguages: LanguageEntry[];
+    if (editIndex !== undefined && editIndex >= 0 && editIndex < existing.length) {
+      nextLanguages = existing.map((item, i) => (i === editIndex ? languageEntry : item));
+    } else {
+      const deduped = existing.filter((item) => item.name.toLowerCase() !== languageEntry.name.toLowerCase());
+      nextLanguages = [languageEntry, ...deduped];
+    }
+    const loadingToast = toast.loading("Saving language...");
     try {
-      await updateMember({ member_id: member.member_id, profile_language: language });
-      setMember({ ...member, profile_language: language });
-      toast.success("Profile language updated");
+      await updateMember({ member_id: member.member_id, languages: nextLanguages });
+      await loadMemberProfile();
+      setActiveModal(null);
+      toast.success(editIndex !== undefined ? "Language updated" : "Language added", { id: loadingToast });
     } catch (err) {
-      toast.error(getApiErrorMessage(err) || "Could not update language");
+      toast.error(getApiErrorMessage(err) || "Could not save language", { id: loadingToast });
+    }
+  }
+
+  async function saveHeadline(headline: string) {
+    if (!member) return;
+    const trimmed = headline.trim();
+    if (!trimmed) {
+      toast.error("Headline is required");
+      return;
+    }
+    const loadingToast = toast.loading("Saving headline...");
+    try {
+      await updateMember({
+        member_id: member.member_id,
+        headline: trimmed
+      });
+      await loadMemberProfile();
+      setActiveModal(null);
+      toast.success("Headline updated", { id: loadingToast });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err) || "Could not save headline", { id: loadingToast });
+    }
+  }
+
+  async function saveContactInfo(values: ContactInfoValues) {
+    if (!member) return;
+    const loadingToast = toast.loading("Saving contact info...");
+    try {
+      await updateMember({
+        member_id: member.member_id,
+        phone: values.phone.trim() || null,
+        birthday: values.birthday || null,
+        website: values.website.trim() || null,
+        location_city: values.location_city.trim() || null,
+        location_state: values.location_state.trim() || null,
+        location_country: values.location_country.trim() || null
+      });
+      await loadMemberProfile();
+      setActiveModal({ type: "contact_info" });
+      toast.success("Contact info updated", { id: loadingToast });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err) || "Could not save contact info", { id: loadingToast });
     }
   }
 
@@ -148,46 +233,132 @@ export function ProfilePage() {
       case "about":
         setActiveModal({ type: "about" });
         break;
+      case "headline":
+        setActiveModal({ type: "headline" });
+        break;
       case "education":
-        setActiveModal({ type: "education" });
+        if (member_id) navigate(`/profile/${member_id}/details/education`);
         break;
       case "experience":
-        setActiveModal({ type: "experience" });
+        if (member_id) navigate(`/profile/${member_id}/details/experience`);
         break;
       case "skills":
-        setActiveModal({ type: "skills" });
+        if (member_id) navigate(`/profile/${member_id}/details/skills`);
         break;
       case "resume":
         scrollTo(resumeRef);
-        break;
-      case "language":
-        scrollTo(languageRef);
         break;
       default:
         toast("This section is coming soon", { icon: "ℹ️" });
     }
   }
 
-  async function saveSkill(skill: string) {
-    if (!member || !skill) return;
-    const existingSkills = member.skills ?? [];
-    const nextSkills = [skill, ...existingSkills.filter((item) => item.toLowerCase() !== skill.toLowerCase())];
+  async function saveNewSkillWithMappings(payload: SkillFormSavePayload) {
+    if (!member) return;
+    const { skillName, experienceIndices, educationIndices, followThisSkill } = payload;
+    if ((member.skills ?? []).some((s) => s.toLowerCase() === skillName.toLowerCase())) {
+      toast.error("This skill is already on your profile");
+      return;
+    }
     const loadingToast = toast.loading("Saving skill...");
     try {
+      const experience = (member.experience ?? []).map((e, i) => ({
+        ...e,
+        skill_ids: applySkillToIds(e.skill_ids, skillName, experienceIndices.includes(i))
+      }));
+      const education = (member.education ?? []).map((e, i) => ({
+        ...e,
+        skill_ids: applySkillToIds(e.skill_ids, skillName, educationIndices.includes(i))
+      }));
+      const skills = [skillName, ...(member.skills ?? [])];
+      const prevFollowed = member.unstructured?.followed_skills ?? [];
+      const nextFollowed = followThisSkill
+        ? [...new Set([...prevFollowed, skillName])]
+        : undefined;
       await updateMember({
         member_id: member.member_id,
-        skills: nextSkills
+        experience,
+        education,
+        skills,
+        ...(nextFollowed ? { followed_skills: nextFollowed } : {})
       });
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Skill added", { id: loadingToast });
-    } catch {
-      toast.error("Could not save skill", { id: loadingToast });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err) || "Could not save skill", { id: loadingToast });
+    }
+  }
+
+  async function updateSkillWithMappings(payload: SkillFormSavePayload) {
+    if (!member) return;
+    const { skillName, experienceIndices, educationIndices, followThisSkill } = payload;
+    const loadingToast = toast.loading("Saving skill...");
+    try {
+      const experience = (member.experience ?? []).map((e, i) => ({
+        ...e,
+        skill_ids: applySkillToIds(e.skill_ids, skillName, experienceIndices.includes(i))
+      }));
+      const education = (member.education ?? []).map((e, i) => ({
+        ...e,
+        skill_ids: applySkillToIds(e.skill_ids, skillName, educationIndices.includes(i))
+      }));
+      const prevFollowed = member.unstructured?.followed_skills ?? [];
+      const nextFollowed = followThisSkill
+        ? [...new Set([...prevFollowed, skillName])]
+        : prevFollowed.filter((s) => s.toLowerCase() !== skillName.toLowerCase());
+      await updateMember({
+        member_id: member.member_id,
+        experience,
+        education,
+        skills: [...(member.skills ?? [])],
+        followed_skills: nextFollowed
+      });
+      await loadMemberProfile();
+      setActiveModal(null);
+      toast.success("Skill updated", { id: loadingToast });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err) || "Could not update skill", { id: loadingToast });
+    }
+  }
+
+  async function deleteSkillByName(skillName: string) {
+    if (!member) return;
+    if (!window.confirm(`Remove "${skillName}" from your profile?`)) {
+      return;
+    }
+    const loadingToast = toast.loading("Removing skill...");
+    try {
+      const skills = (member.skills ?? []).filter((s) => s.toLowerCase() !== skillName.toLowerCase());
+      const experience = (member.experience ?? []).map((e) => ({
+        ...e,
+        skill_ids: (e.skill_ids ?? []).filter((s) => s.toLowerCase() !== skillName.toLowerCase())
+      }));
+      const education = (member.education ?? []).map((e) => ({
+        ...e,
+        skill_ids: (e.skill_ids ?? []).filter((s) => s.toLowerCase() !== skillName.toLowerCase())
+      }));
+      const followed_skills = (member.unstructured?.followed_skills ?? []).filter(
+        (s) => s.toLowerCase() !== skillName.toLowerCase()
+      );
+      await updateMember({
+        member_id: member.member_id,
+        skills,
+        experience,
+        education,
+        followed_skills
+      });
+      await loadMemberProfile();
+      setActiveModal(null);
+      toast.success("Skill removed", { id: loadingToast });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err) || "Could not remove skill", { id: loadingToast });
     }
   }
 
   async function deleteExperience(index: number) {
     if (!member) return;
+    if (!window.confirm("Remove this position from your profile?")) return;
     const loadingToast = toast.loading("Deleting experience...");
     try {
       const currentItems = [...(member.experience ?? [])];
@@ -206,6 +377,7 @@ export function ProfilePage() {
 
   async function deleteEducation(index: number) {
     if (!member) return;
+    if (!window.confirm("Remove this school from your profile?")) return;
     const loadingToast = toast.loading("Deleting education...");
     try {
       const currentItems = [...(member.education ?? [])];
@@ -239,6 +411,33 @@ export function ProfilePage() {
   const showSkillsPrompt = isOwnProfile && !member.skills?.length && !dismissedCards.skills;
 
   const aboutText = member.unstructured?.about || member.summary || "";
+  const allSkills = member.skills ?? [];
+  const visibleSkills = allSkills.slice(0, 8);
+  const allLanguages = member.unstructured?.languages ?? [];
+  const visibleLanguages = showAllLanguages ? allLanguages : allLanguages.slice(0, 3);
+  const suggestionCorpus = [
+    member.headline,
+    aboutText,
+    ...(member.experience ?? []).flatMap((item) => [item.title, item.company, item.description]),
+    ...(member.education ?? []).flatMap((item) => [item.degree, item.field_of_study, item.school, item.activities])
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const suggestedSkills = Array.from(
+    new Set(
+      suggestionCorpus
+        .split(/[\s,|·/()]+/)
+        .map((token) => token.trim())
+        .filter((token) => token.length > 2)
+        .filter((token) => /^[A-Za-z0-9+#.-]+$/.test(token))
+    )
+  )
+    .slice(0, 12)
+    .filter((token) => !allSkills.some((skill) => skill.toLowerCase() === token.toLowerCase()));
+  const contactLocation = [member.location_city, member.location_state, member.location_country].filter(Boolean).join(", ");
+  const birthdayText = member.birthday
+    ? new Date(member.birthday).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })
+    : null;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
@@ -248,6 +447,8 @@ export function ProfilePage() {
           isOwnProfile={isOwnProfile}
           onProfileUpdated={(next) => setMember(next)}
           onAddSection={() => setAddSectionOpen(true)}
+          onEditHeadline={() => setActiveModal({ type: "headline" })}
+          onOpenContactInfo={() => setActiveModal({ type: "contact_info" })}
         />
         <Card ref={aboutRef} className="rounded-[22px] border border-[#dde3ea] bg-white p-6 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
           <div className="mb-3 flex items-start justify-between gap-3">
@@ -288,7 +489,7 @@ export function ProfilePage() {
                   previewSubtitle="Organization"
                   previewMeta="2023 - Present · 2 yrs"
                   icon={BriefcaseBusiness}
-                  onAction={() => setActiveModal({ type: "experience" })}
+                  onAction={() => navigate(`/profile/${member.member_id}/details/experience`)}
                   onDismiss={() => setDismissedCards((current) => ({ ...current, experience: true }))}
                   actionLabel="Add experience"
                 />
@@ -301,7 +502,7 @@ export function ProfilePage() {
                   previewSubtitle="Degree, Field of Study"
                   previewMeta="2023 - Present · 2 yrs"
                   icon={GraduationCap}
-                  onAction={() => setActiveModal({ type: "education" })}
+                  onAction={() => navigate(`/profile/${member.member_id}/details/education`)}
                   onDismiss={() => setDismissedCards((current) => ({ ...current, education: true }))}
                   actionLabel="Add education"
                 />
@@ -313,7 +514,7 @@ export function ProfilePage() {
                   previewTitle="Soft skills"
                   previewSubtitle="Technical skills"
                   icon={Sparkles}
-                  onAction={() => setActiveModal({ type: "skills" })}
+                  onAction={() => navigate(`/profile/${member.member_id}/details/skills`)}
                   onDismiss={() => setDismissedCards((current) => ({ ...current, skills: true }))}
                   actionLabel="Add skills"
                 />
@@ -327,6 +528,7 @@ export function ProfilePage() {
             items={member.experience ?? []}
             onAdd={isOwnProfile ? () => setActiveModal({ type: "experience" }) : undefined}
             onEdit={isOwnProfile ? (index) => setActiveModal({ type: "experience", index }) : undefined}
+            onManageSection={isOwnProfile ? () => navigate(`/profile/${member.member_id}/details/experience`) : undefined}
           />
         </div>
         <div ref={educationRef}>
@@ -335,26 +537,101 @@ export function ProfilePage() {
             items={member.education ?? []}
             onAdd={isOwnProfile ? () => setActiveModal({ type: "education" }) : undefined}
             onEdit={isOwnProfile ? (index) => setActiveModal({ type: "education", index }) : undefined}
+            onManageSection={isOwnProfile ? () => navigate(`/profile/${member.member_id}/details/education`) : undefined}
           />
         </div>
         <Card ref={skillsRef} className="rounded-[22px] border border-[#dde3ea] bg-white p-6 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
           <div className="mb-5 flex items-center justify-between gap-4">
             <h2 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#1f1f1f]">Skills</h2>
             {isOwnProfile ? (
-              <Button variant="secondary" className="rounded-full px-4 py-2 text-sm font-semibold" onClick={() => setActiveModal({ type: "skills" })}>
-                Add skills
-              </Button>
+              <div className="flex items-center gap-2">
+                <button type="button" aria-label="Add skill" className="rounded-full p-2 text-[#434343] transition hover:bg-[#f3f6f8]" onClick={() => setActiveModal({ type: "skills" })}>
+                  <Plus className="h-6 w-6" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Manage skills"
+                  className="rounded-full p-2 text-[#434343] transition hover:bg-[#f3f6f8]"
+                  onClick={() => navigate(`/profile/${member.member_id}/details/skills`)}
+                >
+                  <Pencil className="h-5 w-5" />
+                </button>
+              </div>
             ) : null}
           </div>
-          {(member.skills ?? []).length ? (
-            <div className="flex flex-wrap gap-2.5">
-              {(member.skills ?? []).slice(0, 20).map((skill) => (
-                <SkillTag key={skill} skill={skill} />
-              ))}
+          {allSkills.length ? (
+            <div className="space-y-3">
+              {visibleSkills.map((skill) => {
+                const sources = member.skill_mappings?.[skill];
+                const sourceLine = !sources?.length
+                  ? "Added from profile"
+                  : sources.length === 1
+                    ? sources[0]
+                    : sources.join(" · ");
+                return (
+                  <div key={skill} className="border-t border-[#edf1f4] pt-3 first:border-t-0 first:pt-0">
+                    <p className="text-[1.2rem] font-semibold text-[#1f1f1f]">{skill}</p>
+                    <p className="mt-1 text-sm text-[#555555]">{sourceLine}</p>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <p className="text-sm text-[#6b7280]">No skills added yet.</p>
           )}
+          {allSkills.length > 8 ? (
+            <button
+              type="button"
+              className="mt-4 w-full border-t border-[#e5e7eb] pt-3 text-center text-lg font-semibold text-[#374151] hover:text-brand"
+              onClick={() => setSkillsListModalOpen(true)}
+            >
+              Show all →
+            </button>
+          ) : null}
+        </Card>
+        <Card className="rounded-[22px] border border-[#dde3ea] bg-white p-6 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <h2 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#1f1f1f]">Languages</h2>
+            {isOwnProfile ? (
+              <div className="flex items-center gap-2">
+                <button type="button" aria-label="Add language" className="rounded-full p-2 text-[#434343] transition hover:bg-[#f3f6f8]" onClick={() => setActiveModal({ type: "language" })}>
+                  <Plus className="h-6 w-6" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Manage languages"
+                  className="rounded-full p-2 text-[#434343] transition hover:bg-[#f3f6f8]"
+                  onClick={() => navigate(`/profile/${member.member_id}/details/languages`)}
+                >
+                  <Pencil className="h-5 w-5" />
+                </button>
+              </div>
+            ) : null}
+          </div>
+          {visibleLanguages.length ? (
+            <div className="space-y-3">
+              {visibleLanguages.map((entry, langIndex) => (
+                <div
+                  key={`${entry.name}-${entry.proficiency}-${langIndex}`}
+                  className="border-t border-[#edf1f4] pt-3 first:border-t-0 first:pt-0"
+                >
+                  <p className="text-[1.2rem] font-semibold text-[#1f1f1f]">{entry.name}</p>
+                  <p className="text-sm text-[#555555]">{entry.proficiency}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-[#6b7280]">No languages added yet.</p>
+          )}
+          {allLanguages.length > 3 ? (
+            <button
+              type="button"
+              className="mt-4 w-full border-t border-[#e5e7eb] pt-3 text-center text-lg font-semibold text-[#374151] hover:text-brand"
+              onClick={() => setShowAllLanguages((current) => !current)}
+            >
+              {showAllLanguages ? "Show less" : "Show all"} →
+            </button>
+          ) : null}
         </Card>
         {member.member_id === currentUserId ? (
           <div ref={resumeRef}>
@@ -377,20 +654,17 @@ export function ProfilePage() {
             </div>
           </div>
         </Card>
-        <div ref={languageRef}>
-          <ProfileLanguageCard
-            language={member.profile_language}
-            slug={member.profile_slug}
-            isOwnProfile={isOwnProfile}
-            onLanguageChange={saveLanguage}
-          />
-        </div>
         </div>
       </RightSidebar>
       {activeModal?.type === "experience" ? (
         <AddExperienceModal
           onClose={() => setActiveModal(null)}
-          onSave={saveExperience}
+          onSave={(exp) =>
+            saveExperience(
+              exp,
+              activeModal.index !== undefined && activeModal.type === "experience" ? activeModal.index : undefined
+            )
+          }
           initialValues={activeModal.index !== undefined ? member.experience?.[activeModal.index] ?? null : null}
           onDelete={activeModal.index !== undefined ? async () => deleteExperience(activeModal.index as number) : null}
         />
@@ -398,17 +672,106 @@ export function ProfilePage() {
       {activeModal?.type === "education" ? (
         <AddEducationModal
           onClose={() => setActiveModal(null)}
-          onSave={saveEducation}
+          onSave={(edu) =>
+            saveEducation(
+              edu,
+              activeModal.index !== undefined && activeModal.type === "education" ? activeModal.index : undefined
+            )
+          }
           initialValues={activeModal.index !== undefined ? member.education?.[activeModal.index] ?? null : null}
           onDelete={activeModal.index !== undefined ? async () => deleteEducation(activeModal.index as number) : null}
         />
       ) : null}
-      {activeModal?.type === "skills" ? <AddSkillModal onClose={() => setActiveModal(null)} onSave={saveSkill} /> : null}
+      {activeModal?.type === "skills" && member ? (
+        <SkillFormModal
+          key="add-skill"
+          mode="add"
+          displaySkillName=""
+          experience={member.experience ?? []}
+          education={member.education ?? []}
+          initialExperienceIndices={[]}
+          initialEducationIndices={[]}
+          initialFollow={false}
+          suggestions={suggestedSkills}
+          onClose={() => setActiveModal(null)}
+          onSave={saveNewSkillWithMappings}
+        />
+      ) : null}
+      {activeModal?.type === "edit_skill" && member ? (
+        <SkillFormModal
+          key={`edit-skill-${activeModal.skillName}`}
+          mode="edit"
+          displaySkillName={activeModal.skillName}
+          experience={member.experience ?? []}
+          education={member.education ?? []}
+          initialExperienceIndices={experienceIndicesForSkill(member.experience, activeModal.skillName)}
+          initialEducationIndices={educationIndicesForSkill(member.education, activeModal.skillName)}
+          initialFollow={(member.unstructured?.followed_skills ?? []).some(
+            (s) => s.toLowerCase() === activeModal.skillName.toLowerCase()
+          )}
+          suggestions={[]}
+          onClose={() => setActiveModal(null)}
+          onSave={updateSkillWithMappings}
+          onDelete={() => deleteSkillByName(activeModal.skillName)}
+        />
+      ) : null}
+      {skillsListModalOpen && member ? (
+        <SkillsListModal
+          onClose={() => setSkillsListModalOpen(false)}
+          skills={allSkills}
+          skillMappings={member.skill_mappings}
+          onSelectSkill={
+            isOwnProfile
+              ? (s) => {
+                  setSkillsListModalOpen(false);
+                  setActiveModal({ type: "edit_skill", skillName: s });
+                }
+              : undefined
+          }
+        />
+      ) : null}
+      {activeModal?.type === "language" ? <AddLanguageModal onClose={() => setActiveModal(null)} onSave={saveLanguage} /> : null}
       {activeModal?.type === "about" ? (
         <EditAboutModal
           onClose={() => setActiveModal(null)}
           onSave={saveAbout}
           initialValue={member.unstructured?.about || member.summary || ""}
+        />
+      ) : null}
+      {activeModal?.type === "headline" ? (
+        <EditHeadlineModal
+          onClose={() => setActiveModal(null)}
+          onSave={saveHeadline}
+          initialValue={member.headline}
+        />
+      ) : null}
+      {activeModal?.type === "contact_info" ? (
+        <ContactInfoModal
+          onClose={() => setActiveModal(null)}
+          isOwnProfile={isOwnProfile}
+          onEdit={() => setActiveModal({ type: "contact_edit" })}
+            contact={{
+            email: member.email,
+            birthday: birthdayText,
+            phone: member.phone,
+            website: member.website,
+            location: contactLocation || null
+          }}
+        />
+      ) : null}
+      {activeModal?.type === "contact_edit" ? (
+        <EditContactInfoModal
+          onClose={() => setActiveModal({ type: "contact_info" })}
+          onSave={saveContactInfo}
+          email={member.email}
+          initialValue={{
+            phone: member.phone ?? "",
+            birthday: member.birthday ?? "",
+            website: member.website ?? "",
+            location_city: member.location_city ?? "",
+            location_state: member.location_state ?? "",
+            location_country: member.location_country ?? ""
+          }}
         />
       ) : null}
       {addSectionOpen ? (
