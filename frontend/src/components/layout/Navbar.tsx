@@ -127,7 +127,7 @@ export function Navbar() {
                     className="flex items-center gap-3 rounded-card px-3 py-2 text-sm font-semibold text-text-primary hover:bg-hover hover:no-underline"
                   >
                     <User className="h-4 w-4 text-brand" />
-                    {role === "recruiter" ? "Open dashboard" : "View profile"}
+                    View profile
                   </Link>
                   {role === "member" ? (
                     <>
