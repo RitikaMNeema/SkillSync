@@ -2,7 +2,6 @@ import { ArrowLeft, Pencil, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { getMember, updateMember } from "../../api/members";
 import {
   AddEducationModal,
   AddExperienceModal,
@@ -17,6 +16,7 @@ import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
 import type { EducationEntry, ExperienceEntry, LanguageEntry, MemberProfile } from "../../types/member";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import { getUnifiedProfile, updateUnifiedProfile } from "../../utils/profileAdapter";
 
 const SECTIONS = new Set(["experience", "education", "skills", "languages"]);
 type SectionKey = "experience" | "education" | "skills" | "languages";
@@ -72,6 +72,7 @@ export function ProfileSectionDetailsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const currentUserId = authStore((state) => state.userId);
+  const currentRole = authStore((state) => state.role);
   const [member, setMember] = useState<MemberProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -85,14 +86,14 @@ export function ProfileSectionDetailsPage() {
     setLoading(true);
     setError("");
     try {
-      const data = await getMember(Number(member_id));
+      const data = await getUnifiedProfile(Number(member_id), currentRole);
       setMember(data);
     } catch {
       setError("Could not load member profile.");
     } finally {
       setLoading(false);
     }
-  }, [member_id]);
+  }, [member_id, currentRole]);
 
   useEffect(() => {
     void loadMember();
@@ -150,7 +151,7 @@ export function ProfileSectionDetailsPage() {
       } else {
         currentItems.unshift(entry);
       }
-      await updateMember({ member_id: member.member_id, experience: currentItems });
+      await updateUnifiedProfile({ member_id: member.member_id, experience: currentItems }, currentRole);
       await loadMember();
       setSheet(null);
       toast.success(editIndex !== undefined ? "Experience updated" : "Experience added", { id: loadingToast });
@@ -166,7 +167,7 @@ export function ProfileSectionDetailsPage() {
     try {
       const currentItems = [...(member.experience ?? [])];
       currentItems.splice(index, 1);
-      await updateMember({ member_id: member.member_id, experience: currentItems });
+      await updateUnifiedProfile({ member_id: member.member_id, experience: currentItems }, currentRole);
       await loadMember();
       setSheet(null);
       toast.success("Experience deleted", { id: loadingToast });
@@ -185,7 +186,7 @@ export function ProfileSectionDetailsPage() {
       } else {
         currentItems.unshift(entry);
       }
-      await updateMember({ member_id: member.member_id, education: currentItems });
+      await updateUnifiedProfile({ member_id: member.member_id, education: currentItems }, currentRole);
       await loadMember();
       setSheet(null);
       toast.success(editIndex !== undefined ? "Education updated" : "Education added", { id: loadingToast });
@@ -201,7 +202,7 @@ export function ProfileSectionDetailsPage() {
     try {
       const currentItems = [...(member.education ?? [])];
       currentItems.splice(index, 1);
-      await updateMember({ member_id: member.member_id, education: currentItems });
+      await updateUnifiedProfile({ member_id: member.member_id, education: currentItems }, currentRole);
       await loadMember();
       setSheet(null);
       toast.success("Education deleted", { id: loadingToast });
@@ -230,13 +231,13 @@ export function ProfileSectionDetailsPage() {
       const skills = [skillName, ...(member.skills ?? [])];
       const prevFollowed = member.unstructured?.followed_skills ?? [];
       const nextFollowed = followThisSkill ? [...new Set([...prevFollowed, skillName])] : undefined;
-      await updateMember({
+      await updateUnifiedProfile({
         member_id: member.member_id,
         experience,
         education,
         skills,
         ...(nextFollowed ? { followed_skills: nextFollowed } : {})
-      });
+      }, currentRole);
       await loadMember();
       setSheet(null);
       toast.success("Skill added", { id: loadingToast });
@@ -262,13 +263,13 @@ export function ProfileSectionDetailsPage() {
       const nextFollowed = followThisSkill
         ? [...new Set([...prevFollowed, skillName])]
         : prevFollowed.filter((s) => s.toLowerCase() !== skillName.toLowerCase());
-      await updateMember({
+      await updateUnifiedProfile({
         member_id: member.member_id,
         experience,
         education,
         skills: [...(member.skills ?? [])],
         followed_skills: nextFollowed
-      });
+      }, currentRole);
       await loadMember();
       setSheet(null);
       toast.success("Skill updated", { id: loadingToast });
@@ -294,13 +295,13 @@ export function ProfileSectionDetailsPage() {
       const followed_skills = (member.unstructured?.followed_skills ?? []).filter(
         (s) => s.toLowerCase() !== skillName.toLowerCase()
       );
-      await updateMember({
+      await updateUnifiedProfile({
         member_id: member.member_id,
         skills,
         experience,
         education,
         followed_skills
-      });
+      }, currentRole);
       await loadMember();
       setSheet(null);
       toast.success("Skill removed", { id: loadingToast });
@@ -321,7 +322,7 @@ export function ProfileSectionDetailsPage() {
         const deduped = existing.filter((item) => item.name.toLowerCase() !== entry.name.toLowerCase());
         nextLanguages = [entry, ...deduped];
       }
-      await updateMember({ member_id: member.member_id, languages: nextLanguages });
+      await updateUnifiedProfile({ member_id: member.member_id, languages: nextLanguages }, currentRole);
       await loadMember();
       setSheet(null);
       toast.success(editIndex !== undefined ? "Language updated" : "Language added", { id: loadingToast });
@@ -337,7 +338,7 @@ export function ProfileSectionDetailsPage() {
     try {
       const next = [...(member.unstructured?.languages ?? [])];
       next.splice(index, 1);
-      await updateMember({ member_id: member.member_id, languages: next });
+      await updateUnifiedProfile({ member_id: member.member_id, languages: next }, currentRole);
       await loadMember();
       setSheet(null);
       toast.success("Language removed", { id: loadingToast });

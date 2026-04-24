@@ -7,7 +7,6 @@ export function getHomePath(role: UserRole | null) {
 }
 
 export function getProfilePath(role: UserRole | null, userId: number | null) {
-  if (role === "recruiter") return "/recruiter/dashboard";
   if (userId) return `/profile/${userId}`;
   return getHomePath(role);
 }

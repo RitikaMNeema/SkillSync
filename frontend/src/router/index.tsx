@@ -60,6 +60,8 @@ export const router = createBrowserRouter([
         children: [
           { path: "/connections", element: <ConnectionsPage /> },
           { path: "/messages", element: <MessagesPage /> },
+          { path: "/profile/:member_id", element: <ProfilePage /> },
+          { path: "/profile/:member_id/details/:section", element: <ProfileSectionDetailsPage /> },
           { path: "/in/:profile_slug", element: <PublicProfileSlugPage /> }
         ]
       },
@@ -71,8 +73,6 @@ export const router = createBrowserRouter([
         ),
         children: [
           { path: "/feed", element: <FeedPage /> },
-          { path: "/profile/:member_id", element: <ProfilePage /> },
-          { path: "/profile/:member_id/details/:section", element: <ProfileSectionDetailsPage /> },
           { path: "/jobs", element: <JobSearchPage /> },
           { path: "/search", element: <SearchResultsPage /> },
           { path: "/jobs/:job_id", element: <JobDetailPage /> },

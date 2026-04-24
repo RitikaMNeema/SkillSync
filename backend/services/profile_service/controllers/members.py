@@ -86,7 +86,7 @@ async def get(member_id: int, actor_id: int | None = None) -> dict:
     cached = await cache_get(_profile_key(member_id))
     # Drop pre-migration cached entries that don't have the new columns yet so
     # the sidebar URL / open-to / language flow through on the first read.
-    if cached and "profile_slug" in cached and "open_to" in cached:
+    if cached and "profile_slug" in cached and "open_to" in cached and "profile_status" in cached:
         await _emit_profile_view_event(actor_id, member_id)
         return cached
     if cached:
@@ -111,7 +111,7 @@ async def update(body: dict, actor_id) -> dict:
         fields_set = set(fields_set) if fields_set is not None else set()
 
     # Keep `open_to` explicit even when null so clearing works.
-    always_pass_through = {"open_to"}
+    always_pass_through = {"open_to", "profile_status"}
     mysql_fields = {
         k: v
         for k, v in body.items()
