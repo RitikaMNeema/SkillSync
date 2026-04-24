@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from schemas.analytics import (
     IngestRequest, TopJobsRequest, LowTractionJobsRequest, SavedJobsRequest, JobClicksRequest, GeoRequest,
     MemberDashboardRequest, RecruiterDashboardRequest,
+    EventCountsRequest,
 )
 import controllers.analytics as ctrl
 from shared.middleware.auth import get_current_user
@@ -62,6 +63,8 @@ async def geo(body: GeoRequest, u=Depends(get_current_user)):
 
 @analytics_router.post("/member/dashboard")
 async def member_dash(body: MemberDashboardRequest, u=Depends(get_current_user)):
+    if str(body.member_id) != str(u["user_id"]):
+        raise HTTPException(403, "Not authorized to access another member's dashboard")
     return {"success": True, "data": await ctrl.get_member_dashboard(body.member_id)}
 
 
@@ -70,3 +73,11 @@ async def recruiter_dash(body: RecruiterDashboardRequest, u=Depends(get_current_
     if str(body.recruiter_id) != str(u["user_id"]):
         raise HTTPException(403, "Not authorized to access another recruiter's dashboard")
     return {"success": True, "data": await ctrl.get_recruiter_dashboard(body.recruiter_id)}
+
+
+@analytics_router.post("/debug/eventCounts")
+async def event_counts(body: EventCountsRequest, u=Depends(get_current_user)):
+    recruiter_id = body.recruiter_id
+    if recruiter_id is not None and str(recruiter_id) != str(u["user_id"]):
+        raise HTTPException(403, "Not authorized to access another recruiter's analytics")
+    return {"success": True, "data": await ctrl.get_event_counts(body.month, recruiter_id, body.job_id)}

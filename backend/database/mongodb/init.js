@@ -33,6 +33,12 @@ ensureCollection('messages');
 ensureIndex('messages', { message_id: 1 }, { unique: true });
 ensureIndex('messages', { thread_id: 1, timestamp: 1 }, {});
 
+
+// ── thread_preferences ─────────────────────────────────────────
+ensureCollection('thread_preferences');
+ensureIndex('thread_preferences', { thread_id: 1, user_id: 1 }, { unique: true });
+ensureIndex('thread_preferences', { user_id: 1, archived: 1, muted: 1, starred: 1 }, {});
+
 // ── events ───────────────────────────────────────────────────────
 ensureCollection('events');
 ensureIndex('events', { idempotency_key: 1 }, { unique: true });

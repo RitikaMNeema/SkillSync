@@ -1,4 +1,3 @@
-import { FileImage, Paperclip, SendHorizonal, Smile, Sticker } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import { useState } from "react";
 import { Button } from "../ui/Button";
@@ -8,45 +7,45 @@ export function MessageInput({ onSend }: { onSend: (text: string) => void }) {
   const [value, setValue] = useState("");
   const trimmedValue = value.trim();
 
-  function handleSend() {
+  function handleSave() {
     if (!trimmedValue) return;
     onSend(trimmedValue);
+    setValue("");
+  }
+
+  function handleCancel() {
     setValue("");
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      handleSend();
+      handleSave();
     }
   }
 
   return (
-    <div className="border-t bg-[#fafafa] p-3">
-      <div className="mb-2 flex items-center gap-1 text-text-secondary">
-        {[Paperclip, Smile, Sticker, FileImage].map((Icon, index) => (
-          <Button key={index} variant="icon">
-            <Icon className="h-4 w-4" />
-          </Button>
-        ))}
+    <div className="border-t bg-[#f3f2ef] p-3">
+      <div className="rounded-xl border border-[#e3e1dc] bg-[#f8f8f8] p-3">
+        <div className="rounded-xl bg-[#e9e7e3] p-4">
+          <Textarea
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            onKeyDown={handleKeyDown}
+            className="max-h-36 min-h-[120px] !rounded-md !border-0 bg-transparent px-3 py-2 text-[40px] leading-tight !shadow-none focus:!border-0 focus:!shadow-none"
+            placeholder="Write a message..."
+          />
+        </div>
       </div>
-      <div className="flex items-end gap-2 rounded-2xl border border-[#d8dee5] bg-white p-2">
-        <Textarea
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={handleKeyDown}
-          className="max-h-32 min-h-[42px] border-0 shadow-none focus:border-0 focus:shadow-none"
-          placeholder="Write a message..."
-        />
-        <Button
-          variant="primary"
-          className="h-10 rounded-full px-4 text-sm"
-          disabled={!trimmedValue}
-          onClick={handleSend}
-        >
-          <SendHorizonal className="h-4 w-4" />
-          Send
-        </Button>
+      <div className="mt-3 flex items-center justify-end">
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" className="rounded-full border-[#0a66c2] px-6 py-1.5 text-[#0a66c2]" onClick={handleCancel}>
+            Cancel
+          </Button>
+          <Button variant="primary" className="rounded-full px-6 py-1.5" disabled={!trimmedValue} onClick={handleSave}>
+            Save
+          </Button>
+        </div>
       </div>
     </div>
   );

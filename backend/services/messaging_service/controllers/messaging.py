@@ -5,6 +5,7 @@ from models.thread import (
     threads_by_user, update_last_message_at, PAGE_SIZE,
 )
 from models.message import create_message, list_messages, mark_read
+from models.thread_preferences import get_preferences_for_user, upsert_preferences
 from producers.message_producer import emit_message_sent
 from websocket_hub import hub
 
@@ -42,10 +43,12 @@ async def open_thread(participant_ids: list) -> dict:
     return await create_thread(participant_ids)
 
 
-async def get_thread_meta(thread_id: str) -> dict:
+async def get_thread_meta(thread_id: str, user_id) -> dict:
     t = await get_thread(thread_id)
     if not t:
         raise HTTPException(404, "Thread not found")
+    if str(user_id) not in t.get("participant_ids", []):
+        raise HTTPException(403, "Not a participant in this thread")
     return t
 
 
@@ -82,15 +85,53 @@ async def send(thread_id: str, sender_id, text: str) -> dict:
     }
 
 
-async def list_msgs(thread_id: str, page: int) -> dict:
-    if not await get_thread(thread_id):
+async def list_msgs(thread_id: str, page: int, user_id) -> dict:
+    thread = await get_thread(thread_id)
+    if not thread:
         raise HTTPException(404, "Thread not found")
+    if str(user_id) not in thread.get("participant_ids", []):
+        raise HTTPException(403, "Not a participant in this thread")
     messages, total = await list_messages(thread_id, page)
     return {"messages": messages, "total": total, "page": page, "page_size": PAGE_SIZE}
 
 
 async def mark_messages_read(thread_id: str, user_id) -> dict:
-    if not await get_thread(thread_id):
+    thread = await get_thread(thread_id)
+    if not thread:
         raise HTTPException(404, "Thread not found")
+    if str(user_id) not in thread.get("participant_ids", []):
+        raise HTTPException(403, "Not a participant in this thread")
     updated = await mark_read(thread_id, user_id)
     return {"thread_id": thread_id, "messages_marked_read": updated}
+
+
+async def list_thread_preferences(user_id) -> dict:
+    preferences = await get_preferences_for_user(user_id)
+    return {"preferences": preferences}
+
+
+async def update_thread_preferences(
+    thread_id: str,
+    user_id,
+    *,
+    starred: bool | None = None,
+    muted: bool | None = None,
+    archived: bool | None = None,
+    force_unread: bool | None = None,
+    hidden: bool | None = None,
+) -> dict:
+    thread = await get_thread(thread_id)
+    if not thread:
+        raise HTTPException(404, "Thread not found")
+    if str(user_id) not in thread.get("participant_ids", []):
+        raise HTTPException(403, "Not a participant in this thread")
+    updated = await upsert_preferences(
+        thread_id,
+        user_id,
+        starred=starred,
+        muted=muted,
+        archived=archived,
+        force_unread=force_unread,
+        hidden=hidden,
+    )
+    return updated

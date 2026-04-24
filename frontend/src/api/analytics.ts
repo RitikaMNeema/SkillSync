@@ -51,3 +51,12 @@ export async function getRecruiterDashboard(recruiter_id: number) {
   });
   return response.data.data;
 }
+
+export async function getRecruiterEventCounts(month?: string, recruiter_id?: number, job_id?: string) {
+  const response = await api.post<ApiResponse<RecruiterDashboardMetric[]>>("/analytics/debug/eventCounts", {
+    month,
+    recruiter_id,
+    job_id
+  });
+  return response.data.data;
+}
