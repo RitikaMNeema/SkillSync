@@ -48,7 +48,7 @@ export function Navbar() {
       return;
     }
     const keyword = query.trim();
-    navigate(keyword ? `/jobs?keyword=${encodeURIComponent(keyword)}` : "/jobs");
+    navigate(keyword ? `/search?q=${encodeURIComponent(keyword)}` : "/search");
   }
 
   async function handleLogout() {
