@@ -2,7 +2,6 @@ import { BriefcaseBusiness, GraduationCap, Pencil, Plus, Sparkles } from "lucide
 import { useEffect, useRef, useState, type RefObject } from "react";
 import toast from "react-hot-toast";
 import { useNavigate, useParams } from "react-router-dom";
-import { getMember, updateMember } from "../../api/members";
 import { RightSidebar } from "../../components/layout/Sidebar";
 import {
   AddEducationModal,
@@ -14,6 +13,8 @@ import {
   EditAboutModal,
   EditContactInfoModal,
   EditHeadlineModal,
+  EditProfileLanguageModal,
+  EditPublicProfileUrlModal,
   type ContactInfoValues,
   type SkillFormSavePayload
 } from "../../components/profile/ProfileEditModals";
@@ -29,9 +30,27 @@ import { ExperienceCard } from "../../components/profile/ExperienceCard";
 import { ProfileHeader } from "../../components/profile/ProfileHeader";
 import { ResumeUpload } from "../../components/profile/ResumeUpload";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import { getUnifiedProfile, updateUnifiedProfile } from "../../utils/profileAdapter";
+import {
+  deleteRecruiterCoverPhoto,
+  uploadRecruiterCoverPhoto,
+  uploadRecruiterProfilePhoto
+} from "../../api/recruiters";
 
 type ProfileActiveModal =
-  | { type: "experience" | "education" | "about" | "headline" | "contact_info" | "contact_edit" | "language"; index?: number }
+  | {
+      type:
+        | "experience"
+        | "education"
+        | "about"
+        | "headline"
+        | "contact_info"
+        | "contact_edit"
+        | "language"
+        | "profile_language"
+        | "public_profile_url";
+      index?: number;
+    }
   | { type: "skills" }
   | { type: "edit_skill"; skillName: string };
 
@@ -56,10 +75,24 @@ function applySkillToIds(ids: string[] | null | undefined, skill: string, select
   return base;
 }
 
+function buildDefaultProfileSlug(firstName: string, lastName: string, memberId: number): string {
+  const normalized = [firstName, lastName]
+    .map((token) =>
+      token
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+    )
+    .filter(Boolean);
+  const prefix = normalized.length ? normalized.join("-") : `user-${memberId}`;
+  return `${prefix}-${memberId}`;
+}
+
 export function ProfilePage() {
   const { member_id } = useParams();
   const navigate = useNavigate();
   const currentUserId = authStore((state) => state.userId);
+  const currentRole = authStore((state) => state.role);
   const [member, setMember] = useState<MemberProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -83,7 +116,7 @@ export function ProfilePage() {
     setLoading(true);
     setError("");
     try {
-      const data = await getMember(Number(member_id));
+      const data = await getUnifiedProfile(Number(member_id), currentRole);
       setMember(data);
     } catch {
       setError("Could not load member profile.");
@@ -94,7 +127,7 @@ export function ProfilePage() {
 
   useEffect(() => {
     void loadMemberProfile();
-  }, [member_id]);
+  }, [member_id, currentRole]);
 
   async function saveExperience(experience: ExperienceEntry, editIndex?: number) {
     if (!member) return;
@@ -106,10 +139,10 @@ export function ProfilePage() {
       } else {
         currentItems.unshift(experience);
       }
-      await updateMember({
+      await updateUnifiedProfile({
         member_id: member.member_id,
         experience: currentItems
-      });
+      }, currentRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success(editIndex !== undefined ? "Experience updated" : "Experience added", { id: loadingToast });
@@ -128,10 +161,10 @@ export function ProfilePage() {
       } else {
         currentItems.unshift(education);
       }
-      await updateMember({
+      await updateUnifiedProfile({
         member_id: member.member_id,
         education: currentItems
-      });
+      }, currentRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success(editIndex !== undefined ? "Education updated" : "Education added", { id: loadingToast });
@@ -144,11 +177,11 @@ export function ProfilePage() {
     if (!member) return;
     const loadingToast = toast.loading("Saving about...");
     try {
-      await updateMember({
+      await updateUnifiedProfile({
         member_id: member.member_id,
         about,
         summary: about
-      });
+      }, currentRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("About updated", { id: loadingToast });
@@ -169,7 +202,7 @@ export function ProfilePage() {
     }
     const loadingToast = toast.loading("Saving language...");
     try {
-      await updateMember({ member_id: member.member_id, languages: nextLanguages });
+      await updateUnifiedProfile({ member_id: member.member_id, languages: nextLanguages }, currentRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success(editIndex !== undefined ? "Language updated" : "Language added", { id: loadingToast });
@@ -187,10 +220,10 @@ export function ProfilePage() {
     }
     const loadingToast = toast.loading("Saving headline...");
     try {
-      await updateMember({
+      await updateUnifiedProfile({
         member_id: member.member_id,
         headline: trimmed
-      });
+      }, currentRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Headline updated", { id: loadingToast });
@@ -203,7 +236,7 @@ export function ProfilePage() {
     if (!member) return;
     const loadingToast = toast.loading("Saving contact info...");
     try {
-      await updateMember({
+      await updateUnifiedProfile({
         member_id: member.member_id,
         phone: values.phone.trim() || null,
         birthday: values.birthday || null,
@@ -211,12 +244,55 @@ export function ProfilePage() {
         location_city: values.location_city.trim() || null,
         location_state: values.location_state.trim() || null,
         location_country: values.location_country.trim() || null
-      });
+      }, currentRole);
       await loadMemberProfile();
       setActiveModal({ type: "contact_info" });
       toast.success("Contact info updated", { id: loadingToast });
     } catch (err) {
       toast.error(getApiErrorMessage(err) || "Could not save contact info", { id: loadingToast });
+    }
+  }
+
+  async function saveProfileLanguage(profile_language: string) {
+    if (!member) return;
+    const value = profile_language.trim();
+    if (!value) {
+      toast.error("Profile language is required");
+      return;
+    }
+    const loadingToast = toast.loading("Saving profile language...");
+    try {
+      await updateUnifiedProfile({ member_id: member.member_id, profile_language: value }, currentRole);
+      await loadMemberProfile();
+      setActiveModal(null);
+      toast.success("Profile language updated", { id: loadingToast });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err) || "Could not save profile language", { id: loadingToast });
+    }
+  }
+
+  async function savePublicProfileSlug(profile_slug: string) {
+    if (!member) return;
+    const normalized = profile_slug
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-")
+      .replace(/-{2,}/g, "-")
+      .replace(/^-+|-+$/g, "");
+    if (!normalized) {
+      toast.error("Public profile URL is required");
+      return;
+    }
+    const memberSuffix = `-${member.member_id}`;
+    const nextSlug = normalized.endsWith(memberSuffix) ? normalized : `${normalized}${memberSuffix}`;
+    const loadingToast = toast.loading("Saving profile URL...");
+    try {
+      await updateUnifiedProfile({ member_id: member.member_id, profile_slug: nextSlug }, currentRole);
+      await loadMemberProfile();
+      setActiveModal(null);
+      toast.success("Public profile URL updated", { id: loadingToast });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err) || "Could not save profile URL", { id: loadingToast });
     }
   }
 
@@ -275,13 +351,13 @@ export function ProfilePage() {
       const nextFollowed = followThisSkill
         ? [...new Set([...prevFollowed, skillName])]
         : undefined;
-      await updateMember({
+      await updateUnifiedProfile({
         member_id: member.member_id,
         experience,
         education,
         skills,
         ...(nextFollowed ? { followed_skills: nextFollowed } : {})
-      });
+      }, currentRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Skill added", { id: loadingToast });
@@ -307,13 +383,13 @@ export function ProfilePage() {
       const nextFollowed = followThisSkill
         ? [...new Set([...prevFollowed, skillName])]
         : prevFollowed.filter((s) => s.toLowerCase() !== skillName.toLowerCase());
-      await updateMember({
+      await updateUnifiedProfile({
         member_id: member.member_id,
         experience,
         education,
         skills: [...(member.skills ?? [])],
         followed_skills: nextFollowed
-      });
+      }, currentRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Skill updated", { id: loadingToast });
@@ -341,13 +417,13 @@ export function ProfilePage() {
       const followed_skills = (member.unstructured?.followed_skills ?? []).filter(
         (s) => s.toLowerCase() !== skillName.toLowerCase()
       );
-      await updateMember({
+      await updateUnifiedProfile({
         member_id: member.member_id,
         skills,
         experience,
         education,
         followed_skills
-      });
+      }, currentRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Skill removed", { id: loadingToast });
@@ -363,10 +439,10 @@ export function ProfilePage() {
     try {
       const currentItems = [...(member.experience ?? [])];
       currentItems.splice(index, 1);
-      await updateMember({
+      await updateUnifiedProfile({
         member_id: member.member_id,
         experience: currentItems
-      });
+      }, currentRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Experience deleted", { id: loadingToast });
@@ -382,10 +458,10 @@ export function ProfilePage() {
     try {
       const currentItems = [...(member.education ?? [])];
       currentItems.splice(index, 1);
-      await updateMember({
+      await updateUnifiedProfile({
         member_id: member.member_id,
         education: currentItems
-      });
+      }, currentRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Education deleted", { id: loadingToast });
@@ -435,6 +511,10 @@ export function ProfilePage() {
     .slice(0, 12)
     .filter((token) => !allSkills.some((skill) => skill.toLowerCase() === token.toLowerCase()));
   const contactLocation = [member.location_city, member.location_state, member.location_country].filter(Boolean).join(", ");
+  const profileLanguage = member.profile_language?.trim() || "English";
+  const profileSlug = member.profile_slug?.trim() || buildDefaultProfileSlug(member.first_name, member.last_name, member.member_id);
+  const profileOrigin = typeof window !== "undefined" ? window.location.origin : "";
+  const publicProfileUrl = `${profileOrigin}/in/${profileSlug}`;
   const birthdayText = member.birthday
     ? new Date(member.birthday).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })
     : null;
@@ -445,7 +525,48 @@ export function ProfilePage() {
         <ProfileHeader
           member={member}
           isOwnProfile={isOwnProfile}
+          allowMediaEditing
+          onProfilePhotoUpload={
+            currentRole === "recruiter"
+              ? async (memberId, file) => {
+                  const result = await uploadRecruiterProfilePhoto(memberId, file);
+                  return {
+                    profile_photo_url: result.profile_photo_url,
+                    profile_photo_file_id: result.profile_photo_file_id
+                  };
+                }
+              : undefined
+          }
+          onCoverPhotoUpload={
+            currentRole === "recruiter"
+              ? async (memberId, file) => {
+                  const result = await uploadRecruiterCoverPhoto(memberId, file);
+                  return {
+                    cover_photo_url: result.cover_photo_url,
+                    cover_photo_file_id: result.cover_photo_file_id
+                  };
+                }
+              : undefined
+          }
+          onCoverPhotoDelete={
+            currentRole === "recruiter"
+              ? async (memberId) => {
+                  await deleteRecruiterCoverPhoto(memberId);
+                }
+              : undefined
+          }
           onProfileUpdated={(next) => setMember(next)}
+          onProfileStatusChange={async (next) => {
+            await updateUnifiedProfile(
+              {
+                member_id: member.member_id,
+                profile_status: next,
+                open_to: next === "open_to_work" ? "job" : next === "hiring" ? "hiring" : null
+              },
+              currentRole
+            );
+            await loadMemberProfile();
+          }}
           onAddSection={() => setAddSectionOpen(true)}
           onEditHeadline={() => setActiveModal({ type: "headline" })}
           onOpenContactInfo={() => setActiveModal({ type: "contact_info" })}
@@ -633,7 +754,7 @@ export function ProfilePage() {
             </button>
           ) : null}
         </Card>
-        {member.member_id === currentUserId ? (
+        {member.member_id === currentUserId && currentRole === "member" ? (
           <div ref={resumeRef}>
             <ResumeUpload memberId={member.member_id} />
           </div>
@@ -641,6 +762,42 @@ export function ProfilePage() {
       </div>
       <RightSidebar>
         <div className="space-y-4">
+        <Card className="rounded-[22px] border border-[#dde3ea] bg-white p-5 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold text-[#1f1f1f]">Profile language</h3>
+              <p className="mt-2 text-sm text-[#5b6470]">{profileLanguage}</p>
+            </div>
+            {isOwnProfile ? (
+              <button
+                type="button"
+                className="rounded-full p-2 text-[#4b5563] transition hover:bg-[#f3f6f8]"
+                aria-label="Edit profile language"
+                onClick={() => setActiveModal({ type: "profile_language" })}
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
+        </Card>
+        <Card className="rounded-[22px] border border-[#dde3ea] bg-white p-5 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-lg font-semibold text-[#1f1f1f]">Public profile & URL</h3>
+              <p className="mt-2 break-all text-sm text-[#5b6470]">{publicProfileUrl}</p>
+            </div>
+            {isOwnProfile ? (
+              <button
+                type="button"
+                className="rounded-full p-2 text-[#4b5563] transition hover:bg-[#f3f6f8]"
+                aria-label="Edit public profile URL"
+                onClick={() => setActiveModal({ type: "public_profile_url" })}
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
+        </Card>
         <Card className="rounded-[22px] border border-[#dde3ea] bg-white p-5 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
           <h3 className="text-lg font-semibold text-[#1f1f1f]">Activity</h3>
           <div className="mt-4 space-y-3">
@@ -743,6 +900,20 @@ export function ProfilePage() {
           onClose={() => setActiveModal(null)}
           onSave={saveHeadline}
           initialValue={member.headline}
+        />
+      ) : null}
+      {activeModal?.type === "profile_language" ? (
+        <EditProfileLanguageModal
+          onClose={() => setActiveModal(null)}
+          onSave={saveProfileLanguage}
+          initialValue={member.profile_language}
+        />
+      ) : null}
+      {activeModal?.type === "public_profile_url" ? (
+        <EditPublicProfileUrlModal
+          onClose={() => setActiveModal(null)}
+          onSave={savePublicProfileSlug}
+          initialValue={profileSlug}
         />
       ) : null}
       {activeModal?.type === "contact_info" ? (

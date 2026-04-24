@@ -24,6 +24,7 @@ export async function updateMember(
     summary?: string | null;
     freeform_experience?: unknown;
     open_to?: string | null;
+    profile_status?: string | null;
     profile_language?: string | null;
     birthday?: string | null;
     website?: string | null;

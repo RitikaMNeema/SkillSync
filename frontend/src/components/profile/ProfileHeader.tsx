@@ -2,7 +2,7 @@ import { Camera, MapPin, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { deleteCoverPhoto, updateMember, uploadCoverPhoto, uploadProfilePhoto } from "../../api/members";
-import type { MemberProfile, OpenToOption } from "../../types/member";
+import type { MemberProfile, ProfileStatusOption } from "../../types/member";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import { Avatar } from "../ui/Avatar";
 import { Button } from "../ui/Button";
@@ -10,9 +10,29 @@ import { Card } from "../ui/Card";
 import { AffiliationPills } from "./AffiliationPills";
 import { OpenToDropdown } from "./OpenToDropdown";
 
+function statusToLegacyOpenTo(status: ProfileStatusOption): "job" | "hiring" | null {
+  if (status === "open_to_work") return "job";
+  if (status === "hiring") return "hiring";
+  return null;
+}
+
+function resolveProfileStatus(member: MemberProfile): ProfileStatusOption {
+  if (member.profile_status === "open_to_work" || member.profile_status === "hiring" || member.profile_status === "none") {
+    return member.profile_status;
+  }
+  if (member.open_to === "hiring") return "hiring";
+  if (member.open_to === "job") return "open_to_work";
+  return "none";
+}
+
 export function ProfileHeader({
   member,
   isOwnProfile,
+  allowMediaEditing = true,
+  onProfileStatusChange,
+  onProfilePhotoUpload,
+  onCoverPhotoUpload,
+  onCoverPhotoDelete,
   onProfileUpdated,
   onAddSection,
   onEditHeadline,
@@ -20,6 +40,17 @@ export function ProfileHeader({
 }: {
   member: MemberProfile;
   isOwnProfile: boolean;
+  allowMediaEditing?: boolean;
+  onProfileStatusChange?: (next: ProfileStatusOption) => Promise<void>;
+  onProfilePhotoUpload?: (
+    memberId: number,
+    file: File
+  ) => Promise<{ profile_photo_url: string; profile_photo_file_id?: string | null }>;
+  onCoverPhotoUpload?: (
+    memberId: number,
+    file: File
+  ) => Promise<{ cover_photo_url: string; cover_photo_file_id?: string | null }>;
+  onCoverPhotoDelete?: (memberId: number) => Promise<void>;
   onProfileUpdated?: (next: MemberProfile) => void;
   onAddSection?: () => void;
   onEditHeadline?: () => void;
@@ -29,14 +60,23 @@ export function ProfileHeader({
   const [uploadingCover, setUploadingCover] = useState(false);
   const [savingOpenTo, setSavingOpenTo] = useState(false);
   const [coverMenuOpen, setCoverMenuOpen] = useState(false);
+  const profileStatus = resolveProfileStatus(member);
 
-  async function handleOpenToChange(next: OpenToOption | null) {
-    if (!onProfileUpdated) return;
+  async function handleOpenToChange(next: ProfileStatusOption) {
     setSavingOpenTo(true);
     try {
-      await updateMember({ member_id: member.member_id, open_to: next });
-      onProfileUpdated({ ...member, open_to: next });
-      toast.success(next ? "Open-to status updated" : "Open-to status cleared");
+      if (onProfileStatusChange) {
+        await onProfileStatusChange(next);
+      } else {
+        if (!onProfileUpdated) return;
+        await updateMember({
+          member_id: member.member_id,
+          profile_status: next,
+          open_to: statusToLegacyOpenTo(next)
+        });
+        onProfileUpdated({ ...member, profile_status: next, open_to: statusToLegacyOpenTo(next) });
+      }
+      toast.success(next === "none" ? "Profile status cleared" : "Profile status updated");
     } catch (err) {
       toast.error(getApiErrorMessage(err) || "Could not update status");
     } finally {
@@ -56,7 +96,9 @@ export function ProfileHeader({
     const loadingId = toast.loading("Uploading photo...");
     setUploading(true);
     try {
-      const result = await uploadProfilePhoto(member.member_id, file);
+      const result = onProfilePhotoUpload
+        ? await onProfilePhotoUpload(member.member_id, file)
+        : await uploadProfilePhoto(member.member_id, file);
       toast.success("Profile photo updated", { id: loadingId });
       onProfileUpdated?.({
         ...member,
@@ -82,7 +124,9 @@ export function ProfileHeader({
     const loadingId = toast.loading(member.cover_photo_url ? "Updating cover image..." : "Uploading cover image...");
     setUploadingCover(true);
     try {
-      const result = await uploadCoverPhoto(member.member_id, file);
+      const result = onCoverPhotoUpload
+        ? await onCoverPhotoUpload(member.member_id, file)
+        : await uploadCoverPhoto(member.member_id, file);
       onProfileUpdated?.({
         ...member,
         cover_photo_url: result.cover_photo_url,
@@ -101,7 +145,11 @@ export function ProfileHeader({
     if (!member.cover_photo_url) return;
     const loadingId = toast.loading("Removing cover image...");
     try {
-      await deleteCoverPhoto(member.member_id);
+      if (onCoverPhotoDelete) {
+        await onCoverPhotoDelete(member.member_id);
+      } else {
+        await deleteCoverPhoto(member.member_id);
+      }
       onProfileUpdated?.({
         ...member,
         cover_photo_url: null,
@@ -125,7 +173,7 @@ export function ProfileHeader({
             : "linear-gradient(to right, #1d4477, #1568bf)"
         }}
       >
-        {isOwnProfile ? (
+        {isOwnProfile && allowMediaEditing ? (
           <div className="absolute right-4 top-4">
             <input
               type="file"
@@ -178,8 +226,8 @@ export function ProfileHeader({
             alt={`${member.first_name} ${member.last_name}`}
             name={`${member.first_name} ${member.last_name}`}
             size="2xl"
-            editable={isOwnProfile}
-            onFileSelected={isOwnProfile ? handlePhoto : undefined}
+            editable={isOwnProfile && allowMediaEditing}
+            onFileSelected={isOwnProfile && allowMediaEditing ? handlePhoto : undefined}
             uploading={uploading}
           />
           <div className="hidden md:block md:mt-[84px]">
@@ -227,7 +275,7 @@ export function ProfileHeader({
             {isOwnProfile ? (
               <>
                 <OpenToDropdown
-                  value={member.open_to}
+                  value={profileStatus}
                   onSelect={handleOpenToChange}
                   disabled={savingOpenTo}
                 />

@@ -1,11 +1,14 @@
 from fastapi import HTTPException
 from pymysql.err import IntegrityError
+from models import files_mongo
 
 from models.recruiter import (
     find_company, create_company, update_company,
     recruiter_exists, create_recruiter, get_recruiter,
     update_recruiter, delete_recruiter, search_recruiters,
     recruiters_by_company, PAGE_SIZE,
+    get_recruiter_photo_file_id, set_recruiter_photo_file,
+    get_recruiter_cover_file_id, set_recruiter_cover_file, clear_recruiter_cover_file,
 )
 
 
@@ -42,6 +45,35 @@ async def create(body: dict) -> dict:
             body.get("role"),
             body.get("access_level"),
         )
+        profile_fields = {
+            key: body.get(key)
+            for key in (
+                "first_name",
+                "last_name",
+                "location_city",
+                "location_state",
+                "location_country",
+                "headline",
+                "summary",
+                "birthday",
+                "website",
+                "profile_photo_url",
+                "cover_photo_url",
+                "open_to",
+                "profile_status",
+                "profile_language",
+                "profile_slug",
+                "experience",
+                "education",
+                "skills",
+                "about",
+                "languages",
+                "followed_skills",
+            )
+            if key in body
+        }
+        if profile_fields:
+            await update_recruiter(rid, profile_fields)
     except IntegrityError as exc:
         raise HTTPException(
             409,
@@ -62,13 +94,17 @@ async def get(recruiter_id: int) -> dict:
 
 
 async def update(body: dict) -> dict:
+    fields_set: set = body.pop("__pydantic_fields_set__", set())
+    if not isinstance(fields_set, set):
+        fields_set = set(fields_set) if fields_set is not None else set()
     rid = body.pop("recruiter_id")
     existing = await get_recruiter(rid)
     if not existing:
         raise HTTPException(404, "Recruiter not found")
-    company = body.pop("company", None)
-    if body:
-        await update_recruiter(rid, body)
+    company = body.pop("company", None) if "company" in fields_set else None
+    recruiter_patch = {k: v for k, v in body.items() if k in fields_set}
+    if recruiter_patch:
+        await update_recruiter(rid, recruiter_patch)
     if company:
         await update_company(existing["company_id"], company)
     return await get_recruiter(rid)
@@ -92,3 +128,99 @@ async def by_company(company_id: int, page: int) -> dict:
         raise HTTPException(404, "Company not found")
     rows, total = await recruiters_by_company(company_id, page)
     return {"company": company, "recruiters": rows, "total": total, "page": page, "page_size": PAGE_SIZE}
+
+
+MAX_PHOTO_BYTES = 5 * 1024 * 1024
+ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+
+async def upload_photo_file(
+    recruiter_id: int,
+    actor_id: int,
+    filename: str,
+    content_type: str,
+    data: bytes,
+) -> dict:
+    if recruiter_id != actor_id:
+        raise HTTPException(403, "Cannot upload photo for another recruiter")
+    if content_type not in ALLOWED_PHOTO_TYPES:
+        raise HTTPException(400, "Only JPEG, PNG, or WEBP images are allowed")
+    if len(data) == 0:
+        raise HTTPException(400, "Empty file")
+    if len(data) > MAX_PHOTO_BYTES:
+        raise HTTPException(413, "Image exceeds 5MB limit")
+    if not await get_recruiter(recruiter_id):
+        raise HTTPException(404, "Recruiter not found")
+
+    existing = await get_recruiter_photo_file_id(recruiter_id)
+    new_file_id = await files_mongo.upload_photo(recruiter_id, filename, content_type, data)
+    url = f"/api/recruiters/photo/{recruiter_id}?v={new_file_id}"
+    await set_recruiter_photo_file(recruiter_id, new_file_id, url)
+    if existing and existing != new_file_id:
+        await files_mongo.delete_photo(existing)
+    return {
+        "recruiter_id": recruiter_id,
+        "profile_photo_url": url,
+        "profile_photo_file_id": new_file_id,
+    }
+
+
+async def stream_photo_file(recruiter_id: int):
+    file_id = await get_recruiter_photo_file_id(recruiter_id)
+    if not file_id:
+        raise HTTPException(404, "No profile photo")
+    try:
+        return await files_mongo.stream_photo(file_id)
+    except FileNotFoundError:
+        raise HTTPException(404, "Profile photo missing in storage")
+
+
+async def upload_cover_file(
+    recruiter_id: int,
+    actor_id: int,
+    filename: str,
+    content_type: str,
+    data: bytes,
+) -> dict:
+    if recruiter_id != actor_id:
+        raise HTTPException(403, "Cannot upload cover for another recruiter")
+    if content_type not in ALLOWED_PHOTO_TYPES:
+        raise HTTPException(400, "Only JPEG, PNG, or WEBP images are allowed")
+    if len(data) == 0:
+        raise HTTPException(400, "Empty file")
+    if len(data) > MAX_PHOTO_BYTES:
+        raise HTTPException(413, "Image exceeds 5MB limit")
+    if not await get_recruiter(recruiter_id):
+        raise HTTPException(404, "Recruiter not found")
+
+    existing = await get_recruiter_cover_file_id(recruiter_id)
+    new_file_id = await files_mongo.upload_photo(recruiter_id, filename, content_type, data)
+    url = f"/api/recruiters/cover/{recruiter_id}?v={new_file_id}"
+    await set_recruiter_cover_file(recruiter_id, new_file_id, url)
+    if existing and existing != new_file_id:
+        await files_mongo.delete_photo(existing)
+    return {
+        "recruiter_id": recruiter_id,
+        "cover_photo_url": url,
+        "cover_photo_file_id": new_file_id,
+    }
+
+
+async def stream_cover_file(recruiter_id: int):
+    file_id = await get_recruiter_cover_file_id(recruiter_id)
+    if not file_id:
+        raise HTTPException(404, "No cover photo")
+    try:
+        return await files_mongo.stream_photo(file_id)
+    except FileNotFoundError:
+        raise HTTPException(404, "Cover photo missing in storage")
+
+
+async def delete_cover_file(recruiter_id: int, actor_id: int) -> dict:
+    if recruiter_id != actor_id:
+        raise HTTPException(403, "Forbidden")
+    file_id = await get_recruiter_cover_file_id(recruiter_id)
+    if file_id:
+        await files_mongo.delete_photo(file_id)
+    await clear_recruiter_cover_file(recruiter_id)
+    return {"recruiter_id": recruiter_id, "deleted": True}
