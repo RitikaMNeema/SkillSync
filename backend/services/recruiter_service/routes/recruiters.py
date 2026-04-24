@@ -1,7 +1,13 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.encoders import jsonable_encoder
+
 from schemas.recruiters import (
-    CreateRecruiterRequest, GetRecruiterRequest, UpdateRecruiterRequest,
-    DeleteRecruiterRequest, SearchRecruitersRequest, ByCompanyRequest,
+    CreateRecruiterRequest,
+    GetRecruiterRequest,
+    UpdateRecruiterRequest,
+    DeleteRecruiterRequest,
+    SearchRecruitersRequest,
+    ByCompanyRequest,
 )
 import controllers.recruiters as ctrl
 from shared.middleware.auth import get_current_user
@@ -11,7 +17,10 @@ router = APIRouter()
 
 @router.post("/create", status_code=201)
 async def create(body: CreateRecruiterRequest, u=Depends(get_current_user)):
-    return {"success": True, "data": await ctrl.create(body.model_dump())}
+    if body.recruiter_id != u["user_id"]:
+        raise HTTPException(status_code=403, detail="You can only create a recruiter profile for your own account")
+    data = await ctrl.create(body.model_dump())
+    return {"success": True, "data": jsonable_encoder(data)}
 
 @router.post("/get")
 async def get(body: GetRecruiterRequest, u=Depends(get_current_user)):

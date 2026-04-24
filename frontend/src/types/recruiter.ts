@@ -9,6 +9,8 @@ export interface RecruiterProfile {
   company_name: string;
   industry: string | null;
   size: string | null;
+  /** HQ / office location from `companies.location` */
+  company_location?: string | null;
 }
 
 export interface RecruiterSearchResponse {

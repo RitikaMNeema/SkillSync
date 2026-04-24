@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS companies (
   company_id  BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   name        VARCHAR(255) NOT NULL,
   industry    VARCHAR(255),
-  size        VARCHAR(100)
+  size        VARCHAR(100),
+  location    VARCHAR(255) NULL
 );
 
 -- ── members ──────────────────────────────────────────────────────
