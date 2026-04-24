@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   acceptConnection,
   listConnections,
@@ -13,6 +14,7 @@ import type { Connection, PendingConnection } from "../../types/connection";
 
 export function ConnectionsPage() {
   const userId = authStore((state) => state.userId);
+  const navigate = useNavigate();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [pending, setPending] = useState<PendingConnection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,23 +93,27 @@ export function ConnectionsPage() {
                   className="flex items-center justify-between gap-3 rounded-card p-3 hover:bg-hover"
                 >
                   <div>
-                    <p className="font-semibold">{request.requester_email}</p>
+                    <p className="font-semibold">{request.counterpart_email || request.requester_email}</p>
                     <p className="text-sm text-text-secondary">
-                      {request.created_at}
+                      {(request.direction ?? "incoming") === "incoming" ? "Incoming" : "Sent"} · {request.created_at}
                     </p>
                   </div>
 
-                  <div className="flex gap-2">
-                    <Button
-                      variant="secondary"
-                      onClick={() => void handleReject(request.id)}
-                    >
-                      Ignore
-                    </Button>
-                    <Button onClick={() => void handleAccept(request.id)}>
-                      Accept
-                    </Button>
-                  </div>
+                  {(request.direction ?? "incoming") === "incoming" ? (
+                    <div className="flex gap-2">
+                      <Button
+                        variant="secondary"
+                        onClick={() => void handleReject(request.id)}
+                      >
+                        Ignore
+                      </Button>
+                      <Button onClick={() => void handleAccept(request.id)}>
+                        Accept
+                      </Button>
+                    </div>
+                  ) : (
+                    <span className="text-sm text-text-secondary">Pending</span>
+                  )}
                 </div>
               ))}
             </div>
@@ -139,7 +145,12 @@ export function ConnectionsPage() {
                   Connected {connection.connected_at}
                 </p>
 
-                <Button fullWidth variant="secondary" className="mt-4">
+                <Button
+                  fullWidth
+                  variant="secondary"
+                  className="mt-4"
+                  onClick={() => navigate(`/messages?user=${connection.connected_user_id}`)}
+                >
                   Message
                 </Button>
               </Card>
