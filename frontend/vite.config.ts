@@ -68,6 +68,11 @@ export default defineConfig(({ mode }) => {
       target: "http://localhost:3008",
       rewrite: (path: string) => path.replace(/^\/api/, ""),
       ...proxyLong
+    },
+    "/api/ai": {
+      target: "http://localhost:3010",
+      rewrite: (path: string) => path.replace(/^\/api/, ""),
+      ...proxyLong
     }
   };
 

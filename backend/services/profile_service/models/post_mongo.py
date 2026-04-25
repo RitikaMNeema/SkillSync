@@ -52,7 +52,11 @@ async def create_post(
         "created_at": now,
     }
     await _posts().insert_one(doc)
+    doc.pop("_id", None)          # ObjectId is not JSON-serializable
     doc["created_at"] = now.isoformat()
+    doc["like_count"] = 0
+    doc["comment_count"] = 0
+    doc["viewer_has_liked"] = False
     return doc
 
 

@@ -31,6 +31,7 @@ SERVICE_URLS = {
     "messages": os.getenv("MESSAGING_SERVICE_URL", "http://127.0.0.1:3007"),
     "analytics": os.getenv("ANALYTICS_SERVICE_URL", "http://127.0.0.1:3008"),
     "events": os.getenv("ANALYTICS_SERVICE_URL", "http://127.0.0.1:3008"),
+    "ai": os.getenv("AI_SERVICE_URL", "http://127.0.0.1:3010"),
 }
 
 HOP_BY_HOP_HEADERS = {
