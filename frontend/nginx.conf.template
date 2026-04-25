@@ -1,0 +1,66 @@
+server {
+  listen 80;
+  server_name _;
+
+  root /usr/share/nginx/html;
+  index index.html;
+
+  # SPA fallback (React Router)
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+
+  # Proxy API calls to the backend services running on the Docker host.
+  # Works well with: `cd backend && docker compose up -d`
+  #
+  # You can override the host via env:
+  # - API_HOST=host.docker.internal (default; Docker Desktop Mac/Windows)
+  # - API_HOST=host-gateway (Linux with extra_hosts mapping)
+  #
+  # NOTE: These ports match the backend service ports in the repo docs.
+  set $api_host ${API_HOST};
+
+  proxy_http_version 1.1;
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+
+  proxy_connect_timeout 120s;
+  proxy_send_timeout 120s;
+  proxy_read_timeout 120s;
+
+  location ^~ /api/auth/ {
+    proxy_pass http://$api_host:3001/;
+  }
+  location ^~ /api/members/ {
+    proxy_pass http://$api_host:3002/;
+  }
+  location ^~ /api/posts/ {
+    proxy_pass http://$api_host:3002/;
+  }
+  location ^~ /api/recruiters/ {
+    proxy_pass http://$api_host:3003/;
+  }
+  location ^~ /api/connections/ {
+    proxy_pass http://$api_host:3004/;
+  }
+  location ^~ /api/jobs/ {
+    proxy_pass http://$api_host:3005/;
+  }
+  location ^~ /api/applications/ {
+    proxy_pass http://$api_host:3006/;
+  }
+  location ^~ /api/threads/ {
+    proxy_pass http://$api_host:3007/;
+  }
+  location ^~ /api/messages/ {
+    proxy_pass http://$api_host:3007/;
+  }
+  location ^~ /api/analytics/ {
+    proxy_pass http://$api_host:3008/;
+  }
+  location ^~ /api/events/ {
+    proxy_pass http://$api_host:3008/;
+  }
+}
