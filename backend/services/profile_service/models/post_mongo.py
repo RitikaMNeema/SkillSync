@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -5,6 +6,18 @@ from shared.database.mongo import get_db
 from models.member_mysql import get_member_by_id
 
 PAGE_SIZE = 10
+_log = logging.getLogger(__name__)
+
+
+def _public_text(value) -> str | None:
+    """JSON-safe author fields from MySQL (bytes / odd driver types)."""
+    if value is None:
+        return None
+    if isinstance(value, (bytes, bytearray)):
+        text = value.decode("utf-8", errors="replace").strip()
+    else:
+        text = str(value).strip()
+    return text or None
 
 
 def _posts():
@@ -44,15 +57,20 @@ async def create_post(
         "content": content,
         "media_url": media_url,
         "author": {  # snapshot — kept for backward compat; feed re-hydrates
-            "first_name": author.get("first_name"),
-            "last_name": author.get("last_name"),
-            "headline": author.get("headline"),
-            "profile_photo_url": author.get("profile_photo_url"),
+            "first_name": _public_text(author.get("first_name")),
+            "last_name": _public_text(author.get("last_name")),
+            "headline": _public_text(author.get("headline")),
+            "profile_photo_url": _public_text(author.get("profile_photo_url")),
         },
         "created_at": now,
     }
     await _posts().insert_one(doc)
+    doc.pop("_id", None)  # insert_one mutates doc; ObjectId is not JSON-serializable
     doc["created_at"] = now.isoformat()
+    # Match feed shape so clients can render immediately after create.
+    doc["like_count"] = 0
+    doc["comment_count"] = 0
+    doc["viewer_has_liked"] = False
     return doc
 
 
@@ -112,19 +130,57 @@ async def _hydrate(rows: list[dict], viewer_id: int | None) -> list[dict]:
 
 
 async def list_feed_posts(page: int, viewer_id: int | None = None) -> dict:
+    """Posts from accepted MySQL `connections` rows + the viewer's own posts only."""
     skip = (page - 1) * PAGE_SIZE
+    empty = {"posts": [], "total": 0, "page": page, "page_size": PAGE_SIZE}
+
+    if viewer_id is None:
+        return empty
+
+    vid = int(viewer_id)
+
+    # DictCursor rows are dicts — never use row[0]; that raised KeyError and dropped all edges.
+    connected_ids: list[int] = []
+    try:
+        from shared.database.mysql import get_pool
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    SELECT CASE
+                        WHEN user_id_1 = %s THEN user_id_2
+                        ELSE user_id_1
+                    END AS connected_user_id
+                    FROM connections
+                    WHERE user_id_1 = %s OR user_id_2 = %s
+                    """,
+                    (vid, vid, vid),
+                )
+                rows = await cur.fetchall()
+                for row in rows:
+                    raw = row["connected_user_id"] if isinstance(row, dict) else row[0]
+                    if raw is not None:
+                        connected_ids.append(int(raw))
+    except Exception as exc:
+        _log.warning("Could not load connections for feed (viewer=%s): %s", vid, exc)
+
+    connected_ids = list(dict.fromkeys(connected_ids))
+    allowed_member_ids = list(dict.fromkeys([*connected_ids, vid]))
+    filter_query = {"member_id": {"$in": allowed_member_ids}}
+
     cursor = (
         _posts()
-        .find({}, {"_id": 0})
+        .find(filter_query, {"_id": 0})
         .sort("created_at", -1)
         .skip(skip)
         .limit(PAGE_SIZE)
     )
     rows = await cursor.to_list(length=PAGE_SIZE)
-    total = await _posts().count_documents({})
-    rows = await _hydrate(rows, viewer_id)
+    total = await _posts().count_documents(filter_query)
+    rows = await _hydrate(rows, vid)
     return {"posts": rows, "total": total, "page": page, "page_size": PAGE_SIZE}
-
 
 async def list_member_posts(member_id: int, page: int, viewer_id: int | None = None) -> dict:
     skip = (page - 1) * PAGE_SIZE

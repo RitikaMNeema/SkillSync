@@ -109,6 +109,19 @@ def _safe_str(value: Any) -> str | None:
     return text or None
 
 
+def _legacy_json_field(value: Any) -> Any:
+    """Parse legacy JSON text columns on members; tolerate empty or invalid JSON."""
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if not stripped:
+        return None
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+
+
 def _first(entry: dict, *keys: str):
     """Return first non-empty value for camelCase / snake_case aliases."""
     for key in keys:
@@ -463,9 +476,9 @@ async def get_member_by_id(member_id: int) -> dict | None:
             if not row:
                 return None
 
-            legacy_experience = json.loads(row["experience"]) if isinstance(row.get("experience"), str) else row.get("experience")
-            legacy_education = json.loads(row["education"]) if isinstance(row.get("education"), str) else row.get("education")
-            legacy_skills = json.loads(row["skills"]) if isinstance(row.get("skills"), str) else row.get("skills")
+            legacy_experience = _legacy_json_field(row.get("experience"))
+            legacy_education = _legacy_json_field(row.get("education"))
+            legacy_skills = _legacy_json_field(row.get("skills"))
             legacy_experience_entries = [_experience_response_entry(entry) for entry in _normalize_experience(legacy_experience)]
             legacy_education_entries = [_education_response_entry(entry) for entry in _normalize_education(legacy_education)]
             legacy_skill_entries = _normalize_skills(legacy_skills)
@@ -676,7 +689,8 @@ async def search_members(keyword, skill, location, page, page_size=PAGE_SIZE) ->
             rows = await cur.fetchall()
             for row in rows:
                 if isinstance(row.get("skills"), str):
-                    row["skills"] = json.loads(row["skills"])
+                    parsed = _legacy_json_field(row.get("skills"))
+                    row["skills"] = parsed if parsed is not None else []
             await cur.execute(f"SELECT COUNT(*) as total FROM members m {where}", values)
             total = (await cur.fetchone())["total"]
     return rows, total

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { MessageCircle, MoreHorizontal, ThumbsUp, Trash2 } from "lucide-react";
 import clsx from "clsx";
 import toast from "react-hot-toast";
@@ -116,49 +117,51 @@ export function PostCard({ post, viewerId, onUpdate, onDelete }: PostCardProps) 
   return (
     <div className={clsx("rounded-card border p-4 transition-opacity", deleting && "opacity-50")}>
       <div className="flex items-start gap-3">
-        <Avatar
-          src={post.author.profile_photo_url ?? undefined}
-          alt={authorName}
-          name={authorName}
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="font-semibold">{authorName}</p>
-              <p className="text-sm text-text-secondary">{post.author.headline || "Member"}</p>
-            </div>
-            <div className="flex items-start gap-2">
-              <div className="text-right">
-                <Badge className="bg-slate-100 text-slate-600">{post.post_type}</Badge>
-                <p className="mt-1 text-xs text-text-tertiary">{formatRelativeDate(post.created_at)}</p>
+  <Link to={`/profile/${post.member_id}`} className="flex-shrink-0">
+    <Avatar
+      src={post.author.profile_photo_url ?? undefined}
+      alt={authorName}
+      name={authorName}
+    />
+  </Link>
+  <div className="min-w-0 flex-1">
+    <div className="flex items-start justify-between gap-3">
+      <Link to={`/profile/${post.member_id}`} className="min-w-0 hover:underline">
+        <p className="font-semibold">{authorName}</p>
+        <p className="text-sm text-text-secondary">{post.author.headline || "Member"}</p>
+      </Link>
+      <div className="flex items-start gap-2">
+        <div className="text-right">
+          <Badge className="bg-slate-100 text-slate-600">{post.post_type}</Badge>
+          <p className="mt-1 text-xs text-text-tertiary">{formatRelativeDate(post.created_at)}</p>
+        </div>
+        {isOwner ? (
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              className="rounded-full p-1 text-text-secondary hover:bg-hover"
+              aria-label="Post options"
+              disabled={deleting}
+            >
+              <MoreHorizontal className="h-5 w-5" />
+            </button>
+            {menuOpen ? (
+              <div className="absolute right-0 top-8 z-10 w-40 rounded-card border bg-white py-1 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => void handleDelete()}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete post
+                </button>
               </div>
-              {isOwner ? (
-                <div className="relative" ref={menuRef}>
-                  <button
-                    type="button"
-                    onClick={() => setMenuOpen((v) => !v)}
-                    className="rounded-full p-1 text-text-secondary hover:bg-hover"
-                    aria-label="Post options"
-                    disabled={deleting}
-                  >
-                    <MoreHorizontal className="h-5 w-5" />
-                  </button>
-                  {menuOpen ? (
-                    <div className="absolute right-0 top-8 z-10 w-40 rounded-card border bg-white py-1 shadow-lg">
-                      <button
-                        type="button"
-                        onClick={() => void handleDelete()}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Delete post
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
+            ) : null}
           </div>
+        ) : null}
+      </div>
+    </div>
 
           {post.content ? (
             <p className="mt-3 whitespace-pre-wrap text-sm text-text-primary">{post.content}</p>

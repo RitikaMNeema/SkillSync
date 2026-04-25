@@ -42,7 +42,8 @@ BASE = {
 }
 
 DANA_EMAIL = "dana@acme.com"
-DANA_PASSWORD = "password123"
+# Must satisfy auth_service password policy (same as scripts/seed.py SEED_USER_PASSWORD).
+DANA_PASSWORD = "SkillSync1!"
 
 MEMBER_FIXTURES = [
     ("mila.ross@example.com", "Mila", "Ross", "Backend Engineer", "Austin", "TX"),

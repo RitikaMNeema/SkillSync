@@ -7,8 +7,7 @@ import {
   Image,
   MessageSquare,
   Plus,
-  Sparkles,
-  Video
+  Sparkles
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { getMemberDashboard, getTopJobs } from "../../api/analytics";
@@ -19,6 +18,7 @@ import { createMember, getMember, searchMembers } from "../../api/members";
 import { createPost, getFeedPosts, uploadPostImage } from "../../api/posts";
 import { searchRecruiters } from "../../api/recruiters";
 import { RightSidebar, Sidebar } from "../../components/layout/Sidebar";
+import { PostCard } from "../../components/posts/PostCard";
 import { Avatar } from "../../components/ui/Avatar";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -35,12 +35,11 @@ import type { MemberProfile, MemberSearchItem } from "../../types/member";
 import type { FeedPost, PostType } from "../../types/post";
 import type { RecruiterProfile } from "../../types/recruiter";
 import { formatRelativeDate } from "../../utils/formatDate";
-import { getHttpStatus } from "../../utils/getApiErrorMessage";
+import { getApiErrorMessage, getHttpStatus } from "../../utils/getApiErrorMessage";
 import { getStatusColor } from "../../utils/getStatusColor";
 
 const composerActions: Array<{ type: PostType; label: string; icon: typeof Image }> = [
   { type: "photo", label: "Photo", icon: Image },
-  { type: "video", label: "Video", icon: Video },
   { type: "article", label: "Article", icon: FileText }
 ];
 
@@ -195,8 +194,9 @@ export function FeedPage() {
       setComposerType("post");
       setComposerOpen(false);
       toast.success("Post published", { id: loadingToast });
-    } catch {
-      toast.error("Could not publish your post", { id: loadingToast });
+    } catch (submitError: unknown) {
+      const detail = getApiErrorMessage(submitError);
+      toast.error(detail || "Could not publish your post", { id: loadingToast });
     } finally {
       setPosting(false);
       setUploadingImage(false);
@@ -333,14 +333,22 @@ export function FeedPage() {
           </div>
           {composerOpen ? (
             <div className="mt-4 space-y-3 border-t pt-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold capitalize text-text-secondary">{composerType} post</p>
-                <Badge className="bg-brand-light text-brand">{composerType}</Badge>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-text-primary">Post</p>
+                <p className="text-xs font-medium text-text-secondary">
+                  {composerType === "photo" ? "Photo" : composerType === "article" ? "Article" : "Text"}
+                </p>
               </div>
               <Textarea
                 value={composerText}
                 onChange={(event) => setComposerText(event.target.value)}
-                placeholder={`Share a ${composerType} with your network`}
+                placeholder={
+                  composerType === "photo"
+                    ? "Add an optional caption…"
+                    : composerType === "article"
+                      ? "Share context or a takeaway…"
+                      : "Share what's on your mind…"
+                }
               />
               {composerType === "photo" ? (
                 <div className="space-y-2">
@@ -410,38 +418,20 @@ export function FeedPage() {
               Create one
             </Button>
           </div>
-          {posts.length ? (
+          {posts.length > 0 && userId != null ? (
             <div className="space-y-4">
               {posts.map((post) => (
-                <div key={post.post_id} className="rounded-card border p-4">
-                  <div className="flex items-start gap-3">
-                    <Avatar
-                      src={post.author.profile_photo_url ?? undefined}
-                      alt={`${post.author.first_name ?? ""} ${post.author.last_name ?? ""}`}
-                      name={`${post.author.first_name ?? ""} ${post.author.last_name ?? ""}`}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="font-semibold">
-                            {post.author.first_name} {post.author.last_name}
-                          </p>
-                          <p className="text-sm text-text-secondary">{post.author.headline || "Member"}</p>
-                        </div>
-                        <div className="text-right">
-                          <Badge className="bg-slate-100 text-slate-600">{post.post_type}</Badge>
-                          <p className="mt-1 text-xs text-text-tertiary">{formatRelativeDate(post.created_at)}</p>
-                        </div>
-                      </div>
-                      <p className="mt-3 whitespace-pre-wrap text-sm text-text-primary">{post.content}</p>
-                      {post.media_url ? (
-                        <a href={post.media_url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm">
-                          Open attachment
-                        </a>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
+                <PostCard
+                  key={post.post_id}
+                  post={post}
+                  viewerId={userId}
+                  onUpdate={(updated) =>
+                    setPosts((current) =>
+                      current.map((p) => (p.post_id === updated.post_id ? updated : p))
+                    )
+                  }
+                  onDelete={(postId) => setPosts((current) => current.filter((p) => p.post_id !== postId))}
+                />
               ))}
             </div>
           ) : (
