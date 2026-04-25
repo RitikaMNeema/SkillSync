@@ -137,6 +137,8 @@ celerybeat.pid
 
 # Environments — commit `.env.example` templates; keep real secrets in `.env` only (untracked).
 !.env.example
+# Local overrides loaded after `.env` (e.g. backend/.env.local for host + Docker DB ports).
+**/.env.local
 .envrc
 .venv
 env/
