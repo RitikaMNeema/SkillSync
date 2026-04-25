@@ -53,6 +53,25 @@ npm run dev
 
 Swagger UI available at `localhost:300X/docs` for each service.
 
+### Frontend with Docker
+
+Run the Vite dev server (hot reload) in Docker:
+
+```bash
+cd frontend
+docker compose up --build frontend-dev
+```
+
+Run a production-like build served by nginx:
+
+```bash
+cd frontend
+docker compose up --build frontend
+```
+
+- Dev runs at `http://localhost:5173`
+- Prod runs at `http://localhost:8080`
+
 ---
 
 ## Repo Layout

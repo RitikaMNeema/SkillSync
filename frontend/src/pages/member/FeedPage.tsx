@@ -321,10 +321,14 @@ export function FeedPage() {
               <p className="text-sm text-text-secondary">{profile.headline || "Complete your profile headline"}</p>
             </button>
             <div className="mt-4 space-y-2 border-t pt-4 text-sm">
-              <div className="flex justify-between">
+              <button
+                type="button"
+                className="flex w-full justify-between text-left hover:text-brand"
+                onClick={() => navigate("/dashboard")}
+              >
                 <span>Profile views</span>
                 <span>{profile.profile_views ?? 0}</span>
-              </div>
+              </button>
               <button
                 type="button"
                 className="flex w-full justify-between text-left hover:text-brand"
