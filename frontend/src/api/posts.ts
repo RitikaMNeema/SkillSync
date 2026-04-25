@@ -61,9 +61,8 @@ export async function listComments(post_id: string, page = 1) {
 export async function uploadPostImage(file: File): Promise<string> {
   const form = new FormData();
   form.append("file", file);
-  const response = await api.post<ApiResponse<UploadImageResponse>>("/posts/upload-image", form, {
-    headers: { "Content-Type": "multipart/form-data" }
-  });
+  // Do not set Content-Type manually — the browser must add the multipart boundary.
+  const response = await api.post<ApiResponse<UploadImageResponse>>("/posts/upload-image", form);
   return response.data.data.media_url;
 }
 

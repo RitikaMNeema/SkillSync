@@ -34,6 +34,32 @@ SERVICE_URLS = {
     "ai": os.getenv("AI_SERVICE_URL", "http://127.0.0.1:3010"),
 }
 
+# First URL segment on each microservice (after /api/{service}/... in the gateway path).
+SERVICE_UPSTREAM_PREFIX: dict[str, str] = {
+    "auth": "auth",
+    "members": "members",
+    "posts": "posts",
+    "recruiters": "recruiters",
+    "connections": "connections",
+    "jobs": "jobs",
+    "applications": "applications",
+    "threads": "threads",
+    "messages": "messages",
+    "analytics": "analytics",
+    "events": "events",
+}
+
+
+def _gateway_upstream_path(service: str, path: str) -> str:
+    """Map /api/{service}/{path} to the path each FastAPI app actually mounts (e.g. auth -> /auth/...)."""
+    tail = path.lstrip("/")
+    if tail == "health":
+        return "health"
+    prefix = SERVICE_UPSTREAM_PREFIX.get(service)
+    if not prefix:
+        raise HTTPException(status_code=404, detail=f"Unknown API prefix: {service}")
+    return f"{prefix}/{tail}" if tail else prefix
+
 HOP_BY_HOP_HEADERS = {
     "connection",
     "keep-alive",
@@ -125,7 +151,7 @@ async def proxy(service: str, path: str, request: Request) -> Response:
     if not base_url:
         raise HTTPException(status_code=404, detail=f"Unknown API prefix: {service}")
 
-    upstream_url = f"{base_url.rstrip('/')}/{service}/{path.lstrip('/')}"
+    upstream_url = f"{base_url.rstrip('/')}/{_gateway_upstream_path(service, path)}"
     body = await request.body()
     is_upload = "uploadPhoto" in path or "uploadResumeFile" in path
     if is_upload:

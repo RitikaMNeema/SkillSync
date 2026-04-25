@@ -163,3 +163,4 @@ async def get_mutual_connections(uid1, uid2) -> list:
                 (uid1, uid1, uid1, uid2, uid2, uid2),
             )
             return await cur.fetchall()
+
