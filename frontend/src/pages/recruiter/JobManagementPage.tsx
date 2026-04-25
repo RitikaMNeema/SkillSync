@@ -108,6 +108,11 @@ export function JobManagementPage() {
     })();
   }, [recruiterId]);
 
+  useEffect(() => {
+    const q = searchParams.get("q") ?? "";
+    setKeyword(q);
+  }, [searchParams]);
+
   const filteredJobs = useMemo(() => {
     if (focus === "active") return jobs.filter((job) => (job.status ?? "open") === "open");
     if (focus === "applicants") return jobs.filter((job) => (job.applicants_count ?? 0) > 0);
@@ -189,6 +194,27 @@ export function JobManagementPage() {
     }
     return meta;
   }, [displayedJobs]);
+  const filteredDisplayedJobs = useMemo(
+    () =>
+      displayedJobs.filter(({ job }) => {
+        const searchable = [
+          job.title,
+          job.location ?? "",
+          job.employment_type ?? "",
+          job.company_name ?? "",
+          Array.isArray(job.skills_required) ? job.skills_required.join(" ") : "",
+          job.description ?? ""
+        ]
+          .join(" ")
+          .toLowerCase();
+        const normalizedKeyword = keyword.trim().toLowerCase();
+        const matchesKeyword = normalizedKeyword ? searchable.includes(normalizedKeyword) : true;
+        const matchesStatus = statusFilter === "all" ? true : (job.status ?? "open") === statusFilter;
+        const matchesWorkMode = workModeFilter === "all" ? true : job.work_mode === workModeFilter;
+        return matchesKeyword && matchesStatus && matchesWorkMode;
+      }),
+    [displayedJobs, keyword, statusFilter, workModeFilter]
+  );
 
   async function onSubmit(values: JobFormValues) {
     if (!recruiterId) return;
@@ -392,15 +418,7 @@ export function JobManagementPage() {
             <span>Status</span>
             <span>Actions</span>
           </div>
-          {displayedJobs
-            .filter(({ job }) => {
-              const text = `${job.title} ${job.location ?? ""} ${job.employment_type ?? ""}`.toLowerCase();
-              const matchesKeyword = keyword.trim() ? text.includes(keyword.trim().toLowerCase()) : true;
-              const matchesStatus = statusFilter === "all" ? true : (job.status ?? "open") === statusFilter;
-              const matchesWorkMode = workModeFilter === "all" ? true : job.work_mode === workModeFilter;
-              return matchesKeyword && matchesStatus && matchesWorkMode;
-            })
-            .map(({ job, postingCount }) => (
+          {filteredDisplayedJobs.map(({ job, postingCount }) => (
             <div key={job.job_id} className={`grid min-h-14 ${jobTableColumns} items-center gap-4 px-6 py-4 hover:bg-hover`}>
               <Link
                 to={`/recruiter/jobs/${job.job_id}/applicants`}
@@ -466,6 +484,11 @@ export function JobManagementPage() {
               </div>
             </div>
           ))}
+          {!filteredDisplayedJobs.length ? (
+            <div className="px-6 py-8 text-sm text-text-secondary">
+              No postings match your current search and filters.
+            </div>
+          ) : null}
         </Card>
       )}
       {open ? (

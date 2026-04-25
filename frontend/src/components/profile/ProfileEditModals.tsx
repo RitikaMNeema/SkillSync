@@ -1,8 +1,9 @@
-import { Search, X } from "lucide-react";
-import { forwardRef } from "react";
-import type { ReactNode, SelectHTMLAttributes } from "react";
+import { Cake, Globe, Mail, MapPin, Phone, Search, X } from "lucide-react";
+import { forwardRef, useEffect, useState } from "react";
+import type { FormEvent, ReactNode, SelectHTMLAttributes } from "react";
 import { useForm } from "react-hook-form";
 import type { EducationEntry, ExperienceEntry } from "../../types/member";
+import { canonicalizeSkill } from "../../utils/skills";
 import { Button } from "../ui/Button";
 import { Input, Textarea } from "../ui/Input";
 
@@ -59,9 +60,26 @@ function ModalShell({
   footer: ReactNode;
   widthClass?: string;
 }) {
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[rgba(0,0,0,0.45)] px-4 py-8">
-      <div className={`flex max-h-[calc(100vh-3rem)] w-full flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_22px_60px_rgba(15,23,42,0.22)] ${widthClass}`}>
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-[rgba(0,0,0,0.45)] px-4 py-8"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        className={`flex max-h-[calc(100vh-3rem)] w-full flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_22px_60px_rgba(15,23,42,0.22)] ${widthClass}`}
+      >
         <div className="flex items-center justify-between border-b border-[#e4e7eb] px-8 py-5">
           <h2 className="text-[2rem] font-semibold tracking-[-0.03em] text-[#1f1f1f]">{title}</h2>
           <button type="button" aria-label="Close" className="rounded-full p-2 text-[#4d4d4d] transition hover:bg-[#f3f6f8]" onClick={onClose}>
@@ -96,11 +114,13 @@ const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElem
 
 function ModalFooter({
   onDelete,
+  deleteText = "Delete",
   submitLabel,
   formId,
   disabled
 }: {
   onDelete?: (() => void) | null;
+  deleteText?: string;
   submitLabel: string;
   formId: string;
   disabled: boolean;
@@ -110,7 +130,7 @@ function ModalFooter({
       <div>
         {onDelete ? (
           <button type="button" className="text-[1.05rem] font-semibold text-[#4b4b4b] transition hover:text-[#1f1f1f]" onClick={onDelete}>
-            Delete
+            {deleteText}
           </button>
         ) : null}
       </div>
@@ -125,8 +145,43 @@ interface SkillFormValues {
   skill: string;
 }
 
+interface LanguageFormValues {
+  name: string;
+  proficiency: string;
+  score: string;
+}
+
 interface AboutFormValues {
   about: string;
+}
+
+interface HeadlineFormValues {
+  headline: string;
+}
+
+interface ProfileLanguageFormValues {
+  profile_language: string;
+}
+
+interface PublicProfileUrlFormValues {
+  profile_slug: string;
+}
+
+export interface ContactInfoValues {
+  phone: string;
+  birthday: string;
+  website: string;
+  location_city: string;
+  location_state: string;
+  location_country: string;
+}
+
+export interface ContactInfoSnapshot {
+  email?: string | null;
+  birthday?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  location?: string | null;
 }
 
 export function EditAboutModal({
@@ -167,26 +222,622 @@ export function EditAboutModal({
   );
 }
 
-export function AddSkillModal({ onClose, onSave }: { onClose: () => void; onSave: (skill: string) => Promise<void> }) {
-  const { register, handleSubmit, formState } = useForm<SkillFormValues>();
+export interface SkillFormSavePayload {
+  skillName: string;
+  experienceIndices: number[];
+  educationIndices: number[];
+  followThisSkill: boolean;
+}
+
+function experienceMapLabel(entry: ExperienceEntry) {
+  const title = (entry.title || "").trim() || "Role";
+  const company = (entry.company || "").trim() || "Organization";
+  return `${title} at ${company}`;
+}
+
+function formatSkillNameForLabel(name: string) {
+  const t = name.trim();
+  return t || "this";
+}
+
+export function SkillFormModal({
+  mode,
+  displaySkillName,
+  experience,
+  education,
+  initialExperienceIndices,
+  initialEducationIndices,
+  initialFollow,
+  suggestions = [],
+  onClose,
+  onSave,
+  onDelete
+}: {
+  mode: "add" | "edit";
+  /** Exact skill on profile in edit mode. Ignored in add. */
+  displaySkillName: string;
+  experience: ExperienceEntry[];
+  education: EducationEntry[];
+  initialExperienceIndices: number[];
+  initialEducationIndices: number[];
+  initialFollow: boolean;
+  suggestions?: string[];
+  onClose: () => void;
+  onSave: (payload: SkillFormSavePayload) => Promise<void>;
+  onDelete?: () => Promise<void>;
+}) {
+  const { register, handleSubmit, setValue, watch, formState } = useForm<SkillFormValues>({
+    defaultValues: { skill: "" }
+  });
+  const [expSelected, setExpSelected] = useState<Set<number>>(() => new Set(initialExperienceIndices));
+  const [eduSelected, setEduSelected] = useState<Set<number>>(() => new Set(initialEducationIndices));
+  const [follow, setFollow] = useState(initialFollow);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(true);
+  const skillField = watch("skill") ?? "";
+  const forLabel = mode === "add" ? formatSkillNameForLabel(canonicalizeSkill(skillField) || skillField) : formatSkillNameForLabel(displaySkillName);
+
+  const formId = mode === "add" ? "add-skill-form" : "edit-skill-form";
+  const title = mode === "add" ? "Add skill" : `Edit ${displaySkillName}`;
+
+  const saveDisabled = formState.isSubmitting || saving || deleting;
+
+  async function runSave(skillName: string) {
+    const name = mode === "add" ? canonicalizeSkill(skillName) : displaySkillName.trim();
+    if (mode === "add" && !name) {
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave({
+        skillName: name,
+        experienceIndices: [...expSelected].sort((a, b) => a - b),
+        educationIndices: [...eduSelected].sort((a, b) => a - b),
+        followThisSkill: follow
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function onFormSubmit(e: FormEvent) {
+    if (mode === "add") {
+      void handleSubmit((values) => runSave(values.skill))(e);
+    } else {
+      e.preventDefault();
+      void runSave(displaySkillName);
+    }
+  }
 
   return (
     <ModalShell
-      title="Add skill"
+      title={title}
       widthClass="max-w-[1180px]"
       onClose={onClose}
-      footer={<ModalFooter submitLabel="Save" formId="add-skill-form" disabled={formState.isSubmitting} />}
+      footer={
+        <ModalFooter
+          onDelete={
+            mode === "edit" && onDelete
+              ? () => {
+                  setDeleting(true);
+                  void Promise.resolve(onDelete()).finally(() => setDeleting(false));
+                }
+              : undefined
+          }
+          deleteText="Delete skill"
+          submitLabel="Save"
+          formId={formId}
+          disabled={saveDisabled}
+        />
+      }
     >
-      <form id="add-skill-form" className="space-y-8" onSubmit={handleSubmit(async (values) => onSave(values.skill.trim()))}>
+      <form id={formId} className="space-y-8" onSubmit={onFormSubmit}>
+        {mode === "add" ? <p className="text-sm text-[#5f6b7a]">* Indicates required</p> : null}
+        {mode === "add" ? (
+          <div>
+            <FieldLabel>Skill*</FieldLabel>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5f6368]" />
+              <Input
+                {...register("skill", { required: true })}
+                placeholder="Skill (e.g. Java, Project management)"
+                className="h-[50px] rounded-[10px] border-[#b8c0c7] !pl-12 text-[1rem] placeholder:text-[#8b8b8b] focus:shadow-none"
+              />
+            </div>
+            {showSuggestions && suggestions.length ? (
+              <div className="mt-4 rounded-xl border border-[#e5e7eb] bg-[#f5f5f4] p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-[1.1rem] font-semibold text-[#1f1f1f]">Suggested based on your profile</p>
+                  <button type="button" className="rounded-full p-1 text-[#4b5563] hover:bg-[#e5e7eb]" onClick={() => setShowSuggestions(false)}>
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {suggestions.slice(0, 12).map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      className="rounded-full border border-[#9ca3af] bg-white px-3 py-1.5 text-sm font-semibold text-[#374151] transition hover:bg-[#f3f4f6]"
+                      onClick={() => setValue("skill", suggestion, { shouldValidate: true, shouldDirty: true })}
+                    >
+                      {suggestion} +
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         <div>
-          <FieldLabel>Skill*</FieldLabel>
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#1f1f1f]" />
+          {mode === "add" ? (
+            <>
+              <h3 className="text-[1.1rem] font-semibold text-[#1f1f1f]">Show us where you used this skill</h3>
+              <p className="mt-1 text-sm text-[#5f6b7a]">
+                75% of hirers value skill context. Search at least one item to show where you used this skill.
+              </p>
+            </>
+          ) : (
+            <>
+              <h3 className="text-[1.1rem] font-semibold text-[#1f1f1f]">Tell us where you put this skill to use</h3>
+              <p className="mt-1 text-sm text-[#5f6b7a]">Select any item where this skill applies</p>
+            </>
+          )}
+
+          <div className="mt-4 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#6b7280]">Experience</p>
+            {experience.length ? (
+              <div className="space-y-2 pl-0">
+                {experience.map((entry, i) => (
+                  <label key={`exp-${i}`} className="flex cursor-pointer items-start gap-3 rounded-lg p-1 hover:bg-[#f3f6f8]">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 rounded border-[#9ca3af] text-[#0a66c2] focus:ring-brand"
+                      checked={expSelected.has(i)}
+                      onChange={() => {
+                        setExpSelected((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(i)) next.delete(i);
+                          else next.add(i);
+                          return next;
+                        });
+                      }}
+                    />
+                    <span className="text-[0.95rem] text-[#1f1f1f]">{experienceMapLabel(entry)}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-[#6b7280]">Add an experience to map this skill to a role.</p>
+            )}
+          </div>
+
+          <div className="mt-5 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#6b7280]">Education</p>
+            {education.length ? (
+              <div className="space-y-2 pl-0">
+                {education.map((entry, i) => (
+                  <label key={`edu-${i}`} className="flex cursor-pointer items-start gap-3 rounded-lg p-1 hover:bg-[#f3f6f8]">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 rounded border-[#9ca3af] text-[#0a66c2] focus:ring-brand"
+                      checked={eduSelected.has(i)}
+                      onChange={() => {
+                        setEduSelected((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(i)) next.delete(i);
+                          else next.add(i);
+                          return next;
+                        });
+                      }}
+                    />
+                    <span className="text-[0.95rem] text-[#1f1f1f]">{(entry.school || "").trim() || "School"}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-[#6b7280]">Add education to map this skill to a school.</p>
+            )}
+          </div>
+        </div>
+
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 rounded border-[#9ca3af] text-[#0a66c2] focus:ring-brand"
+            checked={follow}
+            onChange={(ev) => setFollow(ev.target.checked)}
+          />
+          <span className="text-sm text-[#1f1f1f]">
+            Follow the <span className="font-semibold">{forLabel}</span> skill to get job recommendations
+          </span>
+        </label>
+      </form>
+    </ModalShell>
+  );
+}
+
+function formatSkillSources(mappings: string[] | undefined): string {
+  if (!mappings?.length) return "Added from profile";
+  if (mappings.length === 1) return mappings[0];
+  return mappings.join(" · ");
+}
+
+export function SkillsListModal({
+  onClose,
+  skills,
+  skillMappings,
+  onSelectSkill
+}: {
+  onClose: () => void;
+  skills: string[];
+  skillMappings?: Record<string, string[]>;
+  /** When set, rows open edit flow for the skill. */
+  onSelectSkill?: (skill: string) => void;
+}) {
+  return (
+    <ModalShell
+      title={`All skills${skills.length ? ` (${skills.length})` : ""}`}
+      widthClass="max-w-[700px]"
+      onClose={onClose}
+      footer={
+        <Button type="button" onClick={onClose}>
+          Done
+        </Button>
+      }
+    >
+      {skills.length ? (
+        <ul className="space-y-0 divide-y divide-[#edf1f4]">
+          {skills.map((skill) => {
+            const sources = skillMappings?.[skill];
+            return (
+              <li key={skill} className="py-4 first:pt-0">
+                {onSelectSkill ? (
+                  <button
+                    type="button"
+                    className="w-full text-left transition hover:opacity-80"
+                    onClick={() => onSelectSkill(skill)}
+                  >
+                    <p className="text-[1.15rem] font-semibold text-[#1f1f1f]">{skill}</p>
+                    <p className="mt-1 text-sm leading-relaxed text-[#555555]">{formatSkillSources(sources)}</p>
+                  </button>
+                ) : (
+                  <>
+                    <p className="text-[1.15rem] font-semibold text-[#1f1f1f]">{skill}</p>
+                    <p className="mt-1 text-sm leading-relaxed text-[#555555]">{formatSkillSources(sources)}</p>
+                  </>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="text-sm text-[#6b7280]">No skills to show.</p>
+      )}
+    </ModalShell>
+  );
+}
+
+export function AddLanguageModal({
+  onClose,
+  onSave,
+  initialValues,
+  onDelete
+}: {
+  onClose: () => void;
+  onSave: (language: { name: string; proficiency: string; score?: string | null }) => Promise<void>;
+  initialValues?: { name: string; proficiency: string; score?: string | null } | null;
+  onDelete?: (() => Promise<void>) | null;
+}) {
+  const isEdit = Boolean(initialValues);
+  const { register, handleSubmit, formState, reset } = useForm<LanguageFormValues>({
+    defaultValues: {
+      name: initialValues?.name ?? "",
+      proficiency: initialValues?.proficiency ?? "",
+      score: initialValues?.score ?? ""
+    }
+  });
+  useEffect(() => {
+    reset({
+      name: initialValues?.name ?? "",
+      proficiency: initialValues?.proficiency ?? "",
+      score: initialValues?.score ?? ""
+    });
+  }, [initialValues, reset]);
+
+  return (
+    <ModalShell
+      title={isEdit ? "Edit language" : "Add language"}
+      widthClass="max-w-[980px]"
+      onClose={onClose}
+      footer={
+        <ModalFooter
+          submitLabel="Save"
+          formId="add-language-form"
+          disabled={formState.isSubmitting}
+          onDelete={isEdit && onDelete ? () => void onDelete() : null}
+          deleteText="Delete language"
+        />
+      }
+    >
+      <form
+        id="add-language-form"
+        className="space-y-5"
+        onSubmit={handleSubmit(async (values) =>
+          onSave({
+            name: values.name.trim(),
+            proficiency: values.proficiency,
+            score: values.score.trim() || null
+          })
+        )}
+      >
+        <p className="text-sm text-[#6b7280]">Self identify your language and proficiency.</p>
+        <div>
+          <FieldLabel>Language*</FieldLabel>
+          <Input {...register("name", { required: true })} className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
+        </div>
+        <div>
+          <FieldLabel>Proficiency level</FieldLabel>
+          <Select {...register("proficiency", { required: true })}>
+            <option value="">Select proficiency</option>
+            <option value="Elementary proficiency">Elementary proficiency</option>
+            <option value="Limited working proficiency">Limited working proficiency</option>
+            <option value="Professional working proficiency">Professional working proficiency</option>
+            <option value="Full professional proficiency">Full professional proficiency</option>
+            <option value="Native or bilingual proficiency">Native or bilingual proficiency</option>
+          </Select>
+        </div>
+        <div>
+          <FieldLabel>Score or certification (optional)</FieldLabel>
+          <Input {...register("score")} placeholder="e.g. IELTS 8.0" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+export function EditHeadlineModal({
+  onClose,
+  onSave,
+  initialValue
+}: {
+  onClose: () => void;
+  onSave: (headline: string) => Promise<void>;
+  initialValue?: string | null;
+}) {
+  const { register, handleSubmit, watch, formState } = useForm<HeadlineFormValues>({
+    defaultValues: { headline: initialValue ?? "" }
+  });
+  const length = watch("headline")?.length ?? 0;
+
+  return (
+    <ModalShell
+      title="Edit intro"
+      widthClass="max-w-[1180px]"
+      onClose={onClose}
+      footer={<ModalFooter submitLabel="Save" formId="edit-headline-form" disabled={formState.isSubmitting} />}
+    >
+      <form
+        id="edit-headline-form"
+        className="space-y-4"
+        onSubmit={handleSubmit(async (values) => onSave(values.headline.trim()))}
+      >
+        <div>
+          <FieldLabel>Headline*</FieldLabel>
+          <Textarea
+            {...register("headline", {
+              required: true,
+              maxLength: 220,
+              validate: (value) => value.trim().length > 0
+            })}
+            placeholder="MS Applied Data Intelligence @ SJSU | AI & Machine Learning | Data Analytics"
+            className="min-h-[116px] rounded-[10px] border-[#b8c0c7] px-4 py-3 text-[1rem] leading-7 placeholder:text-[#8b8b8b] focus:shadow-none"
+          />
+          <p className="mt-2 text-sm text-[#6b7280]">Review and edit your headline before saving so it reflects your profile clearly.</p>
+          <p className="text-right text-sm text-[#777777]">{length}/220</p>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+export function EditProfileLanguageModal({
+  onClose,
+  onSave,
+  initialValue
+}: {
+  onClose: () => void;
+  onSave: (profileLanguage: string) => Promise<void>;
+  initialValue?: string | null;
+}) {
+  const { register, handleSubmit, formState } = useForm<ProfileLanguageFormValues>({
+    defaultValues: { profile_language: initialValue ?? "English" }
+  });
+
+  return (
+    <ModalShell
+      title="Edit profile language"
+      widthClass="max-w-[760px]"
+      onClose={onClose}
+      footer={<ModalFooter submitLabel="Save" formId="edit-profile-language-form" disabled={formState.isSubmitting} />}
+    >
+      <form
+        id="edit-profile-language-form"
+        className="space-y-4"
+        onSubmit={handleSubmit(async (values) => onSave(values.profile_language.trim()))}
+      >
+        <FieldLabel>Profile language</FieldLabel>
+        <Input
+          {...register("profile_language", { required: true, maxLength: 64 })}
+          placeholder="English"
+          className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none"
+        />
+      </form>
+    </ModalShell>
+  );
+}
+
+export function EditPublicProfileUrlModal({
+  onClose,
+  onSave,
+  initialValue
+}: {
+  onClose: () => void;
+  onSave: (profileSlug: string) => Promise<void>;
+  initialValue?: string | null;
+}) {
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://www.linkedin.com";
+  const { register, handleSubmit, formState, setValue } = useForm<PublicProfileUrlFormValues>({
+    defaultValues: { profile_slug: initialValue ?? "" }
+  });
+
+  return (
+    <ModalShell
+      title="Edit public profile URL"
+      widthClass="max-w-[760px]"
+      onClose={onClose}
+      footer={<ModalFooter submitLabel="Save" formId="edit-public-url-form" disabled={formState.isSubmitting} />}
+    >
+      <form
+        id="edit-public-url-form"
+        className="space-y-4"
+        onSubmit={handleSubmit(async (values) => onSave(values.profile_slug.trim()))}
+      >
+        <FieldLabel>Public profile URL</FieldLabel>
+        <div className="flex items-center rounded-[10px] border border-[#b8c0c7] bg-white px-4 py-3">
+          <span className="mr-1 shrink-0 text-sm text-[#6b7280]">{origin}/in/</span>
+          <Input
+            {...register("profile_slug", { required: true, minLength: 3, maxLength: 160 })}
+            onChange={(event) => {
+              const normalized = event.target.value
+                .toLowerCase()
+                .replace(/[^a-z0-9-]/g, "-")
+                .replace(/-{2,}/g, "-")
+                .replace(/^-+|-+$/g, "");
+              setValue("profile_slug", normalized, { shouldDirty: true, shouldValidate: true });
+            }}
+            className="h-auto min-h-0 flex-1 border-0 px-0 py-0 text-[1rem] focus-visible:ring-0"
+          />
+        </div>
+        <p className="text-sm text-[#6b7280]">Use letters, numbers, and dashes.</p>
+      </form>
+    </ModalShell>
+  );
+}
+
+function ContactInfoRow({
+  label,
+  value,
+  icon: Icon
+}: {
+  label: string;
+  value: string;
+  icon: typeof Mail;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <Icon className="mt-0.5 h-5 w-5 text-[#3f3f46]" />
+      <div className="min-w-0">
+        <p className="text-lg font-semibold text-[#1f1f1f]">{label}</p>
+        <p className="truncate text-[#0a66c2]">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+export function ContactInfoModal({
+  onClose,
+  contact,
+  isOwnProfile,
+  onEdit
+}: {
+  onClose: () => void;
+  contact: ContactInfoSnapshot;
+  isOwnProfile: boolean;
+  onEdit: () => void;
+}) {
+  return (
+    <ModalShell
+      title="Contact info"
+      widthClass="max-w-[920px]"
+      onClose={onClose}
+      footer={
+        <div className="flex w-full justify-end">
+          {isOwnProfile ? (
+            <Button type="button" variant="secondary" className="rounded-full px-5 py-2 text-base font-semibold" onClick={onEdit}>
+              Edit contact info
+            </Button>
+          ) : null}
+        </div>
+      }
+    >
+      <div className="space-y-6">
+        {contact.email ? <ContactInfoRow label="Email" value={contact.email} icon={Mail} /> : null}
+        {contact.birthday ? <ContactInfoRow label="Birthday" value={contact.birthday} icon={Cake} /> : null}
+        {contact.phone ? <ContactInfoRow label="Phone" value={contact.phone} icon={Phone} /> : null}
+        {contact.website ? <ContactInfoRow label="Website" value={contact.website} icon={Globe} /> : null}
+        {contact.location ? <ContactInfoRow label="Location" value={contact.location} icon={MapPin} /> : null}
+      </div>
+    </ModalShell>
+  );
+}
+
+export function EditContactInfoModal({
+  onClose,
+  onSave,
+  initialValue,
+  email
+}: {
+  onClose: () => void;
+  onSave: (values: ContactInfoValues) => Promise<void>;
+  initialValue: ContactInfoValues;
+  email?: string | null;
+}) {
+  const { register, handleSubmit, formState } = useForm<ContactInfoValues>({
+    defaultValues: initialValue
+  });
+  return (
+    <ModalShell
+      title="Edit contact info"
+      widthClass="max-w-[1180px]"
+      onClose={onClose}
+      footer={<ModalFooter submitLabel="Save" formId="edit-contact-info-form" disabled={formState.isSubmitting} />}
+    >
+      <form id="edit-contact-info-form" className="space-y-5" onSubmit={handleSubmit(async (values) => onSave(values))}>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <FieldLabel>Email</FieldLabel>
             <Input
-              {...register("skill", { required: true })}
-              placeholder="Skill (ex: Project Management)"
-              className="h-[50px] rounded-[10px] border-[#b8c0c7] pl-14 text-[1rem] placeholder:text-[#8b8b8b] focus:shadow-none"
+              disabled
+              value={email ?? ""}
+              placeholder="Email from your account"
+              className="h-[50px] rounded-[10px] border-[#d1d5db] px-4 text-[1rem] text-[#9ca3af] focus:shadow-none"
             />
+          </div>
+          <div>
+            <FieldLabel>Phone</FieldLabel>
+            <Input {...register("phone")} placeholder="Add phone number" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
+          </div>
+          <div>
+            <FieldLabel>Birthday</FieldLabel>
+            <Input {...register("birthday")} type="date" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
+          </div>
+          <div>
+            <FieldLabel>Website</FieldLabel>
+            <Input {...register("website")} placeholder="https://your-site.com" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
+          </div>
+          <div>
+            <FieldLabel>City</FieldLabel>
+            <Input {...register("location_city")} placeholder="City" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
+          </div>
+          <div>
+            <FieldLabel>State</FieldLabel>
+            <Input {...register("location_state")} placeholder="State" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
+          </div>
+          <div className="md:col-span-2">
+            <FieldLabel>Country</FieldLabel>
+            <Input {...register("location_country")} placeholder="Country" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
           </div>
         </div>
       </form>
@@ -205,6 +856,7 @@ interface EducationFormValues {
   end_year: string;
   grade: string;
   activities: string;
+  skill_ids: string;
 }
 
 export function AddEducationModal({
@@ -232,7 +884,8 @@ export function AddEducationModal({
       end_month: initialValues?.end_month ?? "",
       end_year: initialValues?.end_year ? String(initialValues.end_year) : "",
       grade: initialValues?.grade ?? "",
-      activities: initialValues?.activities ?? ""
+      activities: initialValues?.activities ?? "",
+      skill_ids: (initialValues?.skill_ids ?? []).join(", ")
     }
   });
   const gradeLength = watch("grade")?.length ?? 0;
@@ -251,6 +904,7 @@ export function AddEducationModal({
           formId="add-education-form"
           disabled={formState.isSubmitting}
           onDelete={initialValues && onDelete ? () => void onDelete() : null}
+          deleteText="Delete education"
         />
       }
     >
@@ -278,7 +932,8 @@ export function AddEducationModal({
             end_year: endYear,
             year: endYear,
             grade: values.grade.trim() || null,
-            activities: values.activities.trim() || null
+            activities: values.activities.trim() || null,
+            skill_ids: values.skill_ids.split(",").map((item) => item.trim()).filter(Boolean)
           });
         })}
       >
@@ -375,6 +1030,14 @@ export function AddEducationModal({
           />
           <p className="mt-2 text-right text-sm text-[#777777]">{activitiesLength}/500</p>
         </div>
+        <div>
+          <FieldLabel>Linked skills</FieldLabel>
+          <Input
+            {...register("skill_ids")}
+            placeholder="Ex: HTML, CSS, Data Engineering"
+            className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] placeholder:text-[#8b8b8b] focus:shadow-none"
+          />
+        </div>
       </form>
     </ModalShell>
   );
@@ -392,6 +1055,7 @@ interface ExperienceFormValues {
   location: string;
   location_type: string;
   description: string;
+  skill_ids: string;
 }
 
 export function AddExperienceModal({
@@ -417,7 +1081,8 @@ export function AddExperienceModal({
       end_year: initialValues?.end_year ? String(initialValues.end_year) : "",
       location: initialValues?.location ?? "",
       location_type: initialValues?.location_type ?? "",
-      description: initialValues?.description ?? ""
+      description: initialValues?.description ?? "",
+      skill_ids: (initialValues?.skill_ids ?? []).join(", ")
     }
   });
   const isCurrent = watch("is_current");
@@ -434,6 +1099,7 @@ export function AddExperienceModal({
           formId="add-experience-form"
           disabled={formState.isSubmitting}
           onDelete={initialValues && onDelete ? () => void onDelete() : null}
+          deleteText="Delete experience"
         />
       }
     >
@@ -461,7 +1127,8 @@ export function AddExperienceModal({
             end_year: endYear,
             location: values.location.trim() || null,
             location_type: values.location_type || null,
-            description: values.description.trim() || null
+            description: values.description.trim() || null,
+            skill_ids: values.skill_ids.split(",").map((item) => item.trim()).filter(Boolean)
           });
         })}
       >
@@ -568,6 +1235,14 @@ export function AddExperienceModal({
         <div>
           <FieldLabel>Description</FieldLabel>
           <Textarea {...register("description")} className="min-h-[150px] rounded-[10px] border-[#b8c0c7] px-4 py-3 text-[1rem] focus:shadow-none" />
+        </div>
+        <div>
+          <FieldLabel>Linked skills</FieldLabel>
+          <Input
+            {...register("skill_ids")}
+            placeholder="Ex: Spring Boot, REST APIs, Microservices"
+            className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] placeholder:text-[#8b8b8b] focus:shadow-none"
+          />
         </div>
       </form>
     </ModalShell>

@@ -1,6 +1,6 @@
 import api from "./axios";
 import type { ApiResponse } from "../types/common";
-import type { Message, MessageListResponse, Thread, ThreadListResponse } from "../types/message";
+import type { Message, MessageListResponse, Thread, ThreadListResponse, ThreadPreference, ThreadPreferencesResponse } from "../types/message";
 
 export async function openThread(participant_ids: number[]) {
   const response = await api.post<ApiResponse<Thread>>("/threads/open", { participant_ids });
@@ -32,5 +32,23 @@ export async function markThreadRead(thread_id: string, user_id: number) {
     thread_id,
     user_id
   });
+  return response.data.data;
+}
+
+
+export async function getThreadPreferences() {
+  const response = await api.post<ApiResponse<ThreadPreferencesResponse>>("/threads/preferences", {});
+  return response.data.data;
+}
+
+export async function updateThreadPreferences(payload: {
+  thread_id: string;
+  starred?: boolean;
+  muted?: boolean;
+  archived?: boolean;
+  force_unread?: boolean;
+  hidden?: boolean;
+}) {
+  const response = await api.post<ApiResponse<ThreadPreference>>("/threads/preferences/update", payload);
   return response.data.data;
 }

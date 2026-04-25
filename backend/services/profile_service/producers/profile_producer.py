@@ -9,3 +9,25 @@ async def emit_profile_updated(actor_id, member_id, updated_fields: list) -> Non
         {"updated_fields": updated_fields},
     )
     await publish_event(topics.PROFILE_UPDATED, envelope)
+
+
+async def emit_profile_viewed(actor_id, member_id) -> None:
+    envelope = build_envelope(
+        topics.PROFILE_VIEWED, str(actor_id), "profile", str(member_id),
+        {"member_id": str(member_id)},
+    )
+    await publish_event(topics.PROFILE_VIEWED, envelope)
+
+
+async def emit_member_search_appeared(actor_id, member_id, keyword=None, skill=None, location=None) -> None:
+    payload = {"member_id": str(member_id)}
+    if keyword:
+        payload["keyword"] = str(keyword)
+    if skill:
+        payload["skill"] = str(skill)
+    if location:
+        payload["location"] = str(location)
+    envelope = build_envelope(
+        topics.MEMBER_SEARCH_APPEARED, str(actor_id), "profile", str(member_id), payload
+    )
+    await publish_event(topics.MEMBER_SEARCH_APPEARED, envelope)

@@ -4,14 +4,14 @@ import { Button } from "../ui/Button";
 
 export type ProfileSectionKey =
   | "photo"
+  | "headline"
   | "about"
   | "education"
   | "experience"
   | "skills"
   | "resume"
   | "services"
-  | "career_break"
-  | "language";
+  | "career_break";
 
 interface SectionLink {
   key: ProfileSectionKey;
@@ -32,6 +32,7 @@ const GROUPS: SectionGroup[] = [
     expandedByDefault: true,
     items: [
       { key: "photo", label: "Add profile photo" },
+      { key: "headline", label: "Add headline" },
       { key: "about", label: "Add about" },
       { key: "education", label: "Add education" },
       { key: "experience", label: "Add position" },
@@ -40,10 +41,7 @@ const GROUPS: SectionGroup[] = [
   },
   {
     title: "Recommended",
-    items: [
-      { key: "resume", label: "Add resume" },
-      { key: "language", label: "Add profile language" }
-    ]
+    items: [{ key: "resume", label: "Add resume" }]
   },
   {
     title: "Additional",

@@ -13,6 +13,9 @@ export interface PendingConnection {
   created_at: string;
   updated_at: string;
   requester_email: string;
+  receiver_email?: string;
+  direction?: "incoming" | "outgoing";
+  counterpart_email?: string;
 }
 
 export interface MutualConnection {

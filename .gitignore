@@ -200,6 +200,7 @@ cython_debug/
 # Local machine files
 .DS_Store
 .ollama/
+frontend/.env.local
 
 # Cursor
 #  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to

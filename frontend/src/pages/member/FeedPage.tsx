@@ -5,6 +5,7 @@ import {
   BriefcaseBusiness,
   FileText,
   Image,
+  ShieldCheck,
   MessageSquare,
   Plus,
   Sparkles
@@ -12,7 +13,7 @@ import {
 import toast from "react-hot-toast";
 import { getMemberDashboard, getTopJobs } from "../../api/analytics";
 import { getApplicationsByMember } from "../../api/applications";
-import { listConnections, listPendingConnections, requestConnection } from "../../api/connections";
+import { getMutualConnections, listConnections, listPendingConnections, requestConnection } from "../../api/connections";
 import { getSavedJobs, getJob, saveJob, searchJobs, unsaveJob } from "../../api/jobs";
 import { createMember, getMember, searchMembers } from "../../api/members";
 import { createPost, getFeedPosts, uploadPostImage } from "../../api/posts";
@@ -61,6 +62,8 @@ export function FeedPage() {
   const [trendingJobs, setTrendingJobs] = useState<Job[]>([]);
   const [pendingConnectionIds, setPendingConnectionIds] = useState<number[]>([]);
   const [connectedUserIds, setConnectedUserIds] = useState<number[]>([]);
+  const [suggestionDegrees, setSuggestionDegrees] = useState<Record<number, "2nd" | "3rd+">>({});
+  const [suggestionMutualCounts, setSuggestionMutualCounts] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
@@ -87,7 +90,8 @@ export function FeedPage() {
         await createMember({
           member_id: userId,
           first_name: "First",
-          last_name: "Last"
+          last_name: "Last",
+          headline: "Aspiring professional"
         });
         member = await getMember(userId);
       }
@@ -133,7 +137,26 @@ export function FeedPage() {
         ...connectionResults.map((connection) => connection.connected_user_id),
         ...pendingResults.map((request) => request.requester_id)
       ]);
-      setPeopleSuggestions(memberResults.filter((memberItem) => !blockedIds.has(memberItem.member_id)).slice(0, 3));
+      const suggestions = memberResults.filter((memberItem) => !blockedIds.has(memberItem.member_id)).slice(0, 3);
+      setPeopleSuggestions(suggestions);
+      const degreeById: Record<number, "2nd" | "3rd+"> = {};
+      const mutualCountById: Record<number, number> = {};
+      if (suggestions.length) {
+        const mutualLookups = await Promise.allSettled(
+          suggestions.map(async (memberItem) => ({
+            memberId: memberItem.member_id,
+            result: await getMutualConnections(userId, memberItem.member_id)
+          }))
+        );
+        for (const lookup of mutualLookups) {
+          if (lookup.status !== "fulfilled") continue;
+          const count = lookup.value.result.count ?? 0;
+          mutualCountById[lookup.value.memberId] = count;
+          degreeById[lookup.value.memberId] = count > 0 ? "2nd" : "3rd+";
+        }
+      }
+      setSuggestionDegrees(degreeById);
+      setSuggestionMutualCounts(mutualCountById);
 
       if (results[9].status === "fulfilled" && results[9].value.length > 0) {
         const topJobResults = await Promise.allSettled(results[9].value.slice(0, 3).map((metric) => getJob(Number(metric.job_id))));
@@ -231,6 +254,16 @@ export function FeedPage() {
       await requestConnection(userId, memberId);
       setPendingConnectionIds((current) => [...current, memberId]);
       setPeopleSuggestions((current) => current.filter((memberItem) => memberItem.member_id !== memberId));
+      setSuggestionDegrees((current) => {
+        const next = { ...current };
+        delete next[memberId];
+        return next;
+      });
+      setSuggestionMutualCounts((current) => {
+        const next = { ...current };
+        delete next[memberId];
+        return next;
+      });
       toast.success("Invitation sent", { id: loadingToast });
     } catch {
       toast.error("Could not send invitation", { id: loadingToast });
@@ -577,21 +610,38 @@ export function FeedPage() {
 
           <Card>
             <h3 className="text-lg font-semibold">People you may know</h3>
+            <p className="mt-1 text-sm text-text-secondary">From your school and network</p>
             {peopleSuggestions.length ? (
               <div className="mt-4 space-y-3">
                 {peopleSuggestions.map((member) => (
-                  <div key={member.member_id} className="flex items-start justify-between gap-3">
-                    <button type="button" className="min-w-0 flex-1 text-left" onClick={() => navigate(`/profile/${member.member_id}`)}>
-                      <p className="font-semibold">
-                        {member.first_name} {member.last_name}
-                      </p>
-                      <p className="text-sm text-text-secondary">{member.headline || "Member"}</p>
-                    </button>
+                  <div key={member.member_id} className="rounded-card border border-[#e5e7eb] p-3">
+                    <div className="flex items-start gap-3">
+                      <Avatar
+                        src={member.profile_photo_url ?? undefined}
+                        name={`${member.first_name} ${member.last_name}`}
+                        alt={`${member.first_name} ${member.last_name}`}
+                      />
+                      <button type="button" className="min-w-0 flex-1 text-left" onClick={() => navigate(`/profile/${member.member_id}`)}>
+                        <div className="flex items-center gap-1">
+                          <p className="truncate text-[1rem] font-semibold text-[#1f1f1f]">
+                            {member.first_name} {member.last_name}
+                          </p>
+                          {member.is_verified ? <ShieldCheck className="h-4 w-4 text-[#6b7280]" /> : null}
+                          <span className="text-sm text-[#6b7280]">{suggestionDegrees[member.member_id] || "3rd+"}</span>
+                        </div>
+                        <p className="mt-1 line-clamp-2 text-sm leading-5 text-text-secondary">{member.headline || "Building their professional profile."}</p>
+                        {suggestionMutualCounts[member.member_id] > 0 ? (
+                          <p className="mt-1 text-xs text-[#6b7280]">{suggestionMutualCounts[member.member_id]} mutual connection{suggestionMutualCounts[member.member_id] === 1 ? "" : "s"}</p>
+                        ) : null}
+                      </button>
+                    </div>
                     <Button
                       variant="secondary"
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-[#6b7280] px-4 py-1.5 font-semibold text-[#1f2937]"
                       onClick={() => void handleConnect(member.member_id)}
                       disabled={pendingConnectionIds.includes(member.member_id) || connectedUserIds.includes(member.member_id)}
                     >
+                      <UserRoundPlus className="h-4 w-4" />
                       {connectedUserIds.includes(member.member_id)
                         ? "Connected"
                         : pendingConnectionIds.includes(member.member_id)
