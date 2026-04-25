@@ -25,8 +25,6 @@ async def create(body: CreateRecruiterRequest, u=Depends(get_current_user)):
 
 @router.post("/get")
 async def get(body: GetRecruiterRequest, u=Depends(get_current_user)):
-    if body.recruiter_id != u["user_id"]:
-        raise HTTPException(status_code=403, detail="You can only access your own recruiter profile")
     return {"success": True, "data": await ctrl.get(body.recruiter_id)}
 
 @router.post("/update")

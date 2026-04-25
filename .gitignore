@@ -213,3 +213,10 @@ frontend/.env.local
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+
+
+
+backend/data/*.csv
+backend/data/*.tsv
+backend/data/*.xlsx
