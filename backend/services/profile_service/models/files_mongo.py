@@ -1,5 +1,6 @@
 """GridFS helpers for profile photos and resumes."""
 import inspect
+import io
 from typing import AsyncIterator, Optional
 
 from bson import ObjectId
@@ -29,7 +30,7 @@ async def upload_photo(member_id: int, filename: str, content_type: str, data: b
     bucket = _bucket(PHOTO_BUCKET)
     file_id = await bucket.upload_from_stream(
         filename or f"photo_{member_id}",
-        data,
+        io.BytesIO(data),
         metadata={"member_id": member_id, "content_type": content_type},
     )
     return str(file_id)
@@ -39,7 +40,7 @@ async def upload_resume(member_id: int, filename: str, content_type: str, data: 
     bucket = _bucket(RESUME_BUCKET)
     file_id = await bucket.upload_from_stream(
         filename or f"resume_{member_id}",
-        data,
+        io.BytesIO(data),
         metadata={"member_id": member_id, "content_type": content_type},
     )
     return str(file_id)

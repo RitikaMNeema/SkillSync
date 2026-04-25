@@ -1,30 +1,57 @@
+import io
+import mimetypes
+
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 from bson import ObjectId
 from bson.errors import InvalidId
 
 from shared.database.mongo import get_db
 
-ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"}
 MAX_BYTES = 5 * 1024 * 1024
+
+# Browsers / OS sometimes send non-canonical types; normalize before whitelist check.
+_MIME_ALIASES = {
+    "image/jpg": "image/jpeg",
+    "image/pjpeg": "image/jpeg",
+    "image/x-png": "image/png",
+    "image/x-citrix-jpeg": "image/jpeg",
+}
 
 
 def _bucket() -> AsyncIOMotorGridFSBucket:
     return AsyncIOMotorGridFSBucket(get_db(), bucket_name="post_media")
 
 
+def _normalize_image_content_type(content_type: str, filename: str) -> str:
+    raw = (content_type or "").strip().lower().split(";")[0].strip()
+    raw = _MIME_ALIASES.get(raw, raw)
+    if raw in ALLOWED_MIME:
+        return raw
+    guessed, _ = mimetypes.guess_type(filename)
+    if guessed:
+        g = guessed.lower().split(";")[0].strip()
+        g = _MIME_ALIASES.get(g, g)
+        if g in ALLOWED_MIME:
+            return g
+    return raw
+
+
 async def upload_image(data: bytes, filename: str, content_type: str) -> str:
     """Validate + store image in GridFS. Returns the media_url."""
-    if content_type not in ALLOWED_MIME:
-        raise ValueError(f"Unsupported image type: {content_type}")
+    ct = _normalize_image_content_type(content_type, filename or "")
+    if ct not in ALLOWED_MIME:
+        raise ValueError(f"Unsupported image type: {content_type or '(empty)'}")
     if len(data) > MAX_BYTES:
         raise ValueError("Image exceeds 5MB limit")
     if len(data) == 0:
         raise ValueError("Empty file")
 
+    # GridFS expects a readable stream; raw bytes can break some Motor/PyMongo versions.
     file_id = await _bucket().upload_from_stream(
-        filename,
-        data,
-        metadata={"content_type": content_type},
+        filename or "upload",
+        io.BytesIO(data),
+        metadata={"content_type": ct},
     )
     return f"/posts/image/{file_id}"
 

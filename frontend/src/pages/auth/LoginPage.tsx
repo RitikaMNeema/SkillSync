@@ -29,6 +29,9 @@ function mapLoginFailureToMessage(error: unknown): string {
   if (status === 429) {
     return "Too many sign-in attempts. Please wait a few minutes and try again.";
   }
+  if (status === 502 || status === 503) {
+    return "The app could not reach the API (often the gateway on port 3000). Start the backend gateway, or remove VITE_PROXY_GATEWAY from frontend/.env and restart npm run dev.";
+  }
   if (status !== undefined && status >= 500) {
     return "Something went wrong on our end. Please try again in a moment.";
   }

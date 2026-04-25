@@ -37,6 +37,9 @@ BASE = {
     "analytics": "http://localhost:3008",
 }
 
+# Must match auth_service RegisterRequest password rules (length, upper, lower, digit, special).
+SEED_USER_PASSWORD = "SkillSync1!"
+
 GREEN = "\033[92m"
 YELLOW = "\033[93m"
 RED = "\033[91m"
@@ -339,11 +342,11 @@ def main():
         tokens: dict[str, str] = {}
 
         user_defs = [
-            ("alice", "alice@example.com", "password123", "member"),
-            ("bob", "bob@example.com", "password123", "member"),
-            ("charlie", "charlie@example.com", "password123", "member"),
-            ("recruiter_dana", "dana@acme.com", "password123", "recruiter"),
-            ("recruiter_eli", "eli@acme.com", "password123", "recruiter"),
+            ("alice", "alice@example.com", SEED_USER_PASSWORD, "member"),
+            ("bob", "bob@example.com", SEED_USER_PASSWORD, "member"),
+            ("charlie", "charlie@example.com", SEED_USER_PASSWORD, "member"),
+            ("recruiter_dana", "dana@acme.com", SEED_USER_PASSWORD, "recruiter"),
+            ("recruiter_eli", "eli@acme.com", SEED_USER_PASSWORD, "recruiter"),
         ]
 
         for alias, email, pw, role in user_defs:
@@ -811,7 +814,7 @@ def main():
         section("Seed Complete")
         print(
             f"""
-  {BOLD}Log in as dana@acme.com / password123 for recruiter dashboard charts.{RESET}
+  {BOLD}Log in as dana@acme.com / {SEED_USER_PASSWORD} for recruiter dashboard charts.{RESET}
   {BOLD}Analytics:{RESET} http://localhost:3008/docs
 """
         )
