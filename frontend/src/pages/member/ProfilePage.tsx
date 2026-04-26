@@ -1,7 +1,8 @@
-import { BriefcaseBusiness, GraduationCap, Pencil, Plus, Sparkles } from "lucide-react";
+import { BriefcaseBusiness, GraduationCap, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import toast from "react-hot-toast";
 import { useNavigate, useParams } from "react-router-dom";
+import { deleteMember } from "../../api/members";
 import { RightSidebar } from "../../components/layout/Sidebar";
 import {
   AddEducationModal,
@@ -93,7 +94,10 @@ export function ProfilePage() {
   const navigate = useNavigate();
   const currentUserId = authStore((state) => state.userId);
   const currentRole = authStore((state) => state.role);
+  const logout = authStore((state) => state.logout);
   const [member, setMember] = useState<MemberProfile | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeModal, setActiveModal] = useState<ProfileActiveModal | null>(null);
@@ -470,6 +474,22 @@ export function ProfilePage() {
     }
   }
 
+  async function handleDeleteProfile() {
+    if (!member) return;
+    setDeleteLoading(true);
+    try {
+      await deleteMember(member.member_id);
+      toast.success("Your account has been deleted.");
+      logout();
+      navigate("/login", { replace: true });
+    } catch {
+      toast.error("Could not delete account. Please try again.");
+      setShowDeleteConfirm(false);
+    } finally {
+      setDeleteLoading(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
@@ -759,6 +779,22 @@ export function ProfilePage() {
             <ResumeUpload memberId={member.member_id} />
           </div>
         ) : null}
+        {isOwnProfile && currentRole === "member" ? (
+          <Card className="rounded-[22px] border border-red-100 bg-white p-6 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
+            <h2 className="mb-1 text-base font-semibold text-red-600">Danger Zone</h2>
+            <p className="mb-4 text-sm text-[#666666]">
+              Permanently delete your account and all associated data. This cannot be undone.
+            </p>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-full border border-red-300 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 transition"
+              onClick={() => setShowDeleteConfirm(true)}
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete my account
+            </button>
+          </Card>
+        ) : null}
       </div>
       <RightSidebar>
         <div className="space-y-4">
@@ -950,6 +986,34 @@ export function ProfilePage() {
           onClose={() => setAddSectionOpen(false)}
           onSelect={handleAddSection}
         />
+      ) : null}
+      {showDeleteConfirm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-[22px] bg-white p-6 shadow-modal">
+            <h3 className="text-lg font-bold text-[#1f1f1f]">Delete your account?</h3>
+            <p className="mt-2 text-sm text-[#555555]">
+              This will permanently delete your profile, applications, connections, and all associated data. You cannot undo this.
+            </p>
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                className="flex-1 rounded-full border border-[#ccc] py-2 text-sm font-semibold text-[#333] hover:bg-[#f3f6f8] transition"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleteLoading}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="flex-1 rounded-full bg-red-600 py-2 text-sm font-semibold text-white hover:bg-red-700 transition disabled:opacity-50"
+                onClick={() => void handleDeleteProfile()}
+                disabled={deleteLoading}
+              >
+                {deleteLoading ? "Deleting..." : "Yes, delete"}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   );
