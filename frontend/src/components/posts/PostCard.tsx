@@ -113,8 +113,6 @@ export function PostCard({ post, viewerId, onUpdate, onDelete }: PostCardProps) 
       )
     : null;
 
-  const formattedTime = formatTimeAgo(post.created_at);
-
   return (
     <div className={clsx("rounded-card border p-4 transition-opacity", deleting && "opacity-50")}>
       <div className="flex items-start gap-3">
