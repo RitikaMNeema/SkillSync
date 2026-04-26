@@ -18,6 +18,7 @@ server {
   # - API_HOST=host-gateway (Linux with extra_hosts mapping)
   #
   # NOTE: These ports match the backend service ports in the repo docs.
+  resolver 127.0.0.11 valid=30s;
   set $api_host ${API_HOST};
 
   proxy_http_version 1.1;
@@ -31,36 +32,47 @@ server {
   proxy_read_timeout 120s;
 
   location ^~ /api/auth/ {
-    proxy_pass http://$api_host:3001/;
+    rewrite ^/api/(.*)$ /$1 break;
+    proxy_pass http://$api_host:3001;
   }
   location ^~ /api/members/ {
-    proxy_pass http://$api_host:3002/;
+    rewrite ^/api/(.*)$ /$1 break;
+    proxy_pass http://$api_host:3002;
   }
   location ^~ /api/posts/ {
-    proxy_pass http://$api_host:3002/;
+    rewrite ^/api/(.*)$ /$1 break;
+    proxy_pass http://$api_host:3002;
   }
   location ^~ /api/recruiters/ {
-    proxy_pass http://$api_host:3003/;
+    rewrite ^/api/(.*)$ /$1 break;
+    proxy_pass http://$api_host:3003;
   }
   location ^~ /api/connections/ {
-    proxy_pass http://$api_host:3004/;
+    rewrite ^/api/(.*)$ /$1 break;
+    proxy_pass http://$api_host:3004;
   }
   location ^~ /api/jobs/ {
-    proxy_pass http://$api_host:3005/;
+    rewrite ^/api/(.*)$ /$1 break;
+    proxy_pass http://$api_host:3005;
   }
   location ^~ /api/applications/ {
-    proxy_pass http://$api_host:3006/;
+    rewrite ^/api/(.*)$ /$1 break;
+    proxy_pass http://$api_host:3006;
   }
   location ^~ /api/threads/ {
-    proxy_pass http://$api_host:3007/;
+    rewrite ^/api/(.*)$ /$1 break;
+    proxy_pass http://$api_host:3007;
   }
   location ^~ /api/messages/ {
-    proxy_pass http://$api_host:3007/;
+    rewrite ^/api/(.*)$ /$1 break;
+    proxy_pass http://$api_host:3007;
   }
   location ^~ /api/analytics/ {
-    proxy_pass http://$api_host:3008/;
+    rewrite ^/api/(.*)$ /$1 break;
+    proxy_pass http://$api_host:3008;
   }
   location ^~ /api/events/ {
-    proxy_pass http://$api_host:3008/;
+    rewrite ^/api/(.*)$ /$1 break;
+    proxy_pass http://$api_host:3008;
   }
 }

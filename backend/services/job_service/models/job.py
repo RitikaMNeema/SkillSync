@@ -77,8 +77,8 @@ async def search_jobs(keyword, location, employment_type, work_mode, industry, s
     conditions = ["j.status='open'"]
     values = []
     if keyword:
-        conditions.append("(j.title LIKE %s OR j.description LIKE %s)")
-        values += [f"%{keyword}%", f"%{keyword}%"]
+        conditions.append("(j.title LIKE %s OR j.description LIKE %s OR c.name LIKE %s OR j.location LIKE %s)")
+        values += [f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"]
     if location:
         conditions.append("j.location LIKE %s"); values.append(f"%{location}%")
     if employment_type:
