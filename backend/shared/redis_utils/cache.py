@@ -27,8 +27,11 @@ def _json_default(value):
 
 
 async def cache_get(key: str):
-    redis = await get_redis()
-    raw = await redis.get(key)
+    try:
+        redis = await get_redis()
+        raw = await redis.get(key)
+    except Exception:
+        return None
     if raw is None:
         return None
     try:

@@ -6,6 +6,7 @@ from models.application import (
     VALID_TRANSITIONS, PAGE_SIZE,
 )
 from producers.application_producer import emit_submitted, emit_status_changed
+from shared.redis_utils.cache import cache_del_pattern
 
 
 async def submit(job_id, member_id, resume_url, cover_letter, answers, actor: dict) -> dict:
@@ -17,11 +18,14 @@ async def submit(job_id, member_id, resume_url, cover_letter, answers, actor: di
         msg = str(e)
         if msg == "JOB_NOT_FOUND":
             raise HTTPException(404, "Job not found")
+        if msg == "MEMBER_NOT_FOUND":
+            raise HTTPException(404, "Member profile not found")
         if msg == "JOB_CLOSED":
             raise HTTPException(400, "Cannot apply to a closed job")
         if msg == "DUPLICATE":
             raise HTTPException(409, "Already applied to this job")
         raise
+    await cache_del_pattern("job:search:*")
     submitted_app = await get_application(app_id)
     recruiter_id = submitted_app["job_recruiter_id"] if submitted_app else None
     loc = await get_member_location(member_id)

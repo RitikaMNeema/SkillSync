@@ -1,4 +1,5 @@
 import json
+from pymysql.err import IntegrityError
 from shared.database.mysql import get_pool
 
 PAGE_SIZE = 20
@@ -27,6 +28,11 @@ async def submit_application_transaction(job_id, member_id, resume_url, cover_le
                 if job["status"] != "open":
                     raise ValueError("JOB_CLOSED")
 
+                # Ensure the member profile exists before inserting to avoid FK 1452 errors.
+                await cur.execute("SELECT member_id FROM members WHERE member_id=%s", (member_id,))
+                if not await cur.fetchone():
+                    raise ValueError("MEMBER_NOT_FOUND")
+
                 # Check duplicate
                 await cur.execute(
                     "SELECT application_id FROM applications WHERE job_id=%s AND member_id=%s",
@@ -46,6 +52,17 @@ async def submit_application_transaction(job_id, member_id, resume_url, cover_le
                 )
             await conn.commit()
             return app_id
+        except IntegrityError as e:
+            msg = str(e).lower()
+            # Defensive mapping for race conditions around FK/unique constraints.
+            if "fk_app_member" in msg or "references `members`" in msg:
+                await conn.rollback()
+                raise ValueError("MEMBER_NOT_FOUND")
+            if "uq_application" in msg or "duplicate entry" in msg:
+                await conn.rollback()
+                raise ValueError("DUPLICATE")
+            await conn.rollback()
+            raise
         except Exception:
             await conn.rollback()
             raise

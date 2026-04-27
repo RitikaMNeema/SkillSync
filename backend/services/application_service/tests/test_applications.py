@@ -164,6 +164,17 @@ async def test_closed_job_blocks_submission(as_member):
 
 
 @pytest.mark.anyio
+async def test_missing_member_profile_returns_404(as_member):
+    with patch("controllers.applications.submit_application_transaction",
+               new=AsyncMock(side_effect=ValueError("MEMBER_NOT_FOUND"))):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.post("/applications/submit", json={
+                "job_id": 42, "member_id": 10, "resume_url": "s3://r.pdf",
+            })
+        assert resp.status_code == 404
+
+
+@pytest.mark.anyio
 async def test_update_status_authorized_recruiter(as_recruiter):
     reviewing_app = {**_APP, "status": "submitted"}
     with patch("controllers.applications.get_application", new=AsyncMock(return_value=reviewing_app)), \
