@@ -67,6 +67,28 @@ async def get_application(application_id: int) -> dict | None:
             return await cur.fetchone()
 
 
+async def get_member_location(member_id: int) -> dict | None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT location_city, location_state FROM members WHERE member_id=%s",
+                (member_id,),
+            )
+            return await cur.fetchone()
+
+
+async def get_job_recruiter_id(job_id: int) -> int | None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT recruiter_id FROM jobs WHERE job_id=%s", (job_id,))
+            row = await cur.fetchone()
+            if not row:
+                return None
+            return row["recruiter_id"]
+
+
 async def apps_by_job(job_id: int, page: int) -> tuple[list, int]:
     offset = (page - 1) * PAGE_SIZE
     pool = await get_pool()

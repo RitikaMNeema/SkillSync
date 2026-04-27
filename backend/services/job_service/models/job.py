@@ -58,6 +58,14 @@ async def close_job(job_id: int) -> bool:
             return cur.rowcount > 0
 
 
+async def delete_job(job_id: int) -> bool:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("DELETE FROM jobs WHERE job_id=%s", (job_id,))
+            return cur.rowcount > 0
+
+
 async def increment_views(job_id: int) -> None:
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -65,12 +73,12 @@ async def increment_views(job_id: int) -> None:
             await cur.execute("UPDATE jobs SET views_count=views_count+1 WHERE job_id=%s", (job_id,))
 
 
-async def search_jobs(keyword, location, employment_type, work_mode, industry, page) -> tuple[list, int]:
+async def search_jobs(keyword, location, employment_type, work_mode, industry, seniority_level, page) -> tuple[list, int]:
     conditions = ["j.status='open'"]
     values = []
     if keyword:
-        conditions.append("(j.title LIKE %s OR j.description LIKE %s)")
-        values += [f"%{keyword}%", f"%{keyword}%"]
+        conditions.append("(j.title LIKE %s OR j.description LIKE %s OR c.name LIKE %s OR j.location LIKE %s)")
+        values += [f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"]
     if location:
         conditions.append("j.location LIKE %s"); values.append(f"%{location}%")
     if employment_type:
@@ -79,6 +87,8 @@ async def search_jobs(keyword, location, employment_type, work_mode, industry, p
         conditions.append("j.work_mode=%s"); values.append(work_mode)
     if industry:
         conditions.append("c.industry LIKE %s"); values.append(f"%{industry}%")
+    if seniority_level:
+        conditions.append("j.seniority_level=%s"); values.append(seniority_level)
     where = "WHERE " + " AND ".join(conditions)
     offset = (page - 1) * PAGE_SIZE
     pool = await get_pool()

@@ -1,5 +1,24 @@
 import axios from "axios";
 
+/** Populated by the axios response interceptor for HTTP / network context. */
+export type ApiRequestError = Error & {
+  status?: number;
+  isNetworkError?: boolean;
+};
+
+export function isApiRequestError(error: unknown): error is ApiRequestError {
+  return error instanceof Error && ("status" in error || "isNetworkError" in error);
+}
+
+export function getHttpStatus(error: unknown): number | undefined {
+  if (isApiRequestError(error) && typeof error.status === "number") return error.status;
+  return undefined;
+}
+
+export function isNetworkApiError(error: unknown): boolean {
+  return isApiRequestError(error) && error.isNetworkError === true;
+}
+
 /**
  * Extract a user-facing message from axios / API error responses.
  * Supports our API `{ success, error }` and FastAPI `{ detail }` shapes.

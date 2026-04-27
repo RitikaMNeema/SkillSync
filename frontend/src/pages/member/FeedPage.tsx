@@ -5,20 +5,21 @@ import {
   BriefcaseBusiness,
   FileText,
   Image,
+  ShieldCheck,
   MessageSquare,
   Plus,
-  Sparkles,
-  Video
+  Sparkles
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { getMemberDashboard, getTopJobs } from "../../api/analytics";
 import { getApplicationsByMember } from "../../api/applications";
-import { listConnections, listPendingConnections, requestConnection } from "../../api/connections";
+import { getMutualConnections, listConnections, listPendingConnections, requestConnection } from "../../api/connections";
 import { getSavedJobs, getJob, saveJob, searchJobs, unsaveJob } from "../../api/jobs";
-import { getMember, searchMembers } from "../../api/members";
-import { createPost, getFeedPosts } from "../../api/posts";
+import { createMember, getMember, searchMembers } from "../../api/members";
+import { createPost, getFeedPosts, uploadPostImage } from "../../api/posts";
 import { searchRecruiters } from "../../api/recruiters";
 import { RightSidebar, Sidebar } from "../../components/layout/Sidebar";
+import { PostCard } from "../../components/posts/PostCard";
 import { Avatar } from "../../components/ui/Avatar";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -35,11 +36,11 @@ import type { MemberProfile, MemberSearchItem } from "../../types/member";
 import type { FeedPost, PostType } from "../../types/post";
 import type { RecruiterProfile } from "../../types/recruiter";
 import { formatRelativeDate } from "../../utils/formatDate";
+import { getApiErrorMessage, getHttpStatus } from "../../utils/getApiErrorMessage";
 import { getStatusColor } from "../../utils/getStatusColor";
 
 const composerActions: Array<{ type: PostType; label: string; icon: typeof Image }> = [
   { type: "photo", label: "Photo", icon: Image },
-  { type: "video", label: "Video", icon: Video },
   { type: "article", label: "Article", icon: FileText }
 ];
 
@@ -61,12 +62,16 @@ export function FeedPage() {
   const [trendingJobs, setTrendingJobs] = useState<Job[]>([]);
   const [pendingConnectionIds, setPendingConnectionIds] = useState<number[]>([]);
   const [connectedUserIds, setConnectedUserIds] = useState<number[]>([]);
+  const [suggestionDegrees, setSuggestionDegrees] = useState<Record<number, "2nd" | "3rd+">>({});
+  const [suggestionMutualCounts, setSuggestionMutualCounts] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerType, setComposerType] = useState<PostType>("post");
   const [composerText, setComposerText] = useState("");
   const [mediaUrl, setMediaUrl] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [posting, setPosting] = useState(false);
 
   async function loadFeed() {
@@ -76,7 +81,20 @@ export function FeedPage() {
     setError("");
 
     try {
-      const member = await getMember(userId);
+      let member: MemberProfile;
+      try {
+        member = await getMember(userId);
+      } catch (memberError) {
+        if (getHttpStatus(memberError) !== 404) throw memberError;
+        // Some users can authenticate before a member profile row exists.
+        await createMember({
+          member_id: userId,
+          first_name: "First",
+          last_name: "Last",
+          headline: "Aspiring professional"
+        });
+        member = await getMember(userId);
+      }
       setProfile(member);
 
       const keyword = member.skills?.[0] || member.headline?.split(" ")[0] || undefined;
@@ -119,7 +137,26 @@ export function FeedPage() {
         ...connectionResults.map((connection) => connection.connected_user_id),
         ...pendingResults.map((request) => request.requester_id)
       ]);
-      setPeopleSuggestions(memberResults.filter((memberItem) => !blockedIds.has(memberItem.member_id)).slice(0, 3));
+      const suggestions = memberResults.filter((memberItem) => !blockedIds.has(memberItem.member_id)).slice(0, 3);
+      setPeopleSuggestions(suggestions);
+      const degreeById: Record<number, "2nd" | "3rd+"> = {};
+      const mutualCountById: Record<number, number> = {};
+      if (suggestions.length) {
+        const mutualLookups = await Promise.allSettled(
+          suggestions.map(async (memberItem) => ({
+            memberId: memberItem.member_id,
+            result: await getMutualConnections(userId, memberItem.member_id)
+          }))
+        );
+        for (const lookup of mutualLookups) {
+          if (lookup.status !== "fulfilled") continue;
+          const count = lookup.value.result.count ?? 0;
+          mutualCountById[lookup.value.memberId] = count;
+          degreeById[lookup.value.memberId] = count > 0 ? "2nd" : "3rd+";
+        }
+      }
+      setSuggestionDegrees(degreeById);
+      setSuggestionMutualCounts(mutualCountById);
 
       if (results[9].status === "fulfilled" && results[9].value.length > 0) {
         const topJobResults = await Promise.allSettled(results[9].value.slice(0, 3).map((metric) => getJob(Number(metric.job_id))));
@@ -148,27 +185,44 @@ export function FeedPage() {
   }, [dashboard]);
 
   async function handleCreatePost() {
-    if (!userId || !composerText.trim()) return;
+    if (!userId) return;
+
+    const hasText = composerText.trim().length > 0;
+    const hasMedia = imageFile !== null || mediaUrl.trim().length > 0;
+    if (!hasText && !hasMedia) {
+      toast.error("Add text or an image");
+      return;
+    }
 
     setPosting(true);
     const loadingToast = toast.loading("Publishing post...");
     try {
+      let finalMediaUrl = mediaUrl.trim() || undefined;
+      if (imageFile) {
+        setUploadingImage(true);
+        finalMediaUrl = await uploadPostImage(imageFile);
+        setUploadingImage(false);
+      }
+
       const post = await createPost({
         member_id: userId,
         content: composerText.trim(),
-        post_type: composerType,
-        media_url: mediaUrl.trim() || undefined
+        post_type: imageFile ? "photo" : composerType,
+        media_url: finalMediaUrl
       });
       setPosts((current) => [post, ...current].slice(0, 5));
       setComposerText("");
       setMediaUrl("");
+      setImageFile(null);
       setComposerType("post");
       setComposerOpen(false);
       toast.success("Post published", { id: loadingToast });
-    } catch {
-      toast.error("Could not publish your post", { id: loadingToast });
+    } catch (submitError: unknown) {
+      const detail = getApiErrorMessage(submitError);
+      toast.error(detail || "Could not publish your post", { id: loadingToast });
     } finally {
       setPosting(false);
+      setUploadingImage(false);
     }
   }
 
@@ -200,6 +254,16 @@ export function FeedPage() {
       await requestConnection(userId, memberId);
       setPendingConnectionIds((current) => [...current, memberId]);
       setPeopleSuggestions((current) => current.filter((memberItem) => memberItem.member_id !== memberId));
+      setSuggestionDegrees((current) => {
+        const next = { ...current };
+        delete next[memberId];
+        return next;
+      });
+      setSuggestionMutualCounts((current) => {
+        const next = { ...current };
+        delete next[memberId];
+        return next;
+      });
       toast.success("Invitation sent", { id: loadingToast });
     } catch {
       toast.error("Could not send invitation", { id: loadingToast });
@@ -214,6 +278,10 @@ export function FeedPage() {
   function goToJobs(params?: Record<string, string>) {
     const search = new URLSearchParams(params);
     navigate(search.size ? `/jobs?${search.toString()}` : "/jobs");
+  }
+
+  function goToConnectionsPage() {
+    navigate("/connections");
   }
 
   if (loading) {
@@ -253,14 +321,22 @@ export function FeedPage() {
               <p className="text-sm text-text-secondary">{profile.headline || "Complete your profile headline"}</p>
             </button>
             <div className="mt-4 space-y-2 border-t pt-4 text-sm">
-              <div className="flex justify-between">
+              <button
+                type="button"
+                className="flex w-full justify-between text-left hover:text-brand"
+                onClick={() => navigate("/dashboard")}
+              >
                 <span>Profile views</span>
                 <span>{profile.profile_views ?? 0}</span>
-              </div>
-              <div className="flex justify-between">
+              </button>
+              <button
+                type="button"
+                className="flex w-full justify-between text-left hover:text-brand"
+                onClick={goToConnectionsPage}
+              >
                 <span>Connections</span>
                 <span>{profile.connections_count ?? 0}</span>
-              </div>
+              </button>
             </div>
             <Button fullWidth variant="secondary" className="mt-4" onClick={() => navigate(`/profile/${profile.member_id}`)}>
               View profile
@@ -294,17 +370,58 @@ export function FeedPage() {
           </div>
           {composerOpen ? (
             <div className="mt-4 space-y-3 border-t pt-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold capitalize text-text-secondary">{composerType} post</p>
-                <Badge className="bg-brand-light text-brand">{composerType}</Badge>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-text-primary">Post</p>
+                <p className="text-xs font-medium text-text-secondary">
+                  {composerType === "photo" ? "Photo" : composerType === "article" ? "Article" : "Text"}
+                </p>
               </div>
               <Textarea
                 value={composerText}
                 onChange={(event) => setComposerText(event.target.value)}
-                placeholder={`Share a ${composerType} with your network`}
+                placeholder={
+                  composerType === "photo"
+                    ? "Add an optional caption…"
+                    : composerType === "article"
+                      ? "Share context or a takeaway…"
+                      : "Share what's on your mind…"
+                }
               />
-              {composerType !== "post" ? (
-                <Input value={mediaUrl} onChange={(event) => setMediaUrl(event.target.value)} placeholder="Optional media URL" />
+              {composerType === "photo" ? (
+                <div className="space-y-2">
+                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-card border border-dashed px-4 py-3 text-sm text-text-secondary hover:bg-hover">
+                    <Image className="h-4 w-4" />
+                    {imageFile ? imageFile.name : "Choose an image"}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        if (file && file.size > 5 * 1024 * 1024) {
+                          toast.error("Image must be under 5MB");
+                          return;
+                        }
+                        setImageFile(file);
+                      }}
+                    />
+                  </label>
+                  {imageFile ? (
+                    <button
+                      type="button"
+                      className="text-xs text-text-secondary hover:text-text-primary"
+                      onClick={() => setImageFile(null)}
+                    >
+                      Remove image
+                    </button>
+                  ) : null}
+                </div>
+              ) : composerType !== "post" ? (
+                <Input
+                  value={mediaUrl}
+                  onChange={(event) => setMediaUrl(event.target.value)}
+                  placeholder="Optional media URL"
+                />
               ) : null}
               <div className="flex justify-end gap-2">
                 <Button
@@ -314,12 +431,17 @@ export function FeedPage() {
                     setComposerOpen(false);
                     setComposerType("post");
                     setMediaUrl("");
+                    setImageFile(null);
                   }}
                 >
                   Cancel
                 </Button>
-                <Button type="button" onClick={() => void handleCreatePost()} disabled={posting || !composerText.trim()}>
-                  Publish
+                <Button
+                  type="button"
+                  onClick={() => void handleCreatePost()}
+                  disabled={posting || uploadingImage || (!composerText.trim() && !imageFile && !mediaUrl.trim())}
+                >
+                  {uploadingImage ? "Uploading..." : "Publish"}
                 </Button>
               </div>
             </div>
@@ -333,38 +455,20 @@ export function FeedPage() {
               Create one
             </Button>
           </div>
-          {posts.length ? (
+          {posts.length > 0 && userId != null ? (
             <div className="space-y-4">
               {posts.map((post) => (
-                <div key={post.post_id} className="rounded-card border p-4">
-                  <div className="flex items-start gap-3">
-                    <Avatar
-                      src={post.author.profile_photo_url ?? undefined}
-                      alt={`${post.author.first_name ?? ""} ${post.author.last_name ?? ""}`}
-                      name={`${post.author.first_name ?? ""} ${post.author.last_name ?? ""}`}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="font-semibold">
-                            {post.author.first_name} {post.author.last_name}
-                          </p>
-                          <p className="text-sm text-text-secondary">{post.author.headline || "Member"}</p>
-                        </div>
-                        <div className="text-right">
-                          <Badge className="bg-slate-100 text-slate-600">{post.post_type}</Badge>
-                          <p className="mt-1 text-xs text-text-tertiary">{formatRelativeDate(post.created_at)}</p>
-                        </div>
-                      </div>
-                      <p className="mt-3 whitespace-pre-wrap text-sm text-text-primary">{post.content}</p>
-                      {post.media_url ? (
-                        <a href={post.media_url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm">
-                          Open attachment
-                        </a>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
+                <PostCard
+                  key={post.post_id}
+                  post={post}
+                  viewerId={userId}
+                  onUpdate={(updated) =>
+                    setPosts((current) =>
+                      current.map((p) => (p.post_id === updated.post_id ? updated : p))
+                    )
+                  }
+                  onDelete={(postId) => setPosts((current) => current.filter((p) => p.post_id !== postId))}
+                />
               ))}
             </div>
           ) : (
@@ -510,21 +614,38 @@ export function FeedPage() {
 
           <Card>
             <h3 className="text-lg font-semibold">People you may know</h3>
+            <p className="mt-1 text-sm text-text-secondary">From your school and network</p>
             {peopleSuggestions.length ? (
               <div className="mt-4 space-y-3">
                 {peopleSuggestions.map((member) => (
-                  <div key={member.member_id} className="flex items-start justify-between gap-3">
-                    <button type="button" className="min-w-0 flex-1 text-left" onClick={() => navigate(`/profile/${member.member_id}`)}>
-                      <p className="font-semibold">
-                        {member.first_name} {member.last_name}
-                      </p>
-                      <p className="text-sm text-text-secondary">{member.headline || "Member"}</p>
-                    </button>
+                  <div key={member.member_id} className="rounded-card border border-[#e5e7eb] p-3">
+                    <div className="flex items-start gap-3">
+                      <Avatar
+                        src={member.profile_photo_url ?? undefined}
+                        name={`${member.first_name} ${member.last_name}`}
+                        alt={`${member.first_name} ${member.last_name}`}
+                      />
+                      <button type="button" className="min-w-0 flex-1 text-left" onClick={() => navigate(`/profile/${member.member_id}`)}>
+                        <div className="flex items-center gap-1">
+                          <p className="truncate text-[1rem] font-semibold text-[#1f1f1f]">
+                            {member.first_name} {member.last_name}
+                          </p>
+                          {member.is_verified ? <ShieldCheck className="h-4 w-4 text-[#6b7280]" /> : null}
+                          <span className="text-sm text-[#6b7280]">{suggestionDegrees[member.member_id] || "3rd+"}</span>
+                        </div>
+                        <p className="mt-1 line-clamp-2 text-sm leading-5 text-text-secondary">{member.headline || "Building their professional profile."}</p>
+                        {suggestionMutualCounts[member.member_id] > 0 ? (
+                          <p className="mt-1 text-xs text-[#6b7280]">{suggestionMutualCounts[member.member_id]} mutual connection{suggestionMutualCounts[member.member_id] === 1 ? "" : "s"}</p>
+                        ) : null}
+                      </button>
+                    </div>
                     <Button
                       variant="secondary"
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-[#6b7280] px-4 py-1.5 font-semibold text-[#1f2937]"
                       onClick={() => void handleConnect(member.member_id)}
                       disabled={pendingConnectionIds.includes(member.member_id) || connectedUserIds.includes(member.member_id)}
                     >
+                      <UserRoundPlus className="h-4 w-4" />
                       {connectedUserIds.includes(member.member_id)
                         ? "Connected"
                         : pendingConnectionIds.includes(member.member_id)

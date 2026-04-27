@@ -11,7 +11,7 @@ router = APIRouter()
 
 @router.post("/create", status_code=201)
 async def create(body: CreateJobRequest, u=Depends(get_current_user)):
-    return {"success": True, "data": await ctrl.create(body.model_dump())}
+    return {"success": True, "data": await ctrl.create(body.model_dump(), u["user_id"])}
 
 @router.post("/get")
 async def get(body: JobIdRequest, u=Depends(get_current_user)):
@@ -20,15 +20,20 @@ async def get(body: JobIdRequest, u=Depends(get_current_user)):
 @router.post("/update")
 async def update(body: UpdateJobRequest, u=Depends(get_current_user)):
     d = body.model_dump(exclude_none=True)
-    return {"success": True, "data": await ctrl.update(d.pop("job_id"), d)}
+    return {"success": True, "data": await ctrl.update(d.pop("job_id"), d, u["user_id"])}
 
 @router.post("/search")
 async def search(body: SearchJobsRequest, u=Depends(get_current_user)):
-    return {"success": True, "data": await ctrl.search(body.keyword, body.location, body.employment_type, body.work_mode, body.industry, body.page)}
+    return {"success": True, "data": await ctrl.search(body.keyword, body.location, body.employment_type, body.work_mode, body.industry, body.seniority_level, body.page)}
 
 @router.post("/close")
 async def close(body: JobIdRequest, u=Depends(get_current_user)):
     return {"success": True, "data": await ctrl.close(body.job_id, u["user_id"])}
+
+
+@router.post("/delete")
+async def delete(body: JobIdRequest, u=Depends(get_current_user)):
+    return {"success": True, "data": await ctrl.delete(body.job_id, u["user_id"])}
 
 @router.post("/byRecruiter")
 async def by_recruiter(body: ByRecruiterRequest, u=Depends(get_current_user)):

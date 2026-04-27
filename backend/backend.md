@@ -47,12 +47,29 @@ docker compose logs -f              # stream all logs
 docker compose logs -f job_service  # stream one service
 ```
 
+`mysql-init` and `mongo-init` run automatically in this mode and apply:
+- `database/mysql/init.sql` to local MySQL (`host.docker.internal:3306`)
+- `database/mongodb/init.js` to local MongoDB (`host.docker.internal:27017`)
+
+This creates `linkedin_db` and required schema/indexes through code.
+
 ### Stop
 
 ```bash
 docker compose down          # stop containers, keep data volumes
 docker compose down -v       # stop and wipe all data (fresh start)
 ```
+
+### GUI tools (MySQL Workbench, MongoDB Compass)
+
+SkillSync is configured in "Yelp-style" mode: Docker runs app services, while MySQL/Mongo come from your existing local/Homebrew instances.
+
+| | Host connection | Database |
+|---|-----------------|----------|
+| MySQL | Local socket `/tmp/mysql.sock` or `127.0.0.1:3306` | `linkedin_db` — user **`root`**, password from `backend/.env` |
+| MongoDB | `mongodb://127.0.0.1:27017/linkedin_db` | same |
+
+Step-by-step: `database/GUI_CLIENTS.txt`. Quick check: `bash backend/scripts/show_db_endpoints.sh`
 
 ### Rebuild a single service after code changes
 
@@ -139,13 +156,13 @@ The script prints all created IDs and the tokens you can paste into Swagger.
 Defined in `.env` at the project root. Key variables:
 
 ```
-MYSQL_HOST=mysql
+MYSQL_HOST=host.docker.internal
 MYSQL_PORT=3306
-MYSQL_USER=linkedin_user
-MYSQL_PASSWORD=<your-password>
+MYSQL_USER=root
+MYSQL_PASSWORD=<same as MYSQL_ROOT_PASSWORD>
 MYSQL_DATABASE=linkedin_db
 
-MONGO_URI=mongodb://mongo:27017
+MONGO_URI=mongodb://host.docker.internal:27017
 MONGO_DB=linkedin_db
 
 REDIS_HOST=redis

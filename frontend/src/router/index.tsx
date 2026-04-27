@@ -2,6 +2,7 @@ import { Navigate, createBrowserRouter } from "react-router-dom";
 import { App } from "../App";
 import { AppShell } from "../components/layout/AppShell";
 import { authStore } from "../context/AuthContext";
+import { ForgotPasswordPage } from "../pages/auth/ForgotPasswordPage";
 import { LoginPage } from "../pages/auth/LoginPage";
 import { RegisterPage } from "../pages/auth/RegisterPage";
 import { LandingPage } from "../pages/marketing/LandingPage";
@@ -10,14 +11,18 @@ import { ConnectionsPage } from "../pages/member/ConnectionsPage";
 import { FeedPage } from "../pages/member/FeedPage";
 import { JobDetailPage } from "../pages/member/JobDetailPage";
 import { JobSearchPage } from "../pages/member/JobSearchPage";
+import { SearchResultsPage } from "../pages/member/SearchResultsPage";
 import { MemberDashboardPage } from "../pages/member/MemberDashboardPage";
 import { ProfilePage } from "../pages/member/ProfilePage";
+import { ProfileSectionDetailsPage } from "../pages/member/ProfileSectionDetailsPage";
+import { PublicProfileSlugPage } from "../pages/member/PublicProfileSlugPage";
 import { SavedJobsPage } from "../pages/member/SavedJobsPage";
 import { MessagesPage } from "../pages/messages/MessagesPage";
 import { AIHiringPage } from "../pages/recruiter/AIHiringPage";
 import { ApplicantReviewPage } from "../pages/recruiter/ApplicantReviewPage";
 import { JobManagementPage } from "../pages/recruiter/JobManagementPage";
 import { RecruiterDashboardPage } from "../pages/recruiter/RecruiterDashboardPage";
+import { RecruiterProfilePage } from "../pages/recruiter/RecruiterProfilePage";
 import type { UserRole } from "../types/common";
 import { getHomePath } from "../utils/navigation";
 
@@ -45,6 +50,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <RootPage /> },
       { path: "/login", element: <LoginPage /> },
+      { path: "/forgot-password", element: <ForgotPasswordPage /> },
       { path: "/register", element: <RegisterPage /> },
       {
         element: (
@@ -54,7 +60,11 @@ export const router = createBrowserRouter([
         ),
         children: [
           { path: "/connections", element: <ConnectionsPage /> },
-          { path: "/messages", element: <MessagesPage /> }
+          { path: "/messages", element: <MessagesPage /> },
+          { path: "/search", element: <SearchResultsPage /> },
+          { path: "/profile/:member_id", element: <ProfilePage /> },
+          { path: "/in/:profile_slug", element: <PublicProfileSlugPage /> },
+          { path: "/recruiters/:recruiter_id", element: <RecruiterProfilePage /> }
         ]
       },
       {
@@ -65,7 +75,7 @@ export const router = createBrowserRouter([
         ),
         children: [
           { path: "/feed", element: <FeedPage /> },
-          { path: "/profile/:member_id", element: <ProfilePage /> },
+          { path: "/profile/:member_id/details/:section", element: <ProfileSectionDetailsPage /> },
           { path: "/jobs", element: <JobSearchPage /> },
           { path: "/jobs/:job_id", element: <JobDetailPage /> },
           { path: "/saved-jobs", element: <SavedJobsPage /> },

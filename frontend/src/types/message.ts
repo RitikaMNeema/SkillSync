@@ -19,6 +19,10 @@ export interface Message {
   text: string;
   timestamp: string;
   read_by: string[];
+  delivery_status?: {
+    kafka: "sent" | "failed";
+    realtime: "sent" | "failed";
+  };
 }
 
 export interface MessageListResponse {
@@ -26,4 +30,21 @@ export interface MessageListResponse {
   total: number;
   page: number;
   page_size: number;
+}
+
+
+export interface ThreadPreference {
+  thread_id: string;
+  user_id: string;
+  starred?: boolean;
+  muted?: boolean;
+  archived?: boolean;
+  force_unread?: boolean;
+  hidden?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ThreadPreferencesResponse {
+  preferences: Record<string, ThreadPreference>;
 }

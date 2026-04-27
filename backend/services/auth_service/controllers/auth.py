@@ -65,3 +65,9 @@ async def validate(token: str) -> dict:
         raise HTTPException(404, "User not found")
 
     return {"user_id": payload["user_id"], "role": payload["role"]}
+
+
+async def email_exists(email: str) -> dict:
+    if not is_valid_email(email):
+        raise HTTPException(400, "Invalid email format")
+    return {"exists": await find_user_by_email(email) is not None}

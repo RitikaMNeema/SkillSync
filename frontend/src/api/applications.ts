@@ -26,6 +26,23 @@ export async function getApplicationsByJob(job_id: number, page = 1) {
   return response.data.data;
 }
 
+/** Every page for this job (review UI must not cap at first `page_size`). */
+export async function getAllApplicationsByJob(job_id: number) {
+  const applications: Application[] = [];
+  let page = 1;
+  let total = Infinity;
+  let pageSize = 20;
+  while (applications.length < total) {
+    const data = await getApplicationsByJob(job_id, page);
+    applications.push(...data.applications);
+    total = data.total;
+    pageSize = data.page_size;
+    if (data.applications.length === 0 || data.applications.length < pageSize) break;
+    page += 1;
+  }
+  return { applications, total };
+}
+
 export async function getApplicationsByMember(member_id: number, page = 1) {
   const response = await api.post<ApiResponse<ApplicationListResponse>>("/applications/byMember", { member_id, page });
   return response.data.data;

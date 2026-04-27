@@ -6,13 +6,23 @@ export function ExperienceCard({
   title,
   items,
   onAdd,
-  onEdit
+  onEdit,
+  /** Opens the section manage/details page (LinkedIn-style). Do not use row `onEdit` for this. */
+  onManageSection,
+  /** When true, only the entry list is shown (no section header); use with an external manage header. */
+  compact = false,
+  /** Show per-row edit pencils. Defaults to `compact` so the main profile shows only the section pencil. */
+  showRowEdit
 }: {
   title: string;
   items: Array<ExperienceEntry | EducationEntry>;
   onAdd?: () => void;
   onEdit?: (index: number) => void;
+  onManageSection?: () => void;
+  compact?: boolean;
+  showRowEdit?: boolean;
 }) {
+  const rowEditEnabled = showRowEdit ?? compact;
   function isExperience(item: ExperienceEntry | EducationEntry): item is ExperienceEntry {
     return "title" in item || "company" in item;
   }
@@ -25,11 +35,14 @@ export function ExperienceCard({
 
   function educationDateLabel(item: EducationEntry) {
     const start = [shortMonth(item.start_month), item.start_year].filter((v) => v !== null && v !== undefined && `${v}` !== "").join(" ");
-    const end = [shortMonth(item.end_month), item.end_year ?? item.year].filter((v) => v !== null && v !== undefined && `${v}` !== "").join(" ");
+    const endRaw = [shortMonth(item.end_month), item.end_year].filter((v) => v !== null && v !== undefined && `${v}` !== "").join(" ");
+    const year = item.year;
+    // If a start date is set but no end date, assume the user checked "Present".
+    const end = endRaw || (start && !item.end_year && !year ? "Present" : "");
     if (start && end) return `${start} - ${end}`;
     if (start) return start;
-    if (end) return end;
-    if (item.year !== null && item.year !== undefined && `${item.year}` !== "") return String(item.year);
+    if (endRaw) return endRaw;
+    if (year !== null && year !== undefined && `${year}` !== "") return String(year);
     return "";
   }
 
@@ -124,23 +137,43 @@ export function ExperienceCard({
     return [range, duration].filter(Boolean).join(" · ");
   }
 
+  function skillsSummary(skills?: string[] | null) {
+    const normalized = (skills ?? []).filter(Boolean);
+    if (!normalized.length) return null;
+    if (normalized.length === 1) return normalized[0];
+    if (normalized.length === 2) return `${normalized[0]}, ${normalized[1]}`;
+    return `${normalized[0]}, ${normalized[1]} and +${normalized.length - 2} skills`;
+  }
+
   return (
     <Card className="rounded-[22px] border border-[#dde3ea] bg-white p-6 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
-      <div className="mb-5 flex items-center justify-between gap-4">
-        <h2 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#1f1f1f]">{title}</h2>
-        <div className="flex items-center gap-2">
-          {onAdd ? (
-            <button
-              type="button"
-              aria-label={`Add ${title}`}
-              className="rounded-full p-2 text-[#434343] transition hover:bg-[#f3f6f8]"
-              onClick={onAdd}
-            >
-              <Plus className="h-6 w-6" />
-            </button>
-          ) : null}
+      {!compact ? (
+        <div className="mb-5 flex items-center justify-between gap-4">
+          <h2 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#1f1f1f]">{title}</h2>
+          <div className="flex items-center gap-2">
+            {onAdd ? (
+              <button
+                type="button"
+                aria-label={`Add ${title}`}
+                className="rounded-full p-2 text-[#434343] transition hover:bg-[#f3f6f8]"
+                onClick={onAdd}
+              >
+                <Plus className="h-6 w-6" />
+              </button>
+            ) : null}
+            {onManageSection ? (
+              <button
+                type="button"
+                aria-label={`Manage ${title}`}
+                className="rounded-full p-2 text-[#434343] transition hover:bg-[#f3f6f8]"
+                onClick={onManageSection}
+              >
+                <Pencil className="h-5 w-5" />
+              </button>
+            ) : null}
+          </div>
         </div>
-      </div>
+      ) : null}
       <div className="space-y-4">
         {items.length ? (
           items.map((item, index) => (
@@ -158,8 +191,13 @@ export function ExperienceCard({
                     {isExperience(item) && item.description ? (
                       <p className="mt-2 text-sm leading-6 text-[#555555]">{item.description}</p>
                     ) : null}
+                    {skillsSummary((item as ExperienceEntry | EducationEntry).skill_ids) ? (
+                      <p className="mt-2 text-sm font-semibold text-[#1f2937]">
+                        {skillsSummary((item as ExperienceEntry | EducationEntry).skill_ids)}
+                      </p>
+                    ) : null}
                   </div>
-                  {onEdit ? (
+                  {onEdit && rowEditEnabled ? (
                     <button
                       type="button"
                       aria-label={`Edit ${title} item ${index + 1}`}

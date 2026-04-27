@@ -3,11 +3,19 @@ from shared.database.mongo import get_db
 
 async def create_profile(member_id: int, data: dict = None) -> None:
     db = get_db()
-    await db.profiles_unstructured.insert_one({
-        "member_id":           member_id,
-        "about":               (data or {}).get("about", ""),
-        "freeform_experience": (data or {}).get("freeform_experience", {}),
-    })
+    d = data or {}
+    await db.profiles_unstructured.update_one(
+        {"member_id": member_id},
+        {
+            "$set": {
+                "about": d.get("about", ""),
+                "freeform_experience": d.get("freeform_experience", {}),
+                "languages": d.get("languages", []),
+                "followed_skills": d.get("followed_skills", []),
+            }
+        },
+        upsert=True,
+    )
 
 
 async def get_profile(member_id: int) -> dict | None:

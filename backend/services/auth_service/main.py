@@ -1,5 +1,9 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from shared.env import load_env
+
+load_env()
+
 from shared.database.mysql import get_pool, close_pool
 from shared.redis_utils.client import get_redis
 from shared.middleware.error_handler import register_error_handlers

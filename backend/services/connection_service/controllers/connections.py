@@ -1,10 +1,10 @@
 from fastapi import HTTPException
-from models.connection import (
+from ..models.connection import (
     find_request, find_request_by_id, create_request, update_request_status,
     get_pending_requests, connection_exists, accept_connection_transaction,
     remove_connection_transaction, get_user_connections, get_mutual_connections,
 )
-from producers.connection_producer import emit_connection_requested, emit_connection_accepted
+from ..producers.connection_producer import emit_connection_requested, emit_connection_accepted
 from shared.redis_utils.cache import cache_get, cache_set, cache_del
 
 CONN_TTL = 120
@@ -50,6 +50,16 @@ async def reject(request_id) -> dict:
         raise HTTPException(400, f"Request already {req['status']}")
     await update_request_status(request_id, "rejected")
     return {"request_id": request_id, "status": "rejected"}
+
+
+async def withdraw(request_id) -> dict:
+    req = await find_request_by_id(request_id)
+    if not req:
+        raise HTTPException(404, "Connection request not found")
+    if req["status"] != "pending":
+        raise HTTPException(400, f"Cannot withdraw a request that is {req['status']}")
+    await update_request_status(request_id, "withdrawn")
+    return {"request_id": request_id, "status": "withdrawn"}
 
 
 async def list_connections(user_id) -> list:
