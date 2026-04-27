@@ -1,3 +1,11 @@
+# When app services run in Compose, point at in-network infra
+x-docker-runtime-env: &docker-runtime-env
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  MYSQL_HOST: mysql
+  MYSQL_PORT: "3306"
+  MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/linkedin_db?authSource=admin
+  
 services:
   # ── Infrastructure ──────────────────────────────────────────────
   mysql:
