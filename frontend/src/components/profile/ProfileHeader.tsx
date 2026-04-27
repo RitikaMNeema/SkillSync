@@ -36,7 +36,11 @@ export function ProfileHeader({
   onProfileUpdated,
   onAddSection,
   onEditHeadline,
-  onOpenContactInfo
+  onOpenContactInfo,
+  connectLabel = "Connect",
+  connectDisabled = false,
+  onConnect,
+  onMessage
 }: {
   member: MemberProfile;
   isOwnProfile: boolean;
@@ -55,6 +59,10 @@ export function ProfileHeader({
   onAddSection?: () => void;
   onEditHeadline?: () => void;
   onOpenContactInfo?: () => void;
+  connectLabel?: string;
+  connectDisabled?: boolean;
+  onConnect?: () => void;
+  onMessage?: () => void;
 }) {
   const [uploading, setUploading] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
@@ -285,8 +293,8 @@ export function ProfileHeader({
               </>
             ) : (
               <>
-                <Button>Connect</Button>
-                <Button variant="secondary">Message</Button>
+                <Button onClick={onConnect} disabled={connectDisabled}>{connectLabel}</Button>
+                <Button variant="secondary" onClick={onMessage}>Message</Button>
               </>
             )}
           </div>

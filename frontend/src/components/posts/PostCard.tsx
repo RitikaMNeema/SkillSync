@@ -132,7 +132,7 @@ export function PostCard({ post, viewerId, onUpdate, onDelete }: PostCardProps) 
       <div className="flex items-start gap-2">
         <div className="text-right">
           <Badge className="bg-slate-100 text-slate-600">{post.post_type}</Badge>
-          <p className="mt-1 text-xs text-text-tertiary">{formatTimeAgo(post.created_at)}</p>
+          <p className="mt-1 text-xs text-text-tertiary">{formattedTime}</p>
         </div>
         {isOwner ? (
           <div className="relative" ref={menuRef}>
