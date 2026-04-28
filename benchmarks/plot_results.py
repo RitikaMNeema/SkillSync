@@ -44,7 +44,7 @@ def compute_metrics(path: Path, labels: set) -> dict:
 
 def bar_chart(values, configs, ylabel, title, out_path):
     fig, ax = plt.subplots(figsize=(8, 5))
-    bars = ax.bar(configs, values, color=["#4C72B0", "#55A868", "#C44E52", "#8172B2"])
+    bars = ax.bar(configs, values, color=["#0077B5", "#00A0DC", "#86888A", "#313335"])
     ax.set_ylabel(ylabel)
     ax.set_title(title)
     for bar, val in zip(bars, values):
