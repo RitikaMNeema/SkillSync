@@ -1,7 +1,7 @@
 import { BriefcaseBusiness, GraduationCap, Pencil, Plus, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import toast from "react-hot-toast";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { RightSidebar } from "../../components/layout/Sidebar";
 import {
   AddEducationModal,
@@ -31,6 +31,8 @@ import { ProfileHeader } from "../../components/profile/ProfileHeader";
 import { ResumeUpload } from "../../components/profile/ResumeUpload";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import { getUnifiedProfile, updateUnifiedProfile } from "../../utils/profileAdapter";
+import { getMemberDashboard } from "../../api/analytics";
+import { listConnections, listPendingConnections, requestConnection } from "../../api/connections";
 import {
   deleteRecruiterCoverPhoto,
   uploadRecruiterCoverPhoto,
@@ -90,12 +92,24 @@ function buildDefaultProfileSlug(firstName: string, lastName: string, memberId: 
 
 export function ProfilePage() {
   const { member_id } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const currentUserId = authStore((state) => state.userId);
   const currentRole = authStore((state) => state.role);
+  const parsedMemberId = Number(member_id);
+  const isForcedRecruiterProfile = searchParams.get("type") === "recruiter";
+  const isRecruiterViewingOwnProfile =
+    currentRole === "recruiter" &&
+    Number.isFinite(parsedMemberId) &&
+    currentUserId !== null &&
+    parsedMemberId === currentUserId;
+  const profileApiRole = isRecruiterViewingOwnProfile || isForcedRecruiterProfile ? "recruiter" : "member";
   const [member, setMember] = useState<MemberProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [connectionStatus, setConnectionStatus] = useState<"none" | "pending" | "connected">("none");
+  const [sendingConnection, setSendingConnection] = useState(false);
+  const [activityStats, setActivityStats] = useState<{ profileViews: number; searchAppearances: number } | null>(null);
   const [activeModal, setActiveModal] = useState<ProfileActiveModal | null>(null);
   const [skillsListModalOpen, setSkillsListModalOpen] = useState(false);
   const [showAllLanguages, setShowAllLanguages] = useState(false);
@@ -113,10 +127,15 @@ export function ProfilePage() {
 
   async function loadMemberProfile() {
     if (!member_id) return;
+    if (!Number.isFinite(parsedMemberId) || parsedMemberId <= 0) {
+      setError("Could not load member profile.");
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
-      const data = await getUnifiedProfile(Number(member_id), currentRole);
+      const data = await getUnifiedProfile(parsedMemberId, profileApiRole);
       setMember(data);
     } catch {
       setError("Could not load member profile.");
@@ -127,7 +146,81 @@ export function ProfilePage() {
 
   useEffect(() => {
     void loadMemberProfile();
-  }, [member_id, currentRole]);
+  }, [member_id, profileApiRole]);
+
+  useEffect(() => {
+    if (!Number.isFinite(parsedMemberId) || parsedMemberId <= 0) {
+      setActivityStats(null);
+      return;
+    }
+    let cancelled = false;
+    void getMemberDashboard(parsedMemberId)
+      .then((dashboard) => {
+        if (cancelled) return;
+        setActivityStats({
+          profileViews: dashboard.profile_views_30d ?? 0,
+          searchAppearances: dashboard.search_appearances_30d ?? 0
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setActivityStats(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [parsedMemberId]);
+
+  useEffect(() => {
+    if (!member || !currentUserId || member.member_id === currentUserId) {
+      setConnectionStatus("none");
+      return;
+    }
+    let cancelled = false;
+    void Promise.all([listConnections(currentUserId), listPendingConnections(currentUserId)])
+      .then(([connections, pending]) => {
+        if (cancelled) return;
+        const isConnected = connections.some((entry) => entry.connected_user_id === member.member_id);
+        if (isConnected) {
+          setConnectionStatus("connected");
+          return;
+        }
+        const isPending = pending.some(
+          (entry) =>
+            (entry.requester_id === currentUserId && entry.receiver_id === member.member_id) ||
+            (entry.requester_id === member.member_id && entry.receiver_id === currentUserId)
+        );
+        setConnectionStatus(isPending ? "pending" : "none");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setConnectionStatus("none");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [member, currentUserId]);
+
+  async function handleConnect() {
+    if (!member || !currentUserId || member.member_id === currentUserId) return;
+    if (connectionStatus === "connected" || connectionStatus === "pending") return;
+    setSendingConnection(true);
+    const loadingToast = toast.loading("Sending connection request...");
+    try {
+      await requestConnection(currentUserId, member.member_id);
+      setConnectionStatus("pending");
+      toast.success("Connection request sent", { id: loadingToast });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err) || "Could not send request", { id: loadingToast });
+    } finally {
+      setSendingConnection(false);
+    }
+  }
+
+  function handleMessage() {
+    if (!member || !currentUserId || member.member_id === currentUserId) return;
+    navigate(`/messages?user=${member.member_id}`);
+  }
 
   async function saveExperience(experience: ExperienceEntry, editIndex?: number) {
     if (!member) return;
@@ -142,7 +235,7 @@ export function ProfilePage() {
       await updateUnifiedProfile({
         member_id: member.member_id,
         experience: currentItems
-      }, currentRole);
+      }, profileApiRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success(editIndex !== undefined ? "Experience updated" : "Experience added", { id: loadingToast });
@@ -164,7 +257,7 @@ export function ProfilePage() {
       await updateUnifiedProfile({
         member_id: member.member_id,
         education: currentItems
-      }, currentRole);
+      }, profileApiRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success(editIndex !== undefined ? "Education updated" : "Education added", { id: loadingToast });
@@ -181,7 +274,7 @@ export function ProfilePage() {
         member_id: member.member_id,
         about,
         summary: about
-      }, currentRole);
+      }, profileApiRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("About updated", { id: loadingToast });
@@ -202,7 +295,7 @@ export function ProfilePage() {
     }
     const loadingToast = toast.loading("Saving language...");
     try {
-      await updateUnifiedProfile({ member_id: member.member_id, languages: nextLanguages }, currentRole);
+      await updateUnifiedProfile({ member_id: member.member_id, languages: nextLanguages }, profileApiRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success(editIndex !== undefined ? "Language updated" : "Language added", { id: loadingToast });
@@ -223,7 +316,7 @@ export function ProfilePage() {
       await updateUnifiedProfile({
         member_id: member.member_id,
         headline: trimmed
-      }, currentRole);
+      }, profileApiRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Headline updated", { id: loadingToast });
@@ -244,7 +337,7 @@ export function ProfilePage() {
         location_city: values.location_city.trim() || null,
         location_state: values.location_state.trim() || null,
         location_country: values.location_country.trim() || null
-      }, currentRole);
+      }, profileApiRole);
       await loadMemberProfile();
       setActiveModal({ type: "contact_info" });
       toast.success("Contact info updated", { id: loadingToast });
@@ -262,7 +355,7 @@ export function ProfilePage() {
     }
     const loadingToast = toast.loading("Saving profile language...");
     try {
-      await updateUnifiedProfile({ member_id: member.member_id, profile_language: value }, currentRole);
+      await updateUnifiedProfile({ member_id: member.member_id, profile_language: value }, profileApiRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Profile language updated", { id: loadingToast });
@@ -287,7 +380,7 @@ export function ProfilePage() {
     const nextSlug = normalized.endsWith(memberSuffix) ? normalized : `${normalized}${memberSuffix}`;
     const loadingToast = toast.loading("Saving profile URL...");
     try {
-      await updateUnifiedProfile({ member_id: member.member_id, profile_slug: nextSlug }, currentRole);
+      await updateUnifiedProfile({ member_id: member.member_id, profile_slug: nextSlug }, profileApiRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Public profile URL updated", { id: loadingToast });
@@ -357,7 +450,7 @@ export function ProfilePage() {
         education,
         skills,
         ...(nextFollowed ? { followed_skills: nextFollowed } : {})
-      }, currentRole);
+      }, profileApiRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Skill added", { id: loadingToast });
@@ -389,7 +482,7 @@ export function ProfilePage() {
         education,
         skills: [...(member.skills ?? [])],
         followed_skills: nextFollowed
-      }, currentRole);
+      }, profileApiRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Skill updated", { id: loadingToast });
@@ -423,7 +516,7 @@ export function ProfilePage() {
         experience,
         education,
         followed_skills
-      }, currentRole);
+      }, profileApiRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Skill removed", { id: loadingToast });
@@ -442,7 +535,7 @@ export function ProfilePage() {
       await updateUnifiedProfile({
         member_id: member.member_id,
         experience: currentItems
-      }, currentRole);
+      }, profileApiRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Experience deleted", { id: loadingToast });
@@ -461,7 +554,7 @@ export function ProfilePage() {
       await updateUnifiedProfile({
         member_id: member.member_id,
         education: currentItems
-      }, currentRole);
+      }, profileApiRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Education deleted", { id: loadingToast });
@@ -563,13 +656,17 @@ export function ProfilePage() {
                 profile_status: next,
                 open_to: next === "open_to_work" ? "job" : next === "hiring" ? "hiring" : null
               },
-              currentRole
+              profileApiRole
             );
             await loadMemberProfile();
           }}
           onAddSection={() => setAddSectionOpen(true)}
           onEditHeadline={() => setActiveModal({ type: "headline" })}
           onOpenContactInfo={() => setActiveModal({ type: "contact_info" })}
+          connectLabel={connectionStatus === "connected" ? "Connected" : connectionStatus === "pending" ? "Pending" : "Connect"}
+          connectDisabled={sendingConnection || connectionStatus !== "none"}
+          onConnect={() => void handleConnect()}
+          onMessage={handleMessage}
         />
         <Card ref={aboutRef} className="rounded-[22px] border border-[#dde3ea] bg-white p-6 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
           <div className="mb-3 flex items-start justify-between gap-3">
@@ -802,12 +899,12 @@ export function ProfilePage() {
           <h3 className="text-lg font-semibold text-[#1f1f1f]">Activity</h3>
           <div className="mt-4 space-y-3">
             <div>
-              <p className="text-2xl font-bold text-[#1f1f1f]">{member.profile_views ?? 0}</p>
-              <p className="text-sm text-[#666666]">Profile views</p>
+              <p className="text-2xl font-bold text-[#1f1f1f]">{activityStats?.profileViews ?? member.profile_views ?? 0}</p>
+              <p className="text-sm text-[#666666]">Profile views (last 30 days)</p>
             </div>
             <div>
-              <p className="text-2xl font-bold text-[#1f1f1f]">{member.connections_count ?? 0}</p>
-              <p className="text-sm text-[#666666]">Search appearances</p>
+              <p className="text-2xl font-bold text-[#1f1f1f]">{activityStats?.searchAppearances ?? 0}</p>
+              <p className="text-sm text-[#666666]">Search appearances (last 30 days)</p>
             </div>
           </div>
         </Card>

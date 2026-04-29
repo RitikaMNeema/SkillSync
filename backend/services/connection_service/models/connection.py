@@ -81,7 +81,7 @@ async def connection_exists(uid1, uid2) -> bool:
 
 
 async def accept_connection_transaction(requester_id, receiver_id, request_id) -> None:
-    """Accept: create connection + increment both counts atomically."""
+    """Accept: create connection atomically; profile counters update via events."""
     a, b = (requester_id, receiver_id) if requester_id < receiver_id else (receiver_id, requester_id)
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -93,12 +93,6 @@ async def accept_connection_transaction(requester_id, receiver_id, request_id) -
                 )
                 await cur.execute(
                     "INSERT INTO connections (user_id_1,user_id_2) VALUES(%s,%s)", (a, b)
-                )
-                await cur.execute(
-                    "UPDATE members SET connections_count=connections_count+1 WHERE member_id=%s", (requester_id,)
-                )
-                await cur.execute(
-                    "UPDATE members SET connections_count=connections_count+1 WHERE member_id=%s", (receiver_id,)
                 )
             await conn.commit()
         except Exception:
@@ -115,12 +109,6 @@ async def remove_connection_transaction(uid1, uid2) -> None:
             async with conn.cursor() as cur:
                 await cur.execute(
                     "DELETE FROM connections WHERE user_id_1=%s AND user_id_2=%s", (a, b)
-                )
-                await cur.execute(
-                    "UPDATE members SET connections_count=GREATEST(connections_count-1,0) WHERE member_id=%s", (uid1,)
-                )
-                await cur.execute(
-                    "UPDATE members SET connections_count=GREATEST(connections_count-1,0) WHERE member_id=%s", (uid2,)
                 )
             await conn.commit()
         except Exception:

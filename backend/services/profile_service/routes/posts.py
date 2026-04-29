@@ -8,7 +8,7 @@ import controllers.posts as ctrl
 from schemas.posts import (
     CreatePostRequest, FeedPostsRequest, MemberPostsRequest,
     LikePostRequest, CreateCommentRequest, ListCommentsRequest,
-    DeletePostRequest,
+    DeletePostRequest, CommandStatusRequest,
 )
 from shared.middleware.auth import get_current_user
 from models.post_media_mongo import open_image
@@ -25,9 +25,9 @@ def _json(data):
     return jsonable_encoder(data, custom_encoder=_json_custom)
 
 
-@router.post("/create", status_code=201)
+@router.post("/create", status_code=202)
 async def create(body: CreatePostRequest, u=Depends(get_current_user)):
-    return {"success": True, "data": _json(await ctrl.create(body.model_dump(), u["user_id"]))}
+    return {"success": True, "data": _json(await ctrl.enqueue_create(body.model_dump(), u))}
 
 
 @router.post("/feed")
@@ -43,19 +43,19 @@ async def by_member(body: MemberPostsRequest, u=Depends(get_current_user)):
     }
 
 
-@router.post("/like")
+@router.post("/like", status_code=202)
 async def like(body: LikePostRequest, u=Depends(get_current_user)):
     return {
         "success": True,
-        "data": _json(await ctrl.like(body.post_id, body.member_id, u["user_id"])),
+        "data": _json(await ctrl.enqueue_like(body.post_id, body.member_id, u)),
     }
 
 
-@router.post("/comment", status_code=201)
+@router.post("/comment", status_code=202)
 async def comment(body: CreateCommentRequest, u=Depends(get_current_user)):
     return {
         "success": True,
-        "data": _json(await ctrl.comment(body.post_id, body.member_id, body.content, u["user_id"])),
+        "data": _json(await ctrl.enqueue_comment(body.post_id, body.member_id, body.content, u)),
     }
 
 
@@ -90,5 +90,11 @@ async def get_image(image_id: str):
 async def delete(body: DeletePostRequest, u=Depends(get_current_user)):
     return {
         "success": True,
-        "data": _json(await ctrl.delete(body.post_id, body.member_id, u["user_id"])),
+        "data": _json(await ctrl.enqueue_delete(body.post_id, body.member_id, u)),
     }
+
+
+@router.post("/commandStatus")
+async def command_status(body: CommandStatusRequest, u=Depends(get_current_user)):
+    from controllers.members import get_command
+    return {"success": True, "data": _json(await get_command(body.command_id))}

@@ -91,6 +91,7 @@ export function PostCard({ post, viewerId, onUpdate, onDelete }: PostCardProps) 
 
   const authorName =
     `${post.author.first_name ?? ""} ${post.author.last_name ?? ""}`.trim() || "Member";
+  const formattedTime = formatTimeAgo(post.created_at);
 
   const mediaBlock = post.media_url
     ? post.post_type === "photo"
@@ -102,7 +103,7 @@ export function PostCard({ post, viewerId, onUpdate, onDelete }: PostCardProps) 
         />
       )
       : (
-        
+        <a
           href={resolveMediaUrl(post.media_url)}
           target="_blank"
           rel="noreferrer"
@@ -112,8 +113,6 @@ export function PostCard({ post, viewerId, onUpdate, onDelete }: PostCardProps) 
         </a>
       )
     : null;
-
-  const formattedTime = formatTimeAgo(post.created_at);
 
   return (
     <div className={clsx("rounded-card border p-4 transition-opacity", deleting && "opacity-50")}>
@@ -134,7 +133,7 @@ export function PostCard({ post, viewerId, onUpdate, onDelete }: PostCardProps) 
       <div className="flex items-start gap-2">
         <div className="text-right">
           <Badge className="bg-slate-100 text-slate-600">{post.post_type}</Badge>
-          <p className="mt-1 text-xs text-text-tertiary">{formatRelativeDate(post.created_at)}</p>
+          <p className="mt-1 text-xs text-text-tertiary">{formattedTime}</p>
         </div>
         {isOwner ? (
           <div className="relative" ref={menuRef}>

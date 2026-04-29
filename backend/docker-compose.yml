@@ -1,10 +1,18 @@
-# When app services run in Compose, point at in-network infra (overrides .env host.docker.internal).
 x-docker-runtime-env: &docker-runtime-env
-  REDIS_HOST: redis
-  REDIS_PORT: 6379
-  MYSQL_HOST: mysql
-  MYSQL_PORT: "3306"
-  MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/linkedin_db?authSource=admin
+  MYSQL_HOST: ${MYSQL_HOST}
+  MYSQL_PORT: ${MYSQL_PORT}
+  MYSQL_DATABASE: ${MYSQL_DATABASE}
+  MYSQL_USER: ${MYSQL_USER}
+  MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+  MONGO_URI: ${MONGO_URI}
+  MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+  MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+  REDIS_HOST: ${REDIS_HOST}
+  REDIS_PORT: ${REDIS_PORT}
+  KAFKA_BROKERS: ${KAFKA_BROKERS}
+  JWT_SECRET: ${JWT_SECRET}
+  JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES}
+  NODE_ENV: ${NODE_ENV}
 
 services:
   # ── Infrastructure ──────────────────────────────────────────────
@@ -12,15 +20,15 @@ services:
     image: mysql:8.0
     container_name: linkedin_mysql
     restart: unless-stopped
-    # Do not pass MYSQL_USER=root here — the official image forbids creating user "root"
-    # that way and init can fail. Apps still use MYSQL_USER / MYSQL_ROOT_PASSWORD from env_file.
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     # Same host ports as typical Docker DBs (e.g. Yelp): Workbench -> localhost:3306
     # Stop other stacks using 3306/27017 before starting SkillSync (only one listener per port).
     ports:
-      - "3307:3306"
+      - "3310:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./database/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -53,8 +61,16 @@ services:
     healthcheck:
       test:
         [
-          "CMD-SHELL",
-          'mongosh "mongodb://$${MONGO_INITDB_ROOT_USERNAME}:$${MONGO_INITDB_ROOT_PASSWORD}@127.0.0.1:27017/admin?authSource=admin" --quiet --eval "db.adminCommand({ ping: 1 })"',
+          "CMD",
+          "mongosh",
+          "-u",
+          "${MONGO_INITDB_ROOT_USERNAME}",
+          "-p",
+          "${MONGO_INITDB_ROOT_PASSWORD}",
+          "--authenticationDatabase",
+          "admin",
+          "--eval",
+          "db.adminCommand('ping')"
         ]
       interval: 10s
       timeout: 10s
@@ -109,7 +125,7 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
     ports:
@@ -371,11 +387,12 @@ services:
     environment:
       PORT: ${AI_SERVICE_PORT}
       PYTHONPATH: /app
-      <<: *docker-runtime-env
     ports:
       - "${AI_SERVICE_PORT}:${AI_SERVICE_PORT}"
     depends_on:
       mysql:
+        condition: service_healthy
+      mongo:
         condition: service_healthy
       mongo-init:
         condition: service_completed_successfully
@@ -395,6 +412,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 25s
+
 
 volumes:
   mysql_data:

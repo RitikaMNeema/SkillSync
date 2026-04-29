@@ -38,3 +38,7 @@ class ValidateRequest(BaseModel):
 
 class EmailCheckRequest(BaseModel):
     email: str
+
+
+class CommandStatusRequest(BaseModel):
+    command_id: str

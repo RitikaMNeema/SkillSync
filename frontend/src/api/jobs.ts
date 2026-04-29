@@ -1,4 +1,5 @@
 import api from "./axios";
+import { resolveCommandResult } from "./commands";
 import type { ApiResponse } from "../types/common";
 import type { Job, JobListResponse } from "../types/job";
 
@@ -42,32 +43,38 @@ export async function getAllJobsByRecruiter(recruiter_id: number) {
 
 export async function createJob(payload: Omit<Job, "job_id"> & { company_id: number; recruiter_id: number; title: string; work_mode: "remote" | "hybrid" | "onsite" }) {
   const response = await api.post<ApiResponse<Job>>("/jobs/create", payload);
-  return response.data.data;
+  return resolveCommandResult<Job>(response.data.data, "/jobs/commandStatus");
 }
 
 export async function updateJob(payload: Partial<Job> & { job_id: number }) {
   const response = await api.post<ApiResponse<Job>>("/jobs/update", payload);
-  return response.data.data;
+  return resolveCommandResult<Job>(response.data.data, "/jobs/commandStatus");
 }
 
 export async function closeJob(job_id: number) {
   const response = await api.post<ApiResponse<{ job_id: number; status: "closed" }>>("/jobs/close", { job_id });
-  return response.data.data;
+  return resolveCommandResult<{ job_id: number; status: "closed" }>(response.data.data, "/jobs/commandStatus");
 }
 
 export async function deleteJob(job_id: number) {
   const response = await api.post<ApiResponse<{ job_id: number; deleted: boolean }>>("/jobs/delete", { job_id });
-  return response.data.data;
+  return resolveCommandResult<{ job_id: number; deleted: boolean }>(response.data.data, "/jobs/commandStatus");
 }
 
 export async function saveJob(member_id: number, job_id: number) {
   const response = await api.post<ApiResponse<{ member_id: number; job_id: number; saved: boolean }>>("/jobs/save", { member_id, job_id });
-  return response.data.data;
+  return resolveCommandResult<{ member_id: number; job_id: number; saved: boolean }>(
+    response.data.data,
+    "/jobs/commandStatus"
+  );
 }
 
 export async function unsaveJob(member_id: number, job_id: number) {
   const response = await api.post<ApiResponse<{ member_id: number; job_id: number; saved: boolean }>>("/jobs/unsave", { member_id, job_id });
-  return response.data.data;
+  return resolveCommandResult<{ member_id: number; job_id: number; saved: boolean }>(
+    response.data.data,
+    "/jobs/commandStatus"
+  );
 }
 
 export async function getSavedJobs(member_id: number, page = 1) {
@@ -77,5 +84,5 @@ export async function getSavedJobs(member_id: number, page = 1) {
 
 export async function trackJobView(job_id: number, viewer_id?: number) {
   const response = await api.post<ApiResponse<{ job_id: number; tracked: boolean }>>("/jobs/trackView", { job_id, viewer_id });
-  return response.data.data;
+  return resolveCommandResult<{ job_id: number; tracked: boolean }>(response.data.data, "/jobs/commandStatus");
 }

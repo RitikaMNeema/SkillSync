@@ -10,6 +10,7 @@ from schemas.members import (
     SearchMembersRequest,
     UploadResumeRequest,
     GetResumeRequest,
+    CommandStatusRequest,
 )
 import controllers.members as ctrl
 from shared.middleware.auth import get_current_user
@@ -18,9 +19,9 @@ router = APIRouter()
 log = logging.getLogger("profile_service.uploads")
 
 
-@router.post("/create", status_code=201)
+@router.post("/create", status_code=202)
 async def create(body: CreateMemberRequest, u=Depends(get_current_user)):
-    data = await ctrl.create(body.model_dump(), u["user_id"])
+    data = await ctrl.enqueue_create(body.model_dump(), u)
     return {"success": True, "data": data}
 
 
@@ -37,13 +38,13 @@ async def update(body: UpdateMemberRequest, u=Depends(get_current_user)):
     payload = body.model_dump(exclude_none=False)
     # So Mongo `followed_skills` is only updated when the client sends that key (Pydantic v2).
     payload["__pydantic_fields_set__"] = set(body.model_fields_set)
-    data = await ctrl.update(payload, u["user_id"])
+    data = await ctrl.enqueue_update(payload, u)
     return {"success": True, "data": data}
 
 
-@router.post("/delete")
+@router.post("/delete", status_code=202)
 async def delete(body: DeleteMemberRequest, u=Depends(get_current_user)):
-    data = await ctrl.delete(body.member_id)
+    data = await ctrl.enqueue_delete(body.member_id, u)
     return {"success": True, "data": data}
 
 
@@ -53,9 +54,9 @@ async def search(body: SearchMembersRequest, u=Depends(get_current_user)):
     return {"success": True, "data": data}
 
 
-@router.post("/uploadResume")
+@router.post("/uploadResume", status_code=202)
 async def upload_resume(body: UploadResumeRequest, u=Depends(get_current_user)):
-    data = await ctrl.upload_resume(body.member_id, body.resume_url)
+    data = await ctrl.enqueue_upload_resume(body.member_id, body.resume_url, u)
     return {"success": True, "data": data}
 
 
@@ -212,3 +213,8 @@ async def resume_meta(body: GetResumeRequest, u=Depends(get_current_user)):
 async def delete_resume(body: GetResumeRequest, u=Depends(get_current_user)):
     data = await ctrl.delete_resume_file(body.member_id, u["user_id"])
     return {"success": True, "data": data}
+
+
+@router.post("/commandStatus")
+async def command_status(body: CommandStatusRequest, u=Depends(get_current_user)):
+    return {"success": True, "data": await ctrl.get_command(body.command_id)}

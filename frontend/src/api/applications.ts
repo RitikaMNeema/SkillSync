@@ -1,4 +1,5 @@
 import api from "./axios";
+import { resolveCommandResult } from "./commands";
 import type { ApiResponse } from "../types/common";
 import type { Application, ApplicationListResponse, ApplicationStatus } from "../types/application";
 
@@ -13,7 +14,10 @@ export async function submitApplication(payload: {
     "/applications/submit",
     payload
   );
-  return response.data.data;
+  return resolveCommandResult<{ application_id: number; job_id: number; member_id: number; status: ApplicationStatus }>(
+    response.data.data,
+    "/applications/commandStatus"
+  );
 }
 
 export async function getApplication(application_id: number) {
@@ -53,7 +57,10 @@ export async function updateApplicationStatus(application_id: number, new_status
     "/applications/updateStatus",
     { application_id, new_status }
   );
-  return response.data.data;
+  return resolveCommandResult<{ application_id: number; old_status: ApplicationStatus; new_status: ApplicationStatus }>(
+    response.data.data,
+    "/applications/commandStatus"
+  );
 }
 
 export async function addApplicationNote(application_id: number, recruiter_id: number, note_text: string) {
@@ -62,7 +69,10 @@ export async function addApplicationNote(application_id: number, recruiter_id: n
     recruiter_id,
     note_text
   });
-  return response.data.data;
+  return resolveCommandResult<{ note_id: number; application_id: number }>(
+    response.data.data,
+    "/applications/commandStatus"
+  );
 }
 
 export async function withdrawApplication(application_id: number) {
@@ -70,5 +80,8 @@ export async function withdrawApplication(application_id: number) {
     "/applications/withdraw",
     { application_id }
   );
-  return response.data.data;
+  return resolveCommandResult<{ application_id: number; old_status: ApplicationStatus; new_status: ApplicationStatus }>(
+    response.data.data,
+    "/applications/commandStatus"
+  );
 }
