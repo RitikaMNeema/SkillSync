@@ -5,10 +5,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from controllers.agent_controller import AgentController
+from consumers.ai_commands_consumer import start_ai_commands_consumer
 from routes.ai import build_ai_router
 from services.in_memory_store import TraceStore
 from services.kafka_bus import KafkaBus
 from services.workflow_service import WorkflowService
+from shared.redis_utils.client import get_redis
 from websocket.manager import ConnectionManager
 
 
@@ -34,7 +36,9 @@ async def lifespan(app: FastAPI):
     global consumer_task
 
     await store.init_indexes()
+    await get_redis()
     await kafka_bus.start_producer()
+    await start_ai_commands_consumer(agent_controller)
     consumer_task = asyncio.create_task(workflow_service.consume_loop())
 
     yield

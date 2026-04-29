@@ -4,6 +4,8 @@ from fastapi import HTTPException
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from models.user import find_user_by_email, find_user_by_id, create_user
+from models.command_status import get_command_status
+from producers.auth_command_producer import enqueue_auth_command
 from shared.redis_utils.client import get_redis
 from shared.utils.validation import is_valid_email
 
@@ -71,3 +73,22 @@ async def email_exists(email: str) -> dict:
     if not is_valid_email(email):
         raise HTTPException(400, "Invalid email format")
     return {"exists": await find_user_by_email(email) is not None}
+
+
+async def enqueue_register(email: str, password: str, role: str) -> dict:
+    return await enqueue_auth_command("register", {"email": email, "password": password, "role": role}, actor_id=email)
+
+
+async def enqueue_login(email: str, password: str) -> dict:
+    return await enqueue_auth_command("login", {"email": email, "password": password}, actor_id=email)
+
+
+async def enqueue_logout(token: str) -> dict:
+    return await enqueue_auth_command("logout", {"token": token})
+
+
+async def get_command(command_id: str) -> dict:
+    status = await get_command_status(command_id)
+    if not status:
+        raise HTTPException(404, "Command not found")
+    return status

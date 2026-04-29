@@ -10,6 +10,8 @@ from models.recruiter import (
     get_recruiter_photo_file_id, set_recruiter_photo_file,
     get_recruiter_cover_file_id, set_recruiter_cover_file, clear_recruiter_cover_file,
 )
+from models.command_status import get_command_status
+from producers.recruiter_command_producer import enqueue_recruiter_command
 
 
 async def create(body: dict) -> dict:
@@ -224,3 +226,40 @@ async def delete_cover_file(recruiter_id: int, actor_id: int) -> dict:
         await files_mongo.delete_photo(file_id)
     await clear_recruiter_cover_file(recruiter_id)
     return {"recruiter_id": recruiter_id, "deleted": True}
+
+
+async def enqueue_create(body: dict, actor: dict) -> dict:
+    if body.get("recruiter_id") != actor.get("user_id"):
+        raise HTTPException(403, "You can only create a recruiter profile for your own account")
+    return await enqueue_recruiter_command("create", actor, {"body": body})
+
+
+async def enqueue_update(body: dict, actor: dict) -> dict:
+    if body.get("recruiter_id") != actor.get("user_id"):
+        raise HTTPException(403, "You can only update your own recruiter profile")
+    if isinstance(body.get("__pydantic_fields_set__"), set):
+        body["__pydantic_fields_set__"] = sorted(body["__pydantic_fields_set__"])
+    return await enqueue_recruiter_command("update", actor, {"body": body})
+
+
+async def enqueue_delete(recruiter_id: int, actor: dict) -> dict:
+    if recruiter_id != actor.get("user_id"):
+        raise HTTPException(403, "You can only delete your own recruiter profile")
+    return await enqueue_recruiter_command("delete", actor, {"recruiter_id": recruiter_id})
+
+
+async def enqueue_delete_cover(recruiter_id: int, actor: dict) -> dict:
+    if recruiter_id != actor.get("user_id"):
+        raise HTTPException(403, "Forbidden")
+    return await enqueue_recruiter_command(
+        "delete_cover",
+        actor,
+        {"recruiter_id": recruiter_id, "actor_id": actor["user_id"]},
+    )
+
+
+async def get_command(command_id: str) -> dict:
+    status = await get_command_status(command_id)
+    if not status:
+        raise HTTPException(404, "Command not found")
+    return status

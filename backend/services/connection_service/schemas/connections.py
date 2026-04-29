@@ -22,3 +22,7 @@ class MutualBody(BaseModel):
 class RemoveBody(BaseModel):
     user_id_1: int
     user_id_2: int
+
+
+class CommandStatusRequest(BaseModel):
+    command_id: str

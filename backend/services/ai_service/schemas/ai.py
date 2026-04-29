@@ -72,3 +72,7 @@ class AgentStatusResponse(BaseModel):
 class GenericSuccessResponse(BaseModel):
     success: bool = True
     data: Dict[str, Any]
+
+
+class CommandStatusRequest(BaseModel):
+    command_id: str

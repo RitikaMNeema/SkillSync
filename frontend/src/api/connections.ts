@@ -1,4 +1,5 @@
 import api from "./axios";
+import { resolveCommandResult } from "./commands";
 import type { ApiResponse } from "../types/common";
 import type { Connection, MutualConnection, PendingConnection } from "../types/connection";
 
@@ -7,17 +8,26 @@ export async function requestConnection(requester_id: number, receiver_id: numbe
     requester_id,
     receiver_id
   });
-  return response.data.data;
+  return resolveCommandResult<{ request_id: number; status: "pending" }>(
+    response.data.data,
+    "/connections/commandStatus"
+  );
 }
 
 export async function acceptConnection(request_id: number) {
   const response = await api.post<ApiResponse<{ request_id: number; status: "accepted" }>>("/connections/accept", { request_id });
-  return response.data.data;
+  return resolveCommandResult<{ request_id: number; status: "accepted" }>(
+    response.data.data,
+    "/connections/commandStatus"
+  );
 }
 
 export async function rejectConnection(request_id: number) {
   const response = await api.post<ApiResponse<{ request_id: number; status: "rejected" }>>("/connections/reject", { request_id });
-  return response.data.data;
+  return resolveCommandResult<{ request_id: number; status: "rejected" }>(
+    response.data.data,
+    "/connections/commandStatus"
+  );
 }
 
 export async function listConnections(user_id: number) {
@@ -40,5 +50,5 @@ export async function getMutualConnections(user_id_1: number, user_id_2: number)
 
 export async function removeConnection(user_id_1: number, user_id_2: number) {
   const response = await api.post<ApiResponse<{ removed: boolean }>>("/connections/remove", { user_id_1, user_id_2 });
-  return response.data.data;
+  return resolveCommandResult<{ removed: boolean }>(response.data.data, "/connections/commandStatus");
 }

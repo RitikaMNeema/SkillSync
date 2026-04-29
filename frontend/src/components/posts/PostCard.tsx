@@ -91,6 +91,7 @@ export function PostCard({ post, viewerId, onUpdate, onDelete }: PostCardProps) 
 
   const authorName =
     `${post.author.first_name ?? ""} ${post.author.last_name ?? ""}`.trim() || "Member";
+  const formattedTime = formatTimeAgo(post.created_at);
 
   const mediaBlock = post.media_url
     ? post.post_type === "photo"
