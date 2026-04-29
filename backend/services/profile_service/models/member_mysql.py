@@ -359,6 +359,20 @@ async def member_exists(member_id: int) -> bool:
             return await cur.fetchone() is not None
 
 
+async def apply_connection_delta(member_id: int, delta: int) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                UPDATE members
+                SET connections_count = GREATEST(connections_count + %s, 0)
+                WHERE member_id = %s AND is_deleted = 0
+                """,
+                (delta, member_id),
+            )
+
+
 async def user_exists(user_id: int) -> bool:
     pool = await get_pool()
     async with pool.acquire() as conn:

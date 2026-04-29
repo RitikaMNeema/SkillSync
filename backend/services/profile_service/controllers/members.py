@@ -23,7 +23,9 @@ from models.member_mysql import (
 )
 from models.profile_mongo import create_profile, get_profile, update_profile
 from models import files_mongo
+from models.command_status import get_command_status
 from producers.profile_producer import emit_member_search_appeared, emit_profile_updated, emit_profile_viewed
+from producers.profile_command_producer import enqueue_profile_command
 from shared.redis_utils.cache import cache_get, cache_set, cache_del
 
 PROFILE_TTL = 300
@@ -348,3 +350,36 @@ async def delete_resume_file(member_id: int, actor_id: int) -> dict:
     await clear_resume_file(member_id)
     await cache_del(_profile_key(member_id))
     return {"member_id": member_id, "deleted": True}
+
+
+async def enqueue_create(body: dict, actor: dict) -> dict:
+    if body.get("member_id") != actor.get("user_id"):
+        raise HTTPException(403, "Cannot create profile for another member")
+    return await enqueue_profile_command("member_create", actor, {"body": body})
+
+
+async def enqueue_update(body: dict, actor: dict) -> dict:
+    if body.get("member_id") != actor.get("user_id"):
+        raise HTTPException(403, "Cannot update profile for another member")
+    if isinstance(body.get("__pydantic_fields_set__"), set):
+        body["__pydantic_fields_set__"] = sorted(body["__pydantic_fields_set__"])
+    return await enqueue_profile_command("member_update", actor, {"body": body})
+
+
+async def enqueue_delete(member_id: int, actor: dict) -> dict:
+    if member_id != actor.get("user_id"):
+        raise HTTPException(403, "Cannot delete profile for another member")
+    return await enqueue_profile_command("member_delete", actor, {"member_id": member_id})
+
+
+async def enqueue_upload_resume(member_id: int, resume_url: str, actor: dict) -> dict:
+    if member_id != actor.get("user_id"):
+        raise HTTPException(403, "Cannot upload resume for another member")
+    return await enqueue_profile_command("member_upload_resume", actor, {"member_id": member_id, "resume_url": resume_url})
+
+
+async def get_command(command_id: str) -> dict:
+    status = await get_command_status(command_id)
+    if not status:
+        raise HTTPException(404, "Command not found")
+    return status

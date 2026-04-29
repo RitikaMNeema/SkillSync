@@ -1,4 +1,5 @@
 import api from "./axios";
+import { resolveCommandResult } from "./commands";
 import type { ApiResponse } from "../types/common";
 import type { RecruiterProfile, RecruiterSearchResponse } from "../types/recruiter";
 
@@ -23,7 +24,7 @@ export async function createRecruiter(
   const response = await api.post<ApiResponse<RecruiterProfile>>("/recruiters/create", payload, {
     headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined
   });
-  return response.data.data;
+  return resolveCommandResult<RecruiterProfile>(response.data.data, "/recruiters/commandStatus");
 }
 
 export async function getRecruiter(recruiter_id: number) {
@@ -33,7 +34,7 @@ export async function getRecruiter(recruiter_id: number) {
 
 export async function updateRecruiter(payload: Partial<RecruiterProfile> & { recruiter_id: number }) {
   const response = await api.post<ApiResponse<RecruiterProfile>>("/recruiters/update", payload);
-  return response.data.data;
+  return resolveCommandResult<RecruiterProfile>(response.data.data, "/recruiters/commandStatus");
 }
 
 export async function searchRecruiters(payload: { name?: string; company?: string; industry?: string; page?: number }) {
@@ -65,5 +66,8 @@ export async function deleteRecruiterCoverPhoto(recruiter_id: number) {
   const response = await api.post<ApiResponse<{ recruiter_id: number; deleted: boolean }>>("/recruiters/deleteCover", {
     recruiter_id
   });
-  return response.data.data;
+  return resolveCommandResult<{ recruiter_id: number; deleted: boolean }>(
+    response.data.data,
+    "/recruiters/commandStatus"
+  );
 }

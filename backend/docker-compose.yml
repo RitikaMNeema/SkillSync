@@ -12,11 +12,11 @@ services:
     image: mysql:8.0
     container_name: linkedin_mysql
     restart: unless-stopped
-    # Do not pass MYSQL_USER=root here — the official image forbids creating user "root"
-    # that way and init can fail. Apps still use MYSQL_USER / MYSQL_ROOT_PASSWORD from env_file.
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     # Same host ports as typical Docker DBs (e.g. Yelp): Workbench -> localhost:3306
     # Stop other stacks using 3306/27017 before starting SkillSync (only one listener per port).
     ports:

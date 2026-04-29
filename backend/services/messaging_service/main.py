@@ -4,18 +4,23 @@ import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from jose import JWTError, jwt
 from shared.database.mongo import get_db
+from shared.redis_utils.client import get_redis
 from shared.kafka_utils.producer import close_producer
 from shared.middleware.error_handler import register_error_handlers
 from shared.middleware.logger import LoggerMiddleware
 from shared.utils.trace_id import TraceMiddleware
 from models.thread import get_thread
 from routes.messaging import threads_router, messages_router
+from consumers.messaging_commands_consumer import start_messaging_commands_consumer
 from websocket_hub import hub
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     get_db()
+    await get_redis()
+    if os.getenv("DISABLE_KAFKA_CONSUMERS", "0") != "1":
+        await start_messaging_commands_consumer()
     yield
     await close_producer()
 

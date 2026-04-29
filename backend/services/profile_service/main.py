@@ -45,6 +45,8 @@ from shared.kafka_utils.producer import close_producer
 from shared.middleware.error_handler import register_error_handlers
 from shared.middleware.logger import LoggerMiddleware
 from shared.utils.trace_id import TraceMiddleware
+from consumers.connection_events_consumer import start_connection_events_consumer
+from consumers.profile_commands_consumer import start_profile_commands_consumer
 from models.member_mysql import ensure_member_profile_tables
 from models.post_mongo import ensure_post_indexes
 from routes.members import router
@@ -73,6 +75,8 @@ async def lifespan(app: FastAPI):
             exc,
         )
     await get_redis()
+    await start_connection_events_consumer()
+    await start_profile_commands_consumer()
     yield
     await close_pool()
     await close_mongo()
