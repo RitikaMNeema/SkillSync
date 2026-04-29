@@ -38,3 +38,7 @@ class ThreadPreferenceUpdateRequest(BaseModel):
     archived: Optional[bool] = None
     force_unread: Optional[bool] = None
     hidden: Optional[bool] = None
+
+
+class CommandStatusRequest(BaseModel):
+    command_id: str

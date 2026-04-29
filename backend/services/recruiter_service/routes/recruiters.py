@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.encoders import jsonable_encoder
 
@@ -9,6 +9,7 @@ from schemas.recruiters import (
     DeleteRecruiterRequest,
     SearchRecruitersRequest,
     ByCompanyRequest,
+    CommandStatusRequest,
 )
 import controllers.recruiters as ctrl
 from shared.middleware.auth import get_current_user
@@ -16,11 +17,9 @@ from shared.middleware.auth import get_current_user
 router = APIRouter()
 
 
-@router.post("/create", status_code=201)
+@router.post("/create", status_code=202)
 async def create(body: CreateRecruiterRequest, u=Depends(get_current_user)):
-    if body.recruiter_id != u["user_id"]:
-        raise HTTPException(status_code=403, detail="You can only create a recruiter profile for your own account")
-    data = await ctrl.create(body.model_dump())
+    data = await ctrl.enqueue_create(body.model_dump(), u)
     return {"success": True, "data": jsonable_encoder(data)}
 
 @router.post("/get")
@@ -29,17 +28,13 @@ async def get(body: GetRecruiterRequest, u=Depends(get_current_user)):
 
 @router.post("/update")
 async def update(body: UpdateRecruiterRequest, u=Depends(get_current_user)):
-    if body.recruiter_id != u["user_id"]:
-        raise HTTPException(status_code=403, detail="You can only update your own recruiter profile")
     payload = body.model_dump(exclude_none=False)
     payload["__pydantic_fields_set__"] = set(body.model_fields_set)
-    return {"success": True, "data": await ctrl.update(payload)}
+    return {"success": True, "data": await ctrl.enqueue_update(payload, u)}
 
-@router.post("/delete")
+@router.post("/delete", status_code=202)
 async def delete(body: DeleteRecruiterRequest, u=Depends(get_current_user)):
-    if body.recruiter_id != u["user_id"]:
-        raise HTTPException(status_code=403, detail="You can only delete your own recruiter profile")
-    return {"success": True, "data": await ctrl.delete(body.recruiter_id)}
+    return {"success": True, "data": await ctrl.enqueue_delete(body.recruiter_id, u)}
 
 @router.post("/search")
 async def search(body: SearchRecruitersRequest, u=Depends(get_current_user)):
@@ -108,5 +103,10 @@ async def download_cover(recruiter_id: int):
 
 @router.post("/deleteCover")
 async def delete_cover(body: GetRecruiterRequest, u=Depends(get_current_user)):
-    data = await ctrl.delete_cover_file(body.recruiter_id, u["user_id"])
+    data = await ctrl.enqueue_delete_cover(body.recruiter_id, u)
     return {"success": True, "data": data}
+
+
+@router.post("/commandStatus")
+async def command_status(body: CommandStatusRequest, u=Depends(get_current_user)):
+    return {"success": True, "data": await ctrl.get_command(body.command_id)}

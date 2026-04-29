@@ -8,6 +8,7 @@ from shared.middleware.logger import LoggerMiddleware
 from shared.utils.trace_id import TraceMiddleware
 from routes.applications import router
 from consumers.job_closed_consumer import start_job_closed_consumer
+from consumers.application_commands_consumer import start_application_commands_consumer
 
 
 @asynccontextmanager
@@ -15,6 +16,7 @@ async def lifespan(app: FastAPI):
     await get_pool()
     await get_redis()
     await start_job_closed_consumer()
+    await start_application_commands_consumer()
     yield
     await close_pool()
     await close_producer()

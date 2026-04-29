@@ -5,6 +5,7 @@ import {
   BriefcaseBusiness,
   FileText,
   Image,
+  UserRoundPlus,
   ShieldCheck,
   MessageSquare,
   Plus,

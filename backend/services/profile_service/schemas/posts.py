@@ -62,3 +62,7 @@ class ListCommentsRequest(BaseModel):
 class DeletePostRequest(BaseModel):
     post_id: str
     member_id: int
+
+
+class CommandStatusRequest(BaseModel):
+    command_id: str

@@ -16,6 +16,7 @@ from models.post_mongo import (
 from producers.post_producer import (
     emit_post_created, emit_post_liked, emit_post_commented,
 )
+from producers.profile_command_producer import enqueue_profile_command
 
 
 async def create(body: dict, viewer_id: int) -> dict:
@@ -120,3 +121,23 @@ async def delete(post_id: str, member_id: int, viewer_id: int) -> dict:
         pass
 
     return {"post_id": post_id, **result}
+
+
+async def enqueue_create(body: dict, actor: dict) -> dict:
+    return await enqueue_profile_command("post_create", actor, {"body": body})
+
+
+async def enqueue_like(post_id: str, member_id: int, actor: dict) -> dict:
+    return await enqueue_profile_command("post_like", actor, {"post_id": post_id, "member_id": member_id})
+
+
+async def enqueue_comment(post_id: str, member_id: int, content: str, actor: dict) -> dict:
+    return await enqueue_profile_command(
+        "post_comment",
+        actor,
+        {"post_id": post_id, "member_id": member_id, "content": content},
+    )
+
+
+async def enqueue_delete(post_id: str, member_id: int, actor: dict) -> dict:
+    return await enqueue_profile_command("post_delete", actor, {"post_id": post_id, "member_id": member_id})
