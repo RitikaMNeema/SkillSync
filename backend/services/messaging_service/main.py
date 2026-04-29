@@ -19,7 +19,8 @@ from websocket_hub import hub
 async def lifespan(app: FastAPI):
     get_db()
     await get_redis()
-    await start_messaging_commands_consumer()
+    if os.getenv("DISABLE_KAFKA_CONSUMERS", "0") != "1":
+        await start_messaging_commands_consumer()
     yield
     await close_producer()
 

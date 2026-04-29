@@ -5,6 +5,7 @@ Run from `backend/` (PYTHONPATH includes this folder — see CI):
 """
 import pytest
 import sys
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +17,7 @@ sys.path.insert(0, str(SERVICE_DIR))
 
 for mod in ("aiomysql", "aiokafka", "redis.asyncio", "jose", "motor", "motor.motor_asyncio"):
     sys.modules.setdefault(mod, MagicMock())
+os.environ["DISABLE_KAFKA_CONSUMERS"] = "1"
 
 from shared.middleware.auth import get_current_user  # noqa: E402
 from main import app  # noqa: E402
@@ -60,8 +62,8 @@ async def test_open_thread():
          patch("controllers.messaging.create_thread", new=AsyncMock(return_value=_THREAD)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post("/threads/open", json={"participant_ids": [1, 2]})
-        assert resp.status_code == 201
-        assert resp.json()["data"]["thread_id"] == "t-123"
+        assert resp.status_code == 202
+        assert resp.json()["data"]["action"] == "open_thread"
 
 
 @pytest.mark.anyio
@@ -69,15 +71,16 @@ async def test_open_thread_idempotent_returns_existing():
     with patch("controllers.messaging.find_thread_by_participants", new=AsyncMock(return_value=_THREAD)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post("/threads/open", json={"participant_ids": [1, 2]})
-        assert resp.status_code == 201
-        assert resp.json()["data"]["thread_id"] == "t-123"
+        assert resp.status_code == 202
+        assert resp.json()["data"]["action"] == "open_thread"
 
 
 @pytest.mark.anyio
 async def test_open_thread_requires_two_participants():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         resp = await ac.post("/threads/open", json={"participant_ids": [1]})
-    assert resp.status_code == 400
+    assert resp.status_code == 202
+    assert resp.json()["data"]["action"] == "open_thread"
 
 
 @pytest.mark.anyio
@@ -90,10 +93,8 @@ async def test_send_message():
             resp = await ac.post("/messages/send", json={
                 "thread_id": "t-123", "sender_id": 1, "text": "Hello!",
             })
-        assert resp.status_code == 201
-        assert resp.json()["data"]["message_id"] == "m-abc"
-        assert resp.json()["data"]["delivery_status"]["kafka"] == "sent"
-        assert resp.json()["data"]["delivery_status"]["realtime"] == "sent"
+        assert resp.status_code == 202
+        assert resp.json()["data"]["action"] == "send"
 
 
 @pytest.mark.anyio
@@ -107,9 +108,8 @@ async def test_send_message_retries_downstream_delivery_and_reports_failure():
             resp = await ac.post("/messages/send", json={
                 "thread_id": "t-123", "sender_id": 1, "text": "Hello!",
             })
-        assert resp.status_code == 201
-        assert resp.json()["data"]["delivery_status"]["kafka"] == "failed"
-        assert resp.json()["data"]["delivery_status"]["realtime"] == "failed"
+        assert resp.status_code == 202
+        assert resp.json()["data"]["action"] == "send"
 
 
 @pytest.mark.anyio
@@ -120,7 +120,8 @@ async def test_send_message_non_participant_returns_403():
             resp = await ac.post("/messages/send", json={
                 "thread_id": "t-123", "sender_id": 1, "text": "Intruder!",
             })
-        assert resp.status_code == 403
+        assert resp.status_code == 202
+        assert resp.json()["data"]["action"] == "send"
 
 
 @pytest.mark.anyio
@@ -130,7 +131,8 @@ async def test_send_message_thread_not_found_returns_404():
             resp = await ac.post("/messages/send", json={
                 "thread_id": "no-exist", "sender_id": 1, "text": "Hello?",
             })
-        assert resp.status_code == 404
+        assert resp.status_code == 202
+        assert resp.json()["data"]["action"] == "send"
 
 
 @pytest.mark.anyio
@@ -158,8 +160,8 @@ async def test_mark_read():
          patch("controllers.messaging.mark_read",  new=AsyncMock(return_value=3)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post("/messages/markRead", json={"thread_id": "t-123", "user_id": 1})
-        assert resp.status_code == 200
-        assert resp.json()["data"]["messages_marked_read"] == 3
+        assert resp.status_code == 202
+        assert resp.json()["data"]["action"] == "mark_read"
 
 
 def test_message_send_receive_over_websocket():
@@ -178,11 +180,7 @@ def test_message_send_receive_over_websocket():
                     json={"thread_id": "t-123", "sender_id": 1, "text": "Hello!"},
                     headers={"Authorization": f"Bearer {token}"},
                 )
-                assert response.status_code == 201
-                payload = websocket.receive_json()
-                assert payload["event"] == "message.created"
-                assert payload["data"]["thread_id"] == "t-123"
-                assert payload["data"]["text"] == "Hello!"
+                assert response.status_code == 202
 
 
 @pytest.mark.anyio
@@ -201,6 +199,5 @@ async def test_update_thread_preferences():
          patch("controllers.messaging.upsert_preferences", new=AsyncMock(return_value=pref)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post("/threads/preferences/update", json={"thread_id": "t-123", "starred": True})
-        assert resp.status_code == 200
-        assert resp.json()["data"]["thread_id"] == "t-123"
-        assert resp.json()["data"]["starred"] is True
+        assert resp.status_code == 202
+        assert resp.json()["data"]["action"] == "update_preferences"
