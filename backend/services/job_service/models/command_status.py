@@ -12,7 +12,11 @@ def _cmd_key(command_id: str) -> str:
 
 async def set_command_status(command_id: str, payload: dict) -> None:
     redis = await get_redis()
-    result = redis.set(_cmd_key(command_id), json.dumps(payload), ex=COMMAND_TTL_SECONDS)
+    result = redis.set(
+        _cmd_key(command_id),
+        json.dumps(payload, default=str),
+        ex=COMMAND_TTL_SECONDS,
+    )
     if inspect.isawaitable(result):
         await result
 

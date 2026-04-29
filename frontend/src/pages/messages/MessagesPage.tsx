@@ -33,6 +33,42 @@ function LinkedInMark() {
   );
 }
 
+/** Flat illustration for inbox search empty state (LinkedIn-style). */
+function SearchInboxEmptyIllustration() {
+  return (
+    <svg className="mx-auto h-[140px] w-[180px] text-[#b4c6d9]" viewBox="0 0 180 140" aria-hidden>
+      <ellipse cx="90" cy="128" rx="52" ry="6" className="fill-[#e8eef4]" />
+      <rect x="48" y="72" width="84" height="48" rx="4" className="fill-[#dce8f5]" stroke="#c5d7ea" strokeWidth="1" />
+      <rect x="56" y="78" width="68" height="34" rx="2" className="fill-white" />
+      <circle cx="72" cy="94" r="6" className="fill-[#0a66c2]/25" />
+      <rect x="84" y="90" width="32" height="4" rx="1" className="fill-[#dce8f5]" />
+      <rect x="84" y="98" width="24" height="3" rx="1" className="fill-[#eef3f8]" />
+      <circle cx="118" cy="46" r="22" className="fill-[#f0d5b8]" />
+      <path
+        d="M108 38c4-8 14-12 22-8 8 4 12 14 8 24-2 5-8 9-14 10"
+        className="fill-none stroke-[#8b6914] stroke-[2.5] stroke-linecap-round"
+      />
+      <rect x="94" y="58" width="48" height="40" rx="6" className="fill-[#5b8fd8]" />
+      <rect x="60" y="100" width="60" height="14" rx="2" className="fill-[#c49a6c]" />
+      <path d="M38 112h104" className="stroke-[#a08060] stroke-[1.5]" />
+      <circle cx="34" cy="102" r="10" className="fill-[#7cb87c]" />
+      <path d="M34 96v12M28 102h12" className="stroke-[#5a9a5a] stroke-[1.5]" />
+    </svg>
+  );
+}
+
+function SearchInboxEmptyState() {
+  return (
+    <div className="flex min-h-[420px] flex-col items-center justify-center px-6 pb-8 pt-4 text-center">
+      <SearchInboxEmptyIllustration />
+      <h2 className="mt-6 text-xl font-semibold text-[#1f1f1f]">Search inbox</h2>
+      <p className="mt-2 max-w-[320px] text-sm leading-relaxed text-[#666a73]">
+        Search by recipient name, message content, or conversation name
+      </p>
+    </div>
+  );
+}
+
 export function MessagesPage() {
   type SearchTarget = { id?: number; label: string; subtitle: string; threadId?: string };
   type ParticipantProfile = {
@@ -205,7 +241,9 @@ export function MessagesPage() {
   const filteredThreads = threads.filter((thread) => {
     if (hiddenThreadIds[thread.thread_id]) return false;
     const label = (threadLabels[thread.thread_id] ?? "").toLowerCase();
+    const preview = (previewByThread[thread.thread_id] ?? "").toLowerCase();
     const q = inboxSearch.trim().toLowerCase();
+    const matchesInboxSearch = !q || label.includes(q) || preview.includes(q);
     const unreadCount = displayUnreadCountByThread[thread.thread_id] ?? 0;
     const archived = Boolean(archivedThreadIds[thread.thread_id]);
     const muted = Boolean(mutedThreadIds[thread.thread_id]);
@@ -213,19 +251,21 @@ export function MessagesPage() {
     // Unread should surface every unread thread, including archived ones.
     if (activeFilter === "unread") {
       if (unreadCount === 0) return false;
-      return !q || label.includes(q);
+      return matchesInboxSearch;
     }
 
     // Muted should surface every muted thread, including archived ones.
     if (activeFilter === "muted") {
       if (!muted) return false;
-      return !q || label.includes(q);
+      return matchesInboxSearch;
     }
 
     if (activeFilter === "archived" && !archived) return false;
     if (activeFilter !== "archived" && archived) return false;
-    return !q || label.includes(q);
+    return matchesInboxSearch;
   });
+
+  const showInboxSearchEmptyState = Boolean(inboxSearch.trim()) && filteredThreads.length === 0;
 
   useEffect(() => {
     if (!activeThread) return;
@@ -557,7 +597,7 @@ export function MessagesPage() {
       return;
     }
     if (activeParticipantProfile.recruiterId) {
-      navigate(`/recruiters/${activeParticipantProfile.recruiterId}`);
+      navigate(`/profile/${activeParticipantProfile.recruiterId}?type=recruiter`);
       return;
     }
     toast("Profile page is not available for this user yet.");
@@ -576,17 +616,30 @@ export function MessagesPage() {
 
   return (
     <div className="overflow-hidden rounded-lg border border-[#d9dee3] bg-white shadow-card">
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <h1 className="shrink-0 text-2xl font-semibold">Messaging</h1>
-          <div className="relative w-[320px] max-w-[42vw]">
-            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+          <h1 className="shrink-0 text-2xl font-semibold text-[#1f1f1f]">Messaging</h1>
+          <div
+            className="relative flex min-h-10 min-w-[200px] max-w-xl flex-1 items-center rounded-lg border border-transparent bg-[#eef3f8] transition-colors focus-within:border-[#0a66c2] focus-within:bg-white focus-within:shadow-[0_0_0_1px_#0a66c2]"
+          >
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-[#666a73]" />
             <Input
               value={inboxSearch}
               onChange={(event) => setInboxSearch(event.target.value)}
-              placeholder="Search messages"
-              className="h-10 rounded-lg bg-[#eef3f8] !pl-12 pr-3"
+              placeholder="Search"
+              aria-label="Search inbox"
+              className={`h-10 flex-1 rounded-lg border-0 bg-transparent !pl-10 text-[15px] shadow-none placeholder:text-[#666a73] focus:ring-0 ${inboxSearch ? "!pr-10" : "!pr-3"}`}
             />
+            {inboxSearch ? (
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-[#666a73] transition hover:bg-black/5 hover:text-[#1f1f1f]"
+                aria-label="Clear search"
+                onClick={() => setInboxSearch("")}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -677,21 +730,25 @@ export function MessagesPage() {
           ) : null}
 
           <div className="max-h-[calc(74vh-64px)] overflow-y-auto p-2">
-            <ThreadList
-              threads={filteredThreads}
-              activeThreadId={activeThread?.thread_id ?? null}
-              onSelect={setActiveThread}
-              threadLabels={threadLabels}
-              unreadCountByThread={displayUnreadCountByThread}
-              starredThreadIds={starredThreadIds}
-              previewByThread={previewByThread}
-              onStartNewMessage={() => {
-                setShowComposer(true);
-                setSearchQuery("");
-                setSearchResults([]);
-                setHasSearched(false);
-              }}
-            />
+            {showInboxSearchEmptyState ? (
+              <SearchInboxEmptyState />
+            ) : (
+              <ThreadList
+                threads={filteredThreads}
+                activeThreadId={activeThread?.thread_id ?? null}
+                onSelect={setActiveThread}
+                threadLabels={threadLabels}
+                unreadCountByThread={displayUnreadCountByThread}
+                starredThreadIds={starredThreadIds}
+                previewByThread={previewByThread}
+                onStartNewMessage={() => {
+                  setShowComposer(true);
+                  setSearchQuery("");
+                  setSearchResults([]);
+                  setHasSearched(false);
+                }}
+              />
+            )}
           </div>
         </section>
 

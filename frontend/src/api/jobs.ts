@@ -43,22 +43,30 @@ export async function getAllJobsByRecruiter(recruiter_id: number) {
 
 export async function createJob(payload: Omit<Job, "job_id"> & { company_id: number; recruiter_id: number; title: string; work_mode: "remote" | "hybrid" | "onsite" }) {
   const response = await api.post<ApiResponse<Job>>("/jobs/create", payload);
-  return resolveCommandResult<Job>(response.data.data, "/jobs/commandStatus");
+  const raw = response.data?.data;
+  if (raw === undefined || raw === null) {
+    throw new Error("Unexpected response from job create");
+  }
+  return resolveCommandResult<Job>(raw, "/jobs/commandStatus", 30000);
 }
 
 export async function updateJob(payload: Partial<Job> & { job_id: number }) {
   const response = await api.post<ApiResponse<Job>>("/jobs/update", payload);
-  return resolveCommandResult<Job>(response.data.data, "/jobs/commandStatus");
+  const raw = response.data?.data;
+  if (raw === undefined || raw === null) {
+    throw new Error("Unexpected response from job update");
+  }
+  return resolveCommandResult<Job>(raw, "/jobs/commandStatus", 30000);
 }
 
 export async function closeJob(job_id: number) {
   const response = await api.post<ApiResponse<{ job_id: number; status: "closed" }>>("/jobs/close", { job_id });
-  return resolveCommandResult<{ job_id: number; status: "closed" }>(response.data.data, "/jobs/commandStatus");
+  return resolveCommandResult<{ job_id: number; status: "closed" }>(response.data.data, "/jobs/commandStatus", 30000);
 }
 
 export async function deleteJob(job_id: number) {
   const response = await api.post<ApiResponse<{ job_id: number; deleted: boolean }>>("/jobs/delete", { job_id });
-  return resolveCommandResult<{ job_id: number; deleted: boolean }>(response.data.data, "/jobs/commandStatus");
+  return resolveCommandResult<{ job_id: number; deleted: boolean }>(response.data.data, "/jobs/commandStatus", 30000);
 }
 
 export async function saveJob(member_id: number, job_id: number) {

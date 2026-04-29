@@ -84,6 +84,18 @@ export interface MemberProfile {
   };
 }
 
+/**
+ * Flat fields accepted by `/members/update` and `updateUnifiedProfile` in addition to
+ * {@link MemberProfile} (some also live under {@link MemberProfile.unstructured} when read).
+ */
+export type MemberProfileUpdateInput = Partial<MemberProfile> & {
+  member_id: number;
+  about?: string | null;
+  languages?: LanguageEntry[] | null;
+  followed_skills?: string[] | null;
+  freeform_experience?: unknown;
+};
+
 export interface MemberSearchItem {
   member_id: number;
   first_name: string;
