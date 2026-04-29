@@ -101,3 +101,7 @@ class UploadResumeRequest(BaseModel):
 
 class GetResumeRequest(BaseModel):
     member_id: int
+
+
+class CommandStatusRequest(BaseModel):
+    command_id: str

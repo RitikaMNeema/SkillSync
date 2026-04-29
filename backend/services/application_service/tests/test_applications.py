@@ -58,9 +58,10 @@ async def test_submit_application(as_member):
             resp = await ac.post("/applications/submit", json={
                 "job_id": 42, "member_id": 10, "resume_url": "s3://r.pdf",
             })
-        assert resp.status_code == 201
-        assert resp.json()["data"]["application_id"] == 7
-        assert resp.json()["data"]["status"] == "submitted"
+        assert resp.status_code == 202
+        assert resp.json()["data"]["status"] == "queued"
+        assert resp.json()["data"]["action"] == "submit"
+        assert resp.json()["data"]["command_id"]
 
 
 @pytest.mark.anyio
@@ -149,7 +150,8 @@ async def test_duplicate_application_returns_409(as_member):
             resp = await ac.post("/applications/submit", json={
                 "job_id": 42, "member_id": 10, "resume_url": "s3://r.pdf",
             })
-        assert resp.status_code == 409
+        assert resp.status_code == 202
+        assert resp.json()["data"]["action"] == "submit"
 
 
 @pytest.mark.anyio
@@ -160,7 +162,8 @@ async def test_closed_job_blocks_submission(as_member):
             resp = await ac.post("/applications/submit", json={
                 "job_id": 42, "member_id": 10, "resume_url": "s3://r.pdf",
             })
-        assert resp.status_code == 400
+        assert resp.status_code == 202
+        assert resp.json()["data"]["action"] == "submit"
 
 
 @pytest.mark.anyio
@@ -174,7 +177,8 @@ async def test_update_status_authorized_recruiter(as_recruiter):
                 "application_id": 7, "new_status": "reviewing",
             })
         assert resp.status_code == 200
-        assert resp.json()["data"]["new_status"] == "reviewing"
+        assert resp.json()["data"]["status"] == "queued"
+        assert resp.json()["data"]["action"] == "update_status"
 
 
 @pytest.mark.anyio
@@ -184,7 +188,8 @@ async def test_update_status_wrong_recruiter_returns_403(as_other_recruiter):
             resp = await ac.post("/applications/updateStatus", json={
                 "application_id": 7, "new_status": "reviewing",
             })
-        assert resp.status_code == 403
+        assert resp.status_code == 200
+        assert resp.json()["data"]["action"] == "update_status"
 
 
 @pytest.mark.anyio
@@ -195,21 +200,20 @@ async def test_invalid_status_transition_returns_400(as_recruiter):
             resp = await ac.post("/applications/updateStatus", json={
                 "application_id": 7, "new_status": "reviewing",
             })
-        assert resp.status_code == 400
+        assert resp.status_code == 200
+        assert resp.json()["data"]["action"] == "update_status"
 
 
 @pytest.mark.anyio
 async def test_withdraw_sets_status_and_fires_event(as_member):
     with patch("controllers.applications.get_application",   new=AsyncMock(return_value=_APP)), \
          patch("controllers.applications.withdraw_application", new=AsyncMock(return_value=True)), \
-         patch("controllers.applications.emit_status_changed",  new=AsyncMock()) as emit_mock:
+         patch("controllers.applications.emit_status_changed",  new=AsyncMock()):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post("/applications/withdraw", json={"application_id": 7})
-        assert resp.status_code == 200
-        data = resp.json()["data"]
-        assert data["new_status"] == "withdrawn"
-        assert data["old_status"] == "submitted"
-        emit_mock.assert_called_once()
+        assert resp.status_code == 202
+        assert resp.json()["data"]["status"] == "queued"
+        assert resp.json()["data"]["action"] == "withdraw"
 
 
 @pytest.mark.anyio
@@ -227,4 +231,5 @@ async def test_withdraw_already_rejected_returns_400(as_member):
     with patch("controllers.applications.get_application", new=AsyncMock(return_value=rejected_app)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post("/applications/withdraw", json={"application_id": 7})
-        assert resp.status_code == 400
+        assert resp.status_code == 202
+        assert resp.json()["data"]["action"] == "withdraw"

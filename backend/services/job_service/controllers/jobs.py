@@ -5,6 +5,8 @@ from models.job import (
     search_jobs, jobs_by_recruiter, save_job, unsave_job, saved_by_member, PAGE_SIZE,
 )
 from producers.job_producer import emit_job_viewed, emit_job_saved, emit_job_closed
+from producers.job_command_producer import enqueue_job_command
+from models.command_status import get_command_status
 from shared.redis_utils.cache import cache_get, cache_set, cache_del, cache_del_pattern
 
 JOB_TTL    = 300
@@ -59,6 +61,8 @@ async def close(job_id: int, actor_id) -> dict:
     job = await get_job(job_id)
     if not job:
         raise HTTPException(404, "Job not found")
+    if actor_id and str(actor_id) != str(job["recruiter_id"]):
+        raise HTTPException(403, "Not authorized to close this job")
     if job["status"] == "closed":
         raise HTTPException(400, "Job is already closed")
     if not await close_job(job_id):
@@ -116,3 +120,58 @@ async def track_view(job_id: int, viewer_id) -> dict:
     await cache_del(_job_key(job_id))
     asyncio.create_task(emit_job_viewed(viewer_id or "anonymous", job_id, job.get("recruiter_id")))
     return {"job_id": job_id, "tracked": True}
+
+
+async def enqueue_create(body: dict, actor: dict) -> dict:
+    if actor.get("role") != "recruiter":
+        raise HTTPException(403, "Only recruiters can create jobs")
+    if str(body.get("recruiter_id")) != str(actor["user_id"]):
+        raise HTTPException(403, "Not authorized to create postings for another recruiter")
+    return await enqueue_job_command("create", actor, {"body": body})
+
+
+async def enqueue_update(job_id: int, fields: dict, actor: dict) -> dict:
+    if actor.get("role") != "recruiter":
+        raise HTTPException(403, "Only recruiters can update jobs")
+    return await enqueue_job_command("update", actor, {"job_id": job_id, "fields": fields})
+
+
+async def enqueue_close(job_id: int, actor: dict) -> dict:
+    if actor.get("role") != "recruiter":
+        raise HTTPException(403, "Only recruiters can close jobs")
+    return await enqueue_job_command("close", actor, {"job_id": job_id})
+
+
+async def enqueue_delete(job_id: int, actor: dict) -> dict:
+    if actor.get("role") != "recruiter":
+        raise HTTPException(403, "Only recruiters can delete jobs")
+    return await enqueue_job_command("delete", actor, {"job_id": job_id})
+
+
+async def enqueue_save(member_id: int, job_id: int, actor: dict) -> dict:
+    if actor.get("role") != "member" or str(actor["user_id"]) != str(member_id):
+        raise HTTPException(403, "Members may only save jobs for themselves")
+    return await enqueue_job_command("save", actor, {"member_id": member_id, "job_id": job_id})
+
+
+async def enqueue_unsave(member_id: int, job_id: int, actor: dict) -> dict:
+    if actor.get("role") != "member" or str(actor["user_id"]) != str(member_id):
+        raise HTTPException(403, "Members may only unsave jobs for themselves")
+    return await enqueue_job_command("unsave", actor, {"member_id": member_id, "job_id": job_id})
+
+
+async def enqueue_track_view(job_id: int, viewer_id: int | None, actor: dict) -> dict:
+    if viewer_id is not None and str(viewer_id) != str(actor["user_id"]):
+        raise HTTPException(403, "Cannot track a view for another user")
+    return await enqueue_job_command(
+        "track_view",
+        actor,
+        {"job_id": job_id, "viewer_id": viewer_id or actor["user_id"]},
+    )
+
+
+async def get_command(command_id: str, actor: dict) -> dict:
+    status = await get_command_status(command_id)
+    if not status:
+        raise HTTPException(404, "Command not found")
+    return status

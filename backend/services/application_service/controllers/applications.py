@@ -6,6 +6,8 @@ from models.application import (
     VALID_TRANSITIONS, PAGE_SIZE,
 )
 from producers.application_producer import emit_submitted, emit_status_changed
+from producers.application_command_producer import enqueue_application_command
+from models.command_status import get_command_status
 
 
 async def submit(job_id, member_id, resume_url, cover_letter, answers, actor: dict) -> dict:
@@ -127,3 +129,64 @@ async def withdraw(application_id: int, member_id) -> dict:
         app["job_recruiter_id"],
     )
     return {"application_id": application_id, "old_status": old_status, "new_status": "withdrawn"}
+
+
+async def enqueue_submit(job_id, member_id, resume_url, cover_letter, answers, actor: dict) -> dict:
+    if actor.get("role") != "member" or str(actor["user_id"]) != str(member_id):
+        raise HTTPException(403, "Members may only submit applications for themselves")
+    return await enqueue_application_command(
+        "submit",
+        actor,
+        {
+            "job_id": job_id,
+            "member_id": member_id,
+            "resume_url": resume_url,
+            "cover_letter": cover_letter,
+            "answers": answers,
+        },
+    )
+
+
+async def enqueue_update_status(application_id: int, new_status: str, actor: dict) -> dict:
+    if actor.get("role") != "recruiter":
+        raise HTTPException(403, "Only recruiters can update application status")
+    return await enqueue_application_command(
+        "update_status",
+        actor,
+        {
+            "application_id": application_id,
+            "new_status": new_status,
+        },
+    )
+
+
+async def enqueue_withdraw(application_id: int, actor: dict) -> dict:
+    if actor.get("role") != "member":
+        raise HTTPException(403, "Only members can withdraw their applications")
+    return await enqueue_application_command(
+        "withdraw",
+        actor,
+        {"application_id": application_id},
+    )
+
+
+async def enqueue_add_recruiter_note(application_id: int, recruiter_id: int, note_text: str, actor: dict) -> dict:
+    if actor.get("role") != "recruiter" or str(actor.get("user_id")) != str(recruiter_id):
+        raise HTTPException(403, "Cannot add notes on behalf of another recruiter")
+    return await enqueue_application_command(
+        "add_note",
+        actor,
+        {
+            "application_id": application_id,
+            "recruiter_id": recruiter_id,
+            "note_text": note_text,
+        },
+    )
+
+
+async def get_command(command_id: str, actor: dict) -> dict:
+    status = await get_command_status(command_id)
+    if not status:
+        raise HTTPException(404, "Command not found")
+    # status is intentionally minimal and does not include private data outside command result payload
+    return status

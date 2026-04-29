@@ -53,7 +53,7 @@ function RecruiterCard({ recruiter }: { recruiter: RecruiterProfile }) {
   const location = recruiter.company_location || "";
   return (
     <Link
-      to={`/recruiters/${recruiter.recruiter_id}`}
+      to={`/profile/${recruiter.recruiter_id}?type=recruiter`}
       className="flex items-start gap-4 rounded-card border bg-white p-4 transition-colors hover:bg-hover hover:no-underline"
     >
       <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#0a66c2] text-lg font-bold text-white">

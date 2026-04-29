@@ -9,9 +9,14 @@ def build_envelope(
     entity_id: str,
     payload: dict,
     trace_id: str = None,
+    idempotency_key: str = None,
+    event_version: int = 1,
+    schema_ref: str | None = None,
 ) -> dict:
-    return {
+    envelope = {
+        "event_name":      event_type,
         "event_type":      event_type,
+        "event_version":   event_version,
         "trace_id":        trace_id or str(uuid.uuid4()),
         "timestamp":       datetime.now(timezone.utc).isoformat(),
         "actor_id":        str(actor_id),
@@ -20,5 +25,8 @@ def build_envelope(
             "entity_id":   str(entity_id),
         },
         "payload":         payload,
-        "idempotency_key": str(uuid.uuid4()),
+        "idempotency_key": idempotency_key or str(uuid.uuid4()),
     }
+    if schema_ref:
+        envelope["schema_ref"] = schema_ref
+    return envelope

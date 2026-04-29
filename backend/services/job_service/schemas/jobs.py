@@ -61,3 +61,7 @@ class SavedByMemberRequest(BaseModel):
 class TrackViewRequest(BaseModel):
     job_id: int
     viewer_id: Optional[int] = None
+
+
+class CommandStatusRequest(BaseModel):
+    command_id: str

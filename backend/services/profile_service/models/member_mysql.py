@@ -359,6 +359,20 @@ async def member_exists(member_id: int) -> bool:
             return await cur.fetchone() is not None
 
 
+async def apply_connection_delta(member_id: int, delta: int) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                UPDATE members
+                SET connections_count = GREATEST(connections_count + %s, 0)
+                WHERE member_id = %s AND is_deleted = 0
+                """,
+                (delta, member_id),
+            )
+
+
 async def user_exists(user_id: int) -> bool:
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -930,9 +944,9 @@ async def search_members(keyword, skill, location, page, page_size=PAGE_SIZE) ->
     values = []
 
     if keyword:
-        conditions.append("(m.headline LIKE %s OR m.summary LIKE %s OR m.first_name LIKE %s OR m.last_name LIKE %s OR JSON_SEARCH(m.skills, 'one', %s) IS NOT NULL)")
+        conditions.append("(m.headline LIKE %s OR m.summary LIKE %s OR m.first_name LIKE %s OR m.last_name LIKE %s OR JSON_SEARCH(LOWER(m.skills), 'one', %s) IS NOT NULL)")
         like = f"%{keyword}%"
-        values += [like, like, like, like, keyword]
+        values += [like, like, like, like, keyword.lower()]
     if skill:
         conditions.append('JSON_SEARCH(m.skills, "one", %s) IS NOT NULL')
         values.append(skill)

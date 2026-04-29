@@ -1,4 +1,5 @@
 import api from "./axios";
+import { resolveCommandResult } from "./commands";
 import type { ApiResponse } from "../types/common";
 import type { LanguageEntry, MemberProfile, MemberSearchResponse } from "../types/member";
 
@@ -14,7 +15,7 @@ export async function createMember(
   const response = await api.post<ApiResponse<{ member_id: number }>>("/members/create", payload, {
     headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined
   });
-  return response.data.data;
+  return resolveCommandResult<{ member_id: number }>(response.data.data, "/members/commandStatus");
 }
 
 export async function updateMember(
@@ -33,7 +34,7 @@ export async function updateMember(
   }
 ) {
   const response = await api.post<ApiResponse<{ member_id: number; updated: boolean }>>("/members/update", payload);
-  return response.data.data;
+  return resolveCommandResult<{ member_id: number; updated: boolean }>(response.data.data, "/members/commandStatus");
 }
 
 export async function searchMembers(payload: { keyword?: string; skill?: string; location?: string; page?: number }) {
@@ -43,7 +44,7 @@ export async function searchMembers(payload: { keyword?: string; skill?: string;
 
 export async function uploadResume(payload: { member_id: number; resume_url: string }) {
   const response = await api.post<ApiResponse<{ member_id: number; resume_url: string }>>("/members/uploadResume", payload);
-  return response.data.data;
+  return resolveCommandResult<{ member_id: number; resume_url: string }>(response.data.data, "/members/commandStatus");
 }
 
 export async function getResume(member_id: number) {

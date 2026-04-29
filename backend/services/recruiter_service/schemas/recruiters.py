@@ -93,3 +93,7 @@ class SearchRecruitersRequest(BaseModel):
 class ByCompanyRequest(BaseModel):
     company_id: int
     page: int = 1
+
+
+class CommandStatusRequest(BaseModel):
+    command_id: str
