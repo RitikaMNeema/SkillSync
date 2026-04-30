@@ -1,19 +1,10 @@
+# When app services run in Compose, point at in-network infra
 x-docker-runtime-env: &docker-runtime-env
-  MYSQL_HOST: ${MYSQL_HOST}
-  MYSQL_PORT: ${MYSQL_PORT}
-  MYSQL_DATABASE: ${MYSQL_DATABASE}
-  MYSQL_USER: ${MYSQL_USER}
-  MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-  MONGO_URI: ${MONGO_URI}
-  MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
-  MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
-  REDIS_HOST: ${REDIS_HOST}
-  REDIS_PORT: ${REDIS_PORT}
-  KAFKA_BROKERS: ${KAFKA_BROKERS}
-  JWT_SECRET: ${JWT_SECRET}
-  JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES}
-  NODE_ENV: ${NODE_ENV}
-
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  MYSQL_HOST: mysql
+  MYSQL_PORT: "3306"
+  MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/linkedin_db?authSource=admin
 services:
   # ── Infrastructure ──────────────────────────────────────────────
   mysql:
@@ -387,6 +378,9 @@ services:
     environment:
       PORT: ${AI_SERVICE_PORT}
       PYTHONPATH: /app
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL}
     ports:
       - "${AI_SERVICE_PORT}:${AI_SERVICE_PORT}"
     depends_on:
@@ -412,6 +406,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 25s
+      
 
 
 volumes:

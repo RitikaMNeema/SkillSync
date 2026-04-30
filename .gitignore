@@ -2,6 +2,4 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
-
-# JavaScript / Node
-node_modules/
+frontend/node_modules/ 

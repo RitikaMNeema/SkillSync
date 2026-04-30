@@ -37,7 +37,8 @@
 
 @layer base {
   * {
-    @apply border-border;
+    box-sizing: border-box;
+    border-color: var(--color-border);
   }
 
   html {
@@ -47,11 +48,25 @@
   }
 
   body {
-    @apply m-0 bg-surface text-text-primary antialiased;
+    margin: 0;
+    background: var(--color-bg-base);
+    color: var(--color-text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  #root {
+    min-height: 100vh;
   }
 
   a {
-    @apply text-text-link no-underline transition-all duration-150 hover:underline;
+    color: var(--color-text-link);
+    text-decoration: none;
+    transition: all 150ms ease;
+  }
+
+  a:hover {
+    text-decoration: underline;
   }
 
   button,
@@ -66,20 +81,58 @@
   input:focus-visible,
   textarea:focus-visible,
   select:focus-visible {
-    @apply outline-none ring-2 ring-brand ring-offset-2;
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-brand);
   }
 }
 
 @layer utilities {
   .linkedin-card {
-    @apply rounded-card border bg-card shadow-card;
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: 16px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
   }
 
   .linkedin-input {
-    @apply h-10 rounded-full border border-[#8c8c8c] px-3 text-base text-text-primary placeholder:text-text-tertiary focus:border-brand focus:shadow-[0_0_0_1px_#0a66c2];
+    height: 40px;
+    width: 100%;
+    border-radius: 9999px;
+    border: 1px solid #8c8c8c;
+    padding: 0 12px;
+    font-size: 16px;
+    color: var(--color-text-primary);
+    background: #ffffff;
+  }
+
+  .linkedin-input::placeholder {
+    color: var(--color-text-tertiary);
+  }
+
+  .linkedin-input:focus {
+    border-color: var(--color-brand);
+    box-shadow: 0 0 0 1px #0a66c2;
+    outline: none;
   }
 
   .linkedin-textarea {
-    @apply min-h-20 rounded-input border border-[#8c8c8c] px-3 py-2 text-base text-text-primary placeholder:text-text-tertiary focus:border-brand focus:shadow-[0_0_0_1px_#0a66c2];
+    min-height: 80px;
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid #8c8c8c;
+    padding: 8px 12px;
+    font-size: 16px;
+    color: var(--color-text-primary);
+    background: #ffffff;
+  }
+
+  .linkedin-textarea::placeholder {
+    color: var(--color-text-tertiary);
+  }
+
+  .linkedin-textarea:focus {
+    border-color: var(--color-brand);
+    box-shadow: 0 0 0 1px #0a66c2;
+    outline: none;
   }
 }

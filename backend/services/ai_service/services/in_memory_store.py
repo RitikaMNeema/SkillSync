@@ -148,3 +148,16 @@ class TraceStore:
         trace.updated_at = utc_now()
         await self.save_trace(trace)
         return trace
+    
+    async def list_traces(self) -> list[AITrace]:
+        traces: Dict[str, AITrace] = dict(self._memory)
+
+        if self.collection is not None:
+            try:
+                async for doc in self.collection.find({}, {"_id": 0}):
+                    trace = AITrace(**doc)
+                    traces[trace.trace_id] = trace
+            except PyMongoError:
+                pass
+
+        return list(traces.values())
