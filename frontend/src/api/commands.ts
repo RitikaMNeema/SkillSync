@@ -37,7 +37,11 @@ export async function resolveCommandResult<T>(
     const response = await api.post<ApiResponse<CommandEnvelope>>(commandStatusPath, {
       command_id: status.command_id
     });
-    status = response.data.data;
+    const next = response.data?.data;
+    if (!next || typeof next !== "object") {
+      throw new Error("Invalid command status response");
+    }
+    status = next as CommandEnvelope;
   }
 
   throw new Error("Command is still processing. Please retry.");

@@ -113,6 +113,8 @@ export function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [connectionStatus, setConnectionStatus] = useState<"none" | "pending" | "connected">("none");
+  const [pendingRequestId, setPendingRequestId] = useState<number | null>(null);
+  const [pendingIsOutgoing, setPendingIsOutgoing] = useState(false);
   const [sendingConnection, setSendingConnection] = useState(false);
   const [activityStats, setActivityStats] = useState<{ profileViews: number; searchAppearances: number } | null>(null);
   const [activeModal, setActiveModal] = useState<ProfileActiveModal | null>(null);
@@ -181,6 +183,8 @@ export function ProfilePage() {
   useEffect(() => {
     if (!member || !currentUserId || member.member_id === currentUserId) {
       setConnectionStatus("none");
+      setPendingRequestId(null);
+      setPendingIsOutgoing(false);
       return;
     }
     let cancelled = false;
@@ -190,18 +194,30 @@ export function ProfilePage() {
         const isConnected = connections.some((entry) => entry.connected_user_id === member.member_id);
         if (isConnected) {
           setConnectionStatus("connected");
+          setPendingRequestId(null);
+          setPendingIsOutgoing(false);
           return;
         }
-        const isPending = pending.some(
+        const pendingEntry = pending.find(
           (entry) =>
             (entry.requester_id === currentUserId && entry.receiver_id === member.member_id) ||
             (entry.requester_id === member.member_id && entry.receiver_id === currentUserId)
         );
-        setConnectionStatus(isPending ? "pending" : "none");
+        if (pendingEntry) {
+          setConnectionStatus("pending");
+          setPendingRequestId(pendingEntry.id);
+          setPendingIsOutgoing(pendingEntry.requester_id === currentUserId);
+          return;
+        }
+        setConnectionStatus("none");
+        setPendingRequestId(null);
+        setPendingIsOutgoing(false);
       })
       .catch(() => {
         if (cancelled) return;
         setConnectionStatus("none");
+        setPendingRequestId(null);
+        setPendingIsOutgoing(false);
       });
     return () => {
       cancelled = true;
@@ -210,15 +226,38 @@ export function ProfilePage() {
 
   async function handleConnect() {
     if (!member || !currentUserId || member.member_id === currentUserId) return;
-    if (connectionStatus === "connected" || connectionStatus === "pending") return;
+
+    if (connectionStatus === "connected") return;
     setSendingConnection(true);
-    const loadingToast = toast.loading("Sending connection request...");
+    const loadingToast = toast.loading(connectionStatus === "pending" ? "Withdrawing invitation..." : "Sending connection request...");
     try {
+      if (connectionStatus === "pending") {
+        if (!pendingIsOutgoing || !pendingRequestId) {
+          toast.error("Only sent invitations can be withdrawn", { id: loadingToast });
+          return;
+        }
+        await withdrawConnection(pendingRequestId);
+        setConnectionStatus("none");
+        setPendingRequestId(null);
+        setPendingIsOutgoing(false);
+        toast.success("Invitation withdrawn", { id: loadingToast });
+        return;
+      }
       await requestConnection(currentUserId, member.member_id);
       setConnectionStatus("pending");
+      setPendingIsOutgoing(true);
+      // Refresh to resolve request id for follow-up withdraw action.
+      const refreshedPending = await listPendingConnections(currentUserId);
+      const outgoingMatch = refreshedPending.find(
+        (entry) => entry.requester_id === currentUserId && entry.receiver_id === member.member_id
+      );
+      setPendingRequestId(outgoingMatch?.id ?? null);
       toast.success("Connection request sent", { id: loadingToast });
     } catch (err) {
-      toast.error(getApiErrorMessage(err) || "Could not send request", { id: loadingToast });
+      toast.error(
+        getApiErrorMessage(err) || (connectionStatus === "pending" ? "Could not withdraw invitation" : "Could not send request"),
+        { id: loadingToast }
+      );
     } finally {
       setSendingConnection(false);
     }
@@ -684,8 +723,12 @@ export function ProfilePage() {
             currentRole === "recruiter"
               ? async (memberId) => {
                   await deleteRecruiterCoverPhoto(memberId);
+                  await loadMemberProfile();
                 }
-              : undefined
+              : async (memberId) => {
+                  await deleteCoverPhoto(memberId);
+                  await loadMemberProfile();
+                }
           }
           onProfileUpdated={(next) => setMember(next)}
           onProfileStatusChange={async (next) => {
@@ -702,8 +745,14 @@ export function ProfilePage() {
           onAddSection={() => setAddSectionOpen(true)}
           onEditHeadline={() => setActiveModal({ type: "headline" })}
           onOpenContactInfo={() => setActiveModal({ type: "contact_info" })}
-          connectLabel={connectionStatus === "connected" ? "Connected" : connectionStatus === "pending" ? "Pending" : "Connect"}
-          connectDisabled={sendingConnection || connectionStatus !== "none"}
+          connectLabel={
+            connectionStatus === "connected"
+              ? "Connected"
+              : connectionStatus === "pending"
+                ? "Pending"
+                : "Connect"
+          }
+          connectDisabled={sendingConnection || connectionStatus === "connected" || (connectionStatus === "pending" && !pendingIsOutgoing)}
           onConnect={() => void handleConnect()}
           onMessage={handleMessage}
         />
@@ -825,11 +874,23 @@ export function ProfilePage() {
                   : sources.length === 1
                     ? sources[0]
                     : sources.join(" · ");
-                return (
-                  <div key={skill} className="border-t border-[#edf1f4] pt-3 first:border-t-0 first:pt-0">
+                const body = (
+                  <div className="border-t border-[#edf1f4] pt-3 first:border-t-0 first:pt-0">
                     <p className="text-[1.2rem] font-semibold text-[#1f1f1f]">{skill}</p>
                     <p className="mt-1 text-sm text-[#555555]">{sourceLine}</p>
                   </div>
+                );
+                return isOwnProfile ? (
+                  <button
+                    key={skill}
+                    type="button"
+                    className="block w-full rounded-lg border border-transparent text-left outline-none hover:border-[#e5e7eb] hover:bg-[#fafafa] focus-visible:ring-2 focus-visible:ring-brand"
+                    onClick={() => setActiveModal({ type: "edit_skill", skillName: skill })}
+                  >
+                    {body}
+                  </button>
+                ) : (
+                  <div key={skill}>{body}</div>
                 );
               })}
             </div>

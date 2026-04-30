@@ -32,3 +32,11 @@ async def create_user(email: str, password_hash: str, role: str) -> int:
                 (email, password_hash, role),
             )
             return cur.lastrowid
+
+
+async def delete_user(user_id: int) -> bool:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+            return cur.rowcount > 0

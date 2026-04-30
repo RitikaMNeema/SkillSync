@@ -149,6 +149,17 @@ CREATE TABLE IF NOT EXISTS connection_requests (
 
 CREATE INDEX idx_cr_receiver_id ON connection_requests (receiver_id);
 
+-- ── user_blocks ───────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS user_blocks (
+  id         BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  blocker_id BIGINT UNSIGNED NOT NULL,
+  blocked_id BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_user_block (blocker_id, blocked_id),
+  CONSTRAINT fk_blocker FOREIGN KEY (blocker_id) REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_blocked FOREIGN KEY (blocked_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
 -- ── jobs ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS jobs (
   job_id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

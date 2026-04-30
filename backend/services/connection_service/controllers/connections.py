@@ -3,6 +3,7 @@ from ..models.connection import (
     find_request, find_request_by_id, create_request, update_request_status,
     get_pending_requests, connection_exists, accept_connection_transaction,
     remove_connection_transaction, get_user_connections, get_mutual_connections,
+    block_user_transaction,
 )
 from ..producers.connection_producer import (
     emit_connection_requested,
@@ -17,6 +18,12 @@ CONN_TTL = 120
 
 
 def _conn_key(uid): return f"connections:{uid}"
+
+
+def _is_connection_actor(actor: dict) -> bool:
+    """Members and recruiters share the same social graph / invitations UX."""
+    role = str(actor.get("role", "")).lower()
+    return role in ("member", "recruiter")
 
 
 async def request(requester_id, receiver_id) -> dict:
@@ -64,7 +71,8 @@ async def withdraw(request_id) -> dict:
         raise HTTPException(404, "Connection request not found")
     if req["status"] != "pending":
         raise HTTPException(400, f"Cannot withdraw a request that is {req['status']}")
-    await update_request_status(request_id, "withdrawn")
+    # DB enum currently stores pending/accepted/rejected; treat withdraw as a sender-initiated rejection.
+    await update_request_status(request_id, "rejected")
     return {"request_id": request_id, "status": "withdrawn"}
 
 
@@ -99,8 +107,8 @@ async def remove(uid1, uid2) -> dict:
 
 
 async def enqueue_request(requester_id: int, receiver_id: int, actor: dict) -> dict:
-    if actor.get("role") != "member" or str(actor["user_id"]) != str(requester_id):
-        raise HTTPException(403, "Members may only create requests for themselves")
+    if not _is_connection_actor(actor) or str(actor["user_id"]) != str(requester_id):
+        raise HTTPException(403, "You may only create connection requests for yourself")
     return await enqueue_connection_command(
         "request",
         actor,
@@ -109,8 +117,13 @@ async def enqueue_request(requester_id: int, receiver_id: int, actor: dict) -> d
 
 
 async def enqueue_accept(request_id: int, actor: dict) -> dict:
-    if actor.get("role") != "member":
-        raise HTTPException(403, "Only members can accept requests")
+    if not _is_connection_actor(actor):
+        raise HTTPException(403, "Only signed-in users can accept requests")
+    req_row = await find_request_by_id(request_id)
+    if not req_row:
+        raise HTTPException(404, "Connection request not found")
+    if str(actor["user_id"]) != str(req_row["receiver_id"]):
+        raise HTTPException(403, "Only the recipient can accept this request")
     return await enqueue_connection_command(
         "accept",
         actor,
@@ -119,8 +132,13 @@ async def enqueue_accept(request_id: int, actor: dict) -> dict:
 
 
 async def enqueue_reject(request_id: int, actor: dict) -> dict:
-    if actor.get("role") != "member":
-        raise HTTPException(403, "Only members can reject requests")
+    if not _is_connection_actor(actor):
+        raise HTTPException(403, "Only signed-in users can decline requests")
+    req_row = await find_request_by_id(request_id)
+    if not req_row:
+        raise HTTPException(404, "Connection request not found")
+    if str(actor["user_id"]) != str(req_row["receiver_id"]):
+        raise HTTPException(403, "Only the recipient can decline this request")
     return await enqueue_connection_command(
         "reject",
         actor,
@@ -129,8 +147,13 @@ async def enqueue_reject(request_id: int, actor: dict) -> dict:
 
 
 async def enqueue_withdraw(request_id: int, actor: dict) -> dict:
-    if actor.get("role") != "member":
-        raise HTTPException(403, "Only members can withdraw requests")
+    if not _is_connection_actor(actor):
+        raise HTTPException(403, "Only signed-in users can withdraw requests")
+    req_row = await find_request_by_id(request_id)
+    if not req_row:
+        raise HTTPException(404, "Connection request not found")
+    if str(actor["user_id"]) != str(req_row["requester_id"]):
+        raise HTTPException(403, "Only the requester can withdraw this request")
     return await enqueue_connection_command(
         "withdraw",
         actor,
@@ -139,8 +162,8 @@ async def enqueue_withdraw(request_id: int, actor: dict) -> dict:
 
 
 async def enqueue_remove(uid1: int, uid2: int, actor: dict) -> dict:
-    if actor.get("role") != "member":
-        raise HTTPException(403, "Only members can remove connections")
+    if not _is_connection_actor(actor):
+        raise HTTPException(403, "Only signed-in users can remove connections")
     if str(actor["user_id"]) not in {str(uid1), str(uid2)}:
         raise HTTPException(403, "Cannot remove someone else's connection")
     return await enqueue_connection_command(
@@ -155,3 +178,16 @@ async def get_command(command_id: str, actor: dict) -> dict:
     if not status:
         raise HTTPException(404, "Command not found")
     return status
+
+
+async def block(blocker_id: int, blocked_id: int, actor: dict) -> dict:
+    if not _is_connection_actor(actor):
+        raise HTTPException(403, "Only signed-in users can block users")
+    if str(actor["user_id"]) != str(blocker_id):
+        raise HTTPException(403, "You may only block users for yourself")
+    if blocker_id == blocked_id:
+        raise HTTPException(400, "Cannot block yourself")
+    await block_user_transaction(blocker_id, blocked_id)
+    await cache_del(_conn_key(blocker_id))
+    await cache_del(_conn_key(blocked_id))
+    return {"blocked": True}

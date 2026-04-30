@@ -27,13 +27,36 @@ async def submit_application_transaction(job_id, member_id, resume_url, cover_le
                 if job["status"] != "open":
                     raise ValueError("JOB_CLOSED")
 
-                # Check duplicate
+                # Check duplicate (row is unique by job_id + member_id).
                 await cur.execute(
-                    "SELECT application_id FROM applications WHERE job_id=%s AND member_id=%s",
+                    "SELECT application_id, status FROM applications WHERE job_id=%s AND member_id=%s FOR UPDATE",
                     (job_id, member_id),
                 )
-                if await cur.fetchone():
-                    raise ValueError("DUPLICATE")
+                existing = await cur.fetchone()
+                if existing:
+                    if existing["status"] != "withdrawn":
+                        raise ValueError("DUPLICATE")
+                    # Re-apply path: revive withdrawn application in place.
+                    await cur.execute(
+                        """
+                        UPDATE applications
+                        SET resume_url=%s,
+                            cover_letter=%s,
+                            answers=%s,
+                            status='submitted',
+                            application_datetime=CURRENT_TIMESTAMP
+                        WHERE application_id=%s
+                        """,
+                        (
+                            resume_url,
+                            cover_letter,
+                            json.dumps(answers) if answers else None,
+                            existing["application_id"],
+                        ),
+                    )
+                    app_id = existing["application_id"]
+                    await conn.commit()
+                    return app_id
 
                 await cur.execute(
                     "INSERT INTO applications (job_id,member_id,resume_url,cover_letter,answers,status) VALUES(%s,%s,%s,%s,%s,'submitted')",

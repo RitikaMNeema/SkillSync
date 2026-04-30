@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+from fastapi import HTTPException
+
 from shared.kafka_utils.consumer import start_consumer
 from shared.kafka_utils.contracts import validate_event_envelope
 from shared.kafka_utils import topics
@@ -67,13 +69,18 @@ async def start_job_commands_consumer() -> None:
                 },
             )
         except Exception as exc:
+            if isinstance(exc, HTTPException):
+                detail = exc.detail
+                err_msg = detail if isinstance(detail, str) else str(detail)
+            else:
+                err_msg = str(exc)
             await set_command_status(
                 command_id,
                 {
                     "command_id": command_id,
                     "status": "failed",
                     "action": action,
-                    "error": str(exc),
+                    "error": err_msg,
                     "failed_at": datetime.now(timezone.utc).isoformat(),
                 },
             )
