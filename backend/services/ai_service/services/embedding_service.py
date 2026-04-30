@@ -19,15 +19,23 @@ class EmbeddingService:
             "input": text,
         }
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(f"{self.base_url}/embed", json=payload)
-            resp.raise_for_status()
-            data = resp.json()
+        print(f"[EMBED] requesting embeddings from {self.base_url}/embed")
+        print(f"[EMBED] model={OLLAMA_EMBED_MODEL} text_len={len(text)}")
 
-        # Ollama embed returns embeddings array
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                resp = await client.post(f"{self.base_url}/embed", json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+        except Exception as exc:
+            print(f"[EMBED] embed request failed: {exc}")
+            raise
+
         embeddings = data.get("embeddings", [])
         if not embeddings:
             raise ValueError("No embeddings returned from Ollama")
+
+        print("[EMBED] embeddings received successfully")
         return embeddings[0]
 
     @staticmethod

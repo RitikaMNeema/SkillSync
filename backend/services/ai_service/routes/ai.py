@@ -13,9 +13,9 @@ from schemas.ai import (
     OutreachDraftRequest,
     ResumeParseRequest,
 )
+from services.metrics_service import MetricsService
 
-
-def build_ai_router(agent_controller: AgentController, ws_manager):
+def build_ai_router(agent_controller: AgentController, ws_manager, metrics_service: MetricsService):
     router = APIRouter(prefix="/ai", tags=["Agentic AI"])
 
     @router.get("/health")
@@ -117,7 +117,18 @@ def build_ai_router(agent_controller: AgentController, ws_manager):
         if not status:
             raise HTTPException(status_code=404, detail="Command not found")
         return {"success": True, "data": status}
-
+    
+    @router.get("/metrics", response_model=GenericSuccessResponse)
+    async def get_ai_metrics(
+        token: str = Depends(require_bearer_token),
+    ):
+        try:
+            result = await metrics_service.get_metrics()
+            return {"success": True, "data": result}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+    
+    
     @router.websocket("/ws/{trace_id}")
     async def websocket_updates(websocket: WebSocket, trace_id: str):
         await ws_manager.connect(trace_id, websocket)

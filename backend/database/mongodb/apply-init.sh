@@ -1,6 +1,6 @@
 #!/bin/sh
 # Run from mongo-init container: apply init.js against the running mongo service.
-set -eu
+set -eu 
 
 : "${MONGO_HOST:=mongo}"
 : "${MONGO_INITDB_ROOT_USERNAME:?MONGO_INITDB_ROOT_USERNAME is required}"

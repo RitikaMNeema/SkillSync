@@ -64,7 +64,9 @@ export const router = createBrowserRouter([
           { path: "/search", element: <SearchResultsPage /> },
           { path: "/profile/:member_id", element: <ProfilePage /> },
           { path: "/in/:profile_slug", element: <PublicProfileSlugPage /> },
-          { path: "/recruiters/:recruiter_id", element: <RecruiterProfilePage /> }
+          { path: "/recruiters/:recruiter_id", element: <RecruiterProfilePage /> },
+
+          { path: "/ai-test/:job_id", element: <AIHiringPage /> }
         ]
       },
       {

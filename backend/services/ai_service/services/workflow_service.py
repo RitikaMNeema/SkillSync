@@ -15,7 +15,6 @@ from schemas.ai import (
 from services.in_memory_store import TraceStore
 from services.kafka_bus import KafkaBus
 from shared.kafka_utils.ai_topics import (
-    AI_EVENT_AGENT_REQUESTED,
     AI_EVENT_APPROVAL_REQUIRED,
     AI_EVENT_APPROVED,
     AI_EVENT_COMPLETED,
@@ -43,6 +42,7 @@ class WorkflowService:
             }
 
         trace_id = req.trace_id or str(uuid.uuid4())
+
         trace = AITrace(
             trace_id=trace_id,
             workflow_type=req.workflow_type,
@@ -56,9 +56,8 @@ class WorkflowService:
         )
         await self.store.save_trace(trace)
 
-        payload = {
+        workflow_payload = {
             "trace_id": trace_id,
-            "event_type": AI_EVENT_AGENT_REQUESTED,
             "workflow_type": req.workflow_type,
             "recruiter_id": req.recruiter_id,
             "candidate": req.candidate.model_dump(),
@@ -67,23 +66,14 @@ class WorkflowService:
             "idempotency_key": req.idempotency_key,
         }
 
-        await self.kafka_bus.publish_request(payload)
+        # Important: run locally inside the AI service after Kafka boundary.
+        asyncio.create_task(self.run_workflow(workflow_payload))
 
         return {
             "trace_id": trace_id,
             "status": "queued",
-            "message": "AI workflow submitted",
+            "message": "AI workflow accepted and started",
         }
-
-    async def consume_loop(self) -> None:
-        consumer = await self.kafka_bus.start_consumer()
-        try:
-            async for msg in consumer:
-                payload = msg.value
-                if payload.get("event_type") == AI_EVENT_AGENT_REQUESTED:
-                    await self.run_workflow(payload)
-        finally:
-            await self.kafka_bus.stop_consumer()
 
     async def _push_update(self, trace_id: str, event_type: str, data: Dict[str, Any]) -> None:
         event = {
@@ -112,8 +102,6 @@ class WorkflowService:
                 },
             )
 
-            await asyncio.sleep(1)
-
             await self.store.update_trace_status(
                 trace_id,
                 status="running",
@@ -140,7 +128,6 @@ class WorkflowService:
                 education=payload["candidate"].get("education", []),
                 skills=payload["candidate"].get("skills", []),
             )
-
             parsed = await parse_profile(parse_req)
 
             await self.store.update_step(
@@ -150,8 +137,6 @@ class WorkflowService:
                 data=parsed,
             )
             await self._push_update(trace_id, AI_EVENT_PROFILE_PARSED, parsed)
-
-            await asyncio.sleep(1)
 
             await self.store.update_trace_status(
                 trace_id,
@@ -184,8 +169,6 @@ class WorkflowService:
                 data=match_result,
             )
             await self._push_update(trace_id, AI_EVENT_MATCH_COMPLETED, match_result)
-
-            await asyncio.sleep(1)
 
             await self.store.update_trace_status(
                 trace_id,
@@ -226,8 +209,6 @@ class WorkflowService:
                 "match_result": match_result,
                 "outreach_draft": outreach,
             }
-
-            await asyncio.sleep(1)
 
             if payload.get("require_human_approval", True):
                 await self.store.update_trace_status(
