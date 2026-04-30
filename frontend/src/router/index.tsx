@@ -44,6 +44,12 @@ function ProtectedRoute({ children, allowedRoles }: { children: JSX.Element; all
   return children;
 }
 
+function DashboardRoute() {
+  const { role } = authStore.getState();
+  if (role === "recruiter") return <RecruiterDashboardPage />;
+  return <MemberDashboardPage />;
+}
+
 export const router = createBrowserRouter([
   {
     path: "/",
@@ -91,11 +97,20 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         ),
         children: [
-          { path: "/feed", element: <FeedPage /> },
           { path: "/profile/:member_id/details/:section", element: <ProfileSectionDetailsPage /> },
           { path: "/saved-jobs", element: <SavedJobsPage /> },
-          { path: "/applications", element: <ApplicationsPage /> },
-          { path: "/dashboard", element: <MemberDashboardPage /> }
+          { path: "/applications", element: <ApplicationsPage /> }
+        ]
+      },
+      {
+        element: (
+          <ProtectedRoute allowedRoles={["member", "recruiter"]}>
+            <AppShell />
+          </ProtectedRoute>
+        ),
+        children: [
+          { path: "/feed", element: <FeedPage /> },
+          { path: "/dashboard", element: <DashboardRoute /> }
         ]
       },
       {
@@ -105,7 +120,7 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         ),
         children: [
-          { path: "/recruiter/dashboard", element: <RecruiterDashboardPage /> },
+          { path: "/recruiter/dashboard", element: <Navigate to="/feed" replace /> },
           { path: "/recruiter/jobs", element: <JobManagementPage /> },
           { path: "/recruiter/jobs/:job_id/applicants", element: <ApplicantReviewPage /> },
           { path: "/recruiter/ai/:job_id", element: <AIHiringPage /> },

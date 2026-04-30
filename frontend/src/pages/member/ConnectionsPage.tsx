@@ -72,6 +72,40 @@ type InvitationMutualBundle = {
   count: number;
 };
 
+async function loadNetworkProfile(userId: number): Promise<ConnectionProfile> {
+  try {
+    const member = await getMember(userId);
+    const memberName = `${member.first_name ?? ""} ${member.last_name ?? ""}`.trim();
+    return {
+      profilePhotoUrl: member.profile_photo_url ?? null,
+      displayName: memberName || member.email || "Member",
+      headline: member.headline?.trim() || null,
+    };
+  } catch {
+    // Fall through to recruiter profile lookup.
+  }
+
+  try {
+    const recruiter = await getRecruiter(userId);
+    const recruiterName =
+      `${recruiter.first_name ?? ""} ${recruiter.last_name ?? ""}`.trim() ||
+      recruiter.name?.trim() ||
+      recruiter.email ||
+      "Recruiter";
+    return {
+      profilePhotoUrl: recruiter.profile_photo_url ?? null,
+      displayName: recruiterName,
+      headline: recruiter.headline?.trim() || recruiter.role?.trim() || null,
+    };
+  } catch {
+    return {
+      profilePhotoUrl: null,
+      displayName: "",
+      headline: null,
+    };
+  }
+}
+
 export function ConnectionsPage() {
   const userId = authStore((state) => state.userId);
   const navigate = useNavigate();
@@ -97,10 +131,13 @@ export function ConnectionsPage() {
   const loadNetworkData = async () => {
     if (!userId) return;
 
-    const [list, pendingList] = await Promise.all([
+    const [listResult, pendingResult] = await Promise.allSettled([
       listConnections(userId),
       listPendingConnections(userId),
     ]);
+
+    const list = listResult.status === "fulfilled" ? listResult.value : [];
+    const pendingList = pendingResult.status === "fulfilled" ? pendingResult.value : [];
 
     setConnections(list);
     setPending(pendingList);
@@ -115,20 +152,15 @@ export function ConnectionsPage() {
 
     const entries = await Promise.all(
       profileIds.map(async (memberId) => {
-        try {
-          const profile = await getMember(memberId);
-          const fullName = `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() || "Member";
-          return [
-            memberId,
-            {
-              profilePhotoUrl: profile.profile_photo_url ?? null,
-              name: fullName,
-              headline: profile.headline ?? null,
-            },
-          ] as const;
-        } catch {
-          return [memberId, { profilePhotoUrl: null, name: "Member", headline: null }] as const;
-        }
+        const profile = await loadNetworkProfile(memberId);
+        return [
+          memberId,
+          {
+            profilePhotoUrl: profile.profilePhotoUrl,
+            name: profile.displayName || "Member",
+            headline: profile.headline,
+          },
+        ] as const;
       })
     );
     setInvitationProfiles(Object.fromEntries(entries));
@@ -155,27 +187,8 @@ export function ConnectionsPage() {
     const connIds = Array.from(new Set(list.map((c) => c.connected_user_id))).filter((id) => Number.isFinite(id) && id > 0);
     const connEntries = await Promise.all(
       connIds.map(async (memberId) => {
-        try {
-          const profile = await getMember(memberId);
-          const fullName = `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim();
-          return [
-            memberId,
-            {
-              profilePhotoUrl: profile.profile_photo_url ?? null,
-              displayName: fullName || profile.email || "Member",
-              headline: profile.headline?.trim() || null,
-            },
-          ] as const;
-        } catch {
-          return [
-            memberId,
-            {
-              profilePhotoUrl: null,
-              displayName: "",
-              headline: null,
-            },
-          ] as const;
-        }
+        const profile = await loadNetworkProfile(memberId);
+        return [memberId, profile] as const;
       })
     );
     setConnectionProfiles(Object.fromEntries(connEntries));
