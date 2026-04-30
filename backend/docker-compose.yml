@@ -4,18 +4,35 @@ x-docker-runtime-env: &docker-runtime-env
   REDIS_PORT: 6379
   MYSQL_HOST: mysql
   MYSQL_PORT: "3306"
-  MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/linkedin_db?authSource=admin
+  # Keep app DB creds aligned with mysql service interpolation (.env/--env-file/defaults),
+  # instead of values from container-only env_file overlays.
+  MYSQL_DATABASE: ${MYSQL_DATABASE:-linkedin_db}
+  MYSQL_USER: ${MYSQL_USER:-linkedin_user}
+  MYSQL_PASSWORD: ${MYSQL_PASSWORD:-changeme_app}
+  # Defaults align with `.env.example` so `docker compose up` works without copying to `.env`;
+  # `env_file` does not substitute variables in this YAML (only PROJECT/.env / --env-file / shell).
+  MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME:-admin}:${MONGO_INITDB_ROOT_PASSWORD:-changeme_mongo}@mongo:27017/linkedin_db?authSource=admin
+# Never commit `.env.local` — it holds your stable machine secrets across branch switches.
+# Use `make bootstrap` once (copies `.env.example` → `.env.local`), then `make up`.
+x-app-env-files: &app-env-files
+  - .env.example
+  - path: .env
+    required: false
+  - path: .env.local
+    required: false
+
 services:
   # ── Infrastructure ──────────────────────────────────────────────
   mysql:
     image: mysql:8.0
     container_name: linkedin_mysql
     restart: unless-stopped
+    env_file: *app-env-files
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-changeme_root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-linkedin_db}
+      MYSQL_USER: ${MYSQL_USER:-linkedin_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-changeme_app}
     # Same host ports as typical Docker DBs (e.g. Yelp): Workbench -> localhost:3306
     # Stop other stacks using 3306/27017 before starting SkillSync (only one listener per port).
     ports:
@@ -38,9 +55,10 @@ services:
     image: mongo:7.0
     container_name: linkedin_mongo
     restart: unless-stopped
+    env_file: *app-env-files
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-changeme_mongo}
     ports:
       - "27018:27017"
     volumes:
@@ -55,9 +73,9 @@ services:
           "CMD",
           "mongosh",
           "-u",
-          "${MONGO_INITDB_ROOT_USERNAME}",
+          "${MONGO_INITDB_ROOT_USERNAME:-admin}",
           "-p",
-          "${MONGO_INITDB_ROOT_PASSWORD}",
+          "${MONGO_INITDB_ROOT_PASSWORD:-changeme_mongo}",
           "--authenticationDatabase",
           "admin",
           "--eval",
@@ -77,10 +95,11 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
+    env_file: *app-env-files
     environment:
       MONGO_HOST: mongo
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-changeme_mongo}
     volumes:
       - ./database/mongodb/init.js:/init.js:ro
       - ./database/mongodb/apply-init.sh:/apply-init.sh:ro
@@ -136,7 +155,7 @@ services:
     image: mysql:8.0
     container_name: linkedin_mysql_init_host
     restart: "no"
-    env_file: .env
+    env_file: *app-env-files
     volumes:
       - ./database/mysql/init.sql:/init.sql:ro
     command: >-
@@ -162,20 +181,20 @@ services:
       dockerfile: services/auth_service/Dockerfile
     container_name: linkedin_auth
     restart: unless-stopped
-    env_file: .env
+    env_file: *app-env-files
     environment:
-      PORT: ${AUTH_SERVICE_PORT}
+      PORT: ${AUTH_SERVICE_PORT:-3001}
       PYTHONPATH: /app
       <<: *docker-runtime-env
     ports:
-      - "${AUTH_SERVICE_PORT}:${AUTH_SERVICE_PORT}"
+      - "${AUTH_SERVICE_PORT:-3001}:${AUTH_SERVICE_PORT:-3001}"
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${AUTH_SERVICE_PORT}/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${AUTH_SERVICE_PORT:-3001}/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -187,13 +206,13 @@ services:
       dockerfile: services/profile_service/Dockerfile
     container_name: linkedin_profile
     restart: unless-stopped
-    env_file: .env
+    env_file: *app-env-files
     environment:
-      PORT: ${PROFILE_SERVICE_PORT}
+      PORT: ${PROFILE_SERVICE_PORT:-3002}
       PYTHONPATH: /app
       <<: *docker-runtime-env
     ports:
-      - "${PROFILE_SERVICE_PORT}:${PROFILE_SERVICE_PORT}"
+      - "${PROFILE_SERVICE_PORT:-3002}:${PROFILE_SERVICE_PORT:-3002}"
     depends_on:
       mysql:
         condition: service_healthy
@@ -206,30 +225,30 @@ services:
       kafka:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${PROFILE_SERVICE_PORT}/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${PROFILE_SERVICE_PORT:-3002}/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 20s
-      
+      start_period: 45s
+
   recruiter-service:
     build:
       context: .
       dockerfile: services/recruiter_service/Dockerfile
     container_name: linkedin_recruiter
     restart: unless-stopped
-    env_file: .env
+    env_file: *app-env-files
     environment:
-      PORT: ${RECRUITER_SERVICE_PORT}
+      PORT: ${RECRUITER_SERVICE_PORT:-3003}
       PYTHONPATH: /app
       <<: *docker-runtime-env
     ports:
-      - "${RECRUITER_SERVICE_PORT}:${RECRUITER_SERVICE_PORT}"
+      - "${RECRUITER_SERVICE_PORT:-3003}:${RECRUITER_SERVICE_PORT:-3003}"
     depends_on:
       mysql:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${RECRUITER_SERVICE_PORT}/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${RECRUITER_SERVICE_PORT:-3003}/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -241,13 +260,13 @@ services:
       dockerfile: services/connection_service/Dockerfile
     container_name: linkedin_connection
     restart: unless-stopped
-    env_file: .env
+    env_file: *app-env-files
     environment:
-      PORT: ${CONNECTION_SERVICE_PORT}
+      PORT: ${CONNECTION_SERVICE_PORT:-3004}
       PYTHONPATH: /app
       <<: *docker-runtime-env
     ports:
-      - "${CONNECTION_SERVICE_PORT}:${CONNECTION_SERVICE_PORT}"
+      - "${CONNECTION_SERVICE_PORT:-3004}:${CONNECTION_SERVICE_PORT:-3004}"
     depends_on:
       mysql:
         condition: service_healthy
@@ -256,7 +275,7 @@ services:
       kafka:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${CONNECTION_SERVICE_PORT}/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${CONNECTION_SERVICE_PORT:-3004}/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -268,13 +287,13 @@ services:
       dockerfile: services/job_service/Dockerfile
     container_name: linkedin_job
     restart: unless-stopped
-    env_file: .env
+    env_file: *app-env-files
     environment:
-      PORT: ${JOB_SERVICE_PORT}
+      PORT: ${JOB_SERVICE_PORT:-3005}
       PYTHONPATH: /app
       <<: *docker-runtime-env
     ports:
-      - "${JOB_SERVICE_PORT}:${JOB_SERVICE_PORT}"
+      - "${JOB_SERVICE_PORT:-3005}:${JOB_SERVICE_PORT:-3005}"
     depends_on:
       mysql:
         condition: service_healthy
@@ -283,7 +302,7 @@ services:
       kafka:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${JOB_SERVICE_PORT}/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${JOB_SERVICE_PORT:-3005}/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -295,13 +314,13 @@ services:
       dockerfile: services/application_service/Dockerfile
     container_name: linkedin_application
     restart: unless-stopped
-    env_file: .env
+    env_file: *app-env-files
     environment:
-      PORT: ${APPLICATION_SERVICE_PORT}
+      PORT: ${APPLICATION_SERVICE_PORT:-3006}
       PYTHONPATH: /app
       <<: *docker-runtime-env
     ports:
-      - "${APPLICATION_SERVICE_PORT}:${APPLICATION_SERVICE_PORT}"
+      - "${APPLICATION_SERVICE_PORT:-3006}:${APPLICATION_SERVICE_PORT:-3006}"
     depends_on:
       mysql:
         condition: service_healthy
@@ -310,7 +329,7 @@ services:
       kafka:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${APPLICATION_SERVICE_PORT}/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${APPLICATION_SERVICE_PORT:-3006}/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -322,20 +341,20 @@ services:
       dockerfile: services/messaging_service/Dockerfile
     container_name: linkedin_messaging
     restart: unless-stopped
-    env_file: .env
+    env_file: *app-env-files
     environment:
-      PORT: ${MESSAGING_SERVICE_PORT}
+      PORT: ${MESSAGING_SERVICE_PORT:-3007}
       PYTHONPATH: /app
       <<: *docker-runtime-env
     ports:
-      - "${MESSAGING_SERVICE_PORT}:${MESSAGING_SERVICE_PORT}"
+      - "${MESSAGING_SERVICE_PORT:-3007}:${MESSAGING_SERVICE_PORT:-3007}"
     depends_on:
       mongo:
         condition: service_healthy
       kafka:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${MESSAGING_SERVICE_PORT}/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${MESSAGING_SERVICE_PORT:-3007}/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -347,13 +366,13 @@ services:
       dockerfile: services/analytics_service/Dockerfile
     container_name: linkedin_analytics
     restart: unless-stopped
-    env_file: .env
+    env_file: *app-env-files
     environment:
-      PORT: ${ANALYTICS_SERVICE_PORT}
+      PORT: ${ANALYTICS_SERVICE_PORT:-3008}
       PYTHONPATH: /app
       <<: *docker-runtime-env
     ports:
-      - "${ANALYTICS_SERVICE_PORT}:${ANALYTICS_SERVICE_PORT}"
+      - "${ANALYTICS_SERVICE_PORT:-3008}:${ANALYTICS_SERVICE_PORT:-3008}"
     depends_on:
       mongo:
         condition: service_healthy
@@ -362,7 +381,7 @@ services:
       kafka:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${ANALYTICS_SERVICE_PORT}/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${ANALYTICS_SERVICE_PORT:-3008}/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -374,15 +393,15 @@ services:
       dockerfile: services/ai_service/Dockerfile
     container_name: linkedin_ai
     restart: unless-stopped
-    env_file: .env
+    env_file: *app-env-files
     environment:
-      PORT: ${AI_SERVICE_PORT}
+      PORT: ${AI_SERVICE_PORT:-3010}
       PYTHONPATH: /app
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
-      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL}
-      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/api}
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-llama3.2:3b}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text:latest}
     ports:
-      - "${AI_SERVICE_PORT}:${AI_SERVICE_PORT}"
+      - "${AI_SERVICE_PORT:-3010}:${AI_SERVICE_PORT:-3010}"
     depends_on:
       mysql:
         condition: service_healthy
@@ -401,7 +420,7 @@ services:
       recruiter-service:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3010/ai/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${AI_SERVICE_PORT:-3010}/ai/health')"]
       interval: 10s
       timeout: 5s
       retries: 5

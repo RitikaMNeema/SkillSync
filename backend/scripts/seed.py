@@ -37,6 +37,27 @@ BASE = {
     "analytics": "http://localhost:3008",
 }
 
+# Service → Kafka command-status path (polling). Matches each microservice FastAPI prefixes.
+COMMAND_STATUS_PATH = {
+    "profile": "/members/commandStatus",
+    "job": "/jobs/commandStatus",
+    "recruiter": "/recruiters/commandStatus",
+    "connection": "/connections/commandStatus",
+    "application": "/applications/commandStatus",
+    "messaging": "/messages/commandStatus",
+}
+
+# substring checks on polled async failures treated as benign for idempotent re-runs of the seed
+BENIGN_DUP_MARKERS = (
+    "409",
+    "duplicate",
+    "already",
+    "already applied",
+    "already connected",
+    "already pending",
+    "already saved",
+)
+
 # Must match auth_service RegisterRequest password rules (length, upper, lower, digit, special).
 SEED_USER_PASSWORD = "SkillSync1!"
 
@@ -109,22 +130,67 @@ def section(title: str):
     print(f"{BOLD}{YELLOW}{'─' * 55}{RESET}")
 
 
-def post(client: httpx.Client, base_key: str, path: str, body: dict, *, token=None, expect=None, ignore=None):
+def poll_command(client: httpx.Client, base_key: str, command_id: str, *, token: str, timeout_sec: float = 180.0):
+    path = COMMAND_STATUS_PATH.get(base_key)
+    if not path:
+        print(f"  {RED}✗ Unknown service key for polling: {base_key}{RESET}")
+        sys.exit(1)
+    url = BASE[base_key] + path
+    headers = {"Authorization": f"Bearer {token}"}
+    deadline = time.monotonic() + timeout_sec
+    last_status = ""
+    while time.monotonic() < deadline:
+        r = client.post(url, json={"command_id": command_id}, headers=headers, timeout=30)
+        if r.status_code != 200:
+            print(f"  {RED}✗ {path} poll → {r.status_code}: {r.text}{RESET}")
+            sys.exit(1)
+        payload = r.json().get("data") or {}
+        last_status = str(payload.get("status") or "")
+        if last_status == "completed":
+            return payload
+        if last_status == "failed":
+            return payload
+        time.sleep(0.35)
+    print(f"  {RED}✗ command {command_id} timed out (last_status={last_status!r}){RESET}")
+    sys.exit(1)
+
+
+def post(
+    client: httpx.Client,
+    base_key: str,
+    path: str,
+    body: dict,
+    *,
+    token=None,
+    expect=None,
+    ignore=None,
+    benign_async_fail=None,
+):
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     url = BASE[base_key] + path
     r = client.post(url, json=body, headers=headers)
     if ignore and r.status_code in ignore:
         return None
-    if r.status_code not in (expect or [200, 201]):
+    expected = expect if expect is not None else [200, 201, 202]
+    if r.status_code not in expected:
         print(f"  {RED}✗ {path} → {r.status_code}: {r.text}{RESET}")
         sys.exit(1)
-    return r.json()["data"]
-
-
-def post_ignore(client: httpx.Client, base_key: str, path: str, body: dict, *, token=None) -> tuple[int, str]:
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    r = client.post(BASE[base_key] + path, json=body, headers=headers)
-    return r.status_code, r.text
+    try:
+        j = r.json()
+    except json.JSONDecodeError:
+        print(f"  {RED}✗ {path} invalid JSON → {r.text}{RESET}")
+        sys.exit(1)
+    data = j.get("data") if isinstance(j, dict) else None
+    if isinstance(data, dict) and data.get("command_id"):
+        polled = poll_command(client, base_key, data["command_id"], token=token)
+        if polled.get("status") == "failed":
+            err = str(polled.get("error") or "")
+            if benign_async_fail and any(marker in err for marker in benign_async_fail):
+                return None
+            print(f"  {RED}✗ {path} async → {err}{RESET}")
+            sys.exit(1)
+        return polled.get("result")
+    return data
 
 
 def wait_for_services(client: httpx.Client):
@@ -322,17 +388,33 @@ def seed_analytics_charts(
 
 
 def try_submit_application(client: httpx.Client, body: dict, token: str) -> dict | None:
-    code, text = post_ignore(client, "application", "/applications/submit", body, token=token)
-    if code == 409:
+    headers = {"Authorization": f"Bearer {token}"}
+    r = client.post(f"{BASE['application']}/applications/submit", json=body, headers=headers, timeout=60)
+    if r.status_code == 409:
         return None
-    if code != 201:
-        print(f"  {RED}✗ submit → {code}: {text}{RESET}")
+    if r.status_code not in (200, 202):
+        print(f"  {RED}✗ submit → {r.status_code}: {r.text}{RESET}")
         sys.exit(1)
-    return json.loads(text)["data"]
+    payload = r.json().get("data") or {}
+    command_id = payload.get("command_id")
+    if not command_id:
+        # legacy synchronous success payloads (pre-queue)
+        if isinstance(payload, dict) and payload.get("application_id") is not None:
+            return payload
+        print(f"  {RED}✗ submit missing command_id → {r.text}{RESET}")
+        sys.exit(1)
+    polled = poll_command(client, "application", command_id, token=token)
+    if polled.get("status") == "failed":
+        err = str(polled.get("error") or "")
+        if any(m in err.lower() for m in ("already applied", "409", "duplicate")):
+            return None
+        print(f"  {RED}✗ submit async → {err}{RESET}")
+        sys.exit(1)
+    return polled.get("result")
 
 
 def main():
-    with httpx.Client(timeout=30) as client:
+    with httpx.Client(timeout=120) as client:
         wait_for_services(client)
 
         # ── STEP 1: Register users ─────────────────────────────────────
@@ -410,7 +492,15 @@ def main():
         }
 
         for alias, profile in member_profiles.items():
-            result = post(client, "profile", "/members/create", profile, token=tokens[alias], ignore=[409, 400])
+            result = post(
+                client,
+                "profile",
+                "/members/create",
+                profile,
+                token=tokens[alias],
+                ignore=[409, 400],
+                benign_async_fail=BENIGN_DUP_MARKERS,
+            )
             ok(f"Profile for {alias} ({'created' if result else 'already exists'})")
 
         # ── STEP 3: Recruiters & company ──────────────────────────────
@@ -429,6 +519,7 @@ def main():
             },
             token=tokens["recruiter_dana"],
             ignore=[409, 400],
+            benign_async_fail=BENIGN_DUP_MARKERS,
         )
         if dana_data:
             company_id = dana_data["company_id"]
@@ -457,6 +548,7 @@ def main():
             },
             token=tokens["recruiter_eli"],
             ignore=[409, 400],
+            benign_async_fail=BENIGN_DUP_MARKERS,
         )
         ok("Eli Watson (created or already exists)")
 
@@ -534,6 +626,7 @@ def main():
             {"member_id": users["alice"], "job_id": jb},
             token=tokens["alice"],
             ignore=[409],
+            benign_async_fail=BENIGN_DUP_MARKERS,
         )
         post(
             client,
@@ -542,6 +635,7 @@ def main():
             {"member_id": users["alice"], "job_id": fe},
             token=tokens["alice"],
             ignore=[409],
+            benign_async_fail=BENIGN_DUP_MARKERS,
         )
         post(
             client,
@@ -550,6 +644,7 @@ def main():
             {"member_id": users["bob"], "job_id": fe},
             token=tokens["bob"],
             ignore=[409],
+            benign_async_fail=BENIGN_DUP_MARKERS,
         )
         ok("Saved jobs (MySQL, 409 if already saved)")
 
@@ -563,6 +658,7 @@ def main():
             {"requester_id": users["alice"], "receiver_id": users["bob"]},
             token=tokens["alice"],
             ignore=[409, 400],
+            benign_async_fail=BENIGN_DUP_MARKERS,
         )
         if req1:
             post(
@@ -572,6 +668,7 @@ def main():
                 {"request_id": req1["request_id"]},
                 token=tokens["bob"],
                 ignore=[400],
+                benign_async_fail=BENIGN_DUP_MARKERS,
             )
         ok("Alice ↔ Bob")
 
@@ -582,6 +679,7 @@ def main():
             {"requester_id": users["alice"], "receiver_id": users["charlie"]},
             token=tokens["alice"],
             ignore=[409, 400],
+            benign_async_fail=BENIGN_DUP_MARKERS,
         )
         ok("Alice → Charlie (pending)")
 
@@ -592,6 +690,7 @@ def main():
             {"requester_id": users["bob"], "receiver_id": users["charlie"]},
             token=tokens["bob"],
             ignore=[409, 400],
+            benign_async_fail=BENIGN_DUP_MARKERS,
         )
         if req3:
             post(
@@ -601,6 +700,7 @@ def main():
                 {"request_id": req3["request_id"]},
                 token=tokens["charlie"],
                 ignore=[400],
+                benign_async_fail=BENIGN_DUP_MARKERS,
             )
         ok("Bob ↔ Charlie")
 
@@ -720,26 +820,40 @@ def main():
         else:
             ok("Alice → Frontend (already applied — skipped withdraw demo)")
 
-        r = client.post(
+        r_closed = client.post(
             f"{BASE['application']}/applications/submit",
             json={"job_id": dv, "member_id": users["bob"], "resume_url": "x"},
             headers={"Authorization": f"Bearer {tokens['bob']}"},
+            timeout=60,
         )
-        if r.status_code == 400:
-            ok("Closed-job block (DevOps)")
+        if r_closed.status_code != 202:
+            print(f"  {YELLOW}⚠ Expected 202 for closed job submit enqueue, got {r_closed.status_code}{RESET}")
         else:
-            print(f"  {YELLOW}⚠ Expected 400 for closed job, got {r.status_code}{RESET}")
+            q = r_closed.json().get("data") or {}
+            cid = q.get("command_id")
+            if cid:
+                polled_closed = poll_command(client, "application", cid, token=tokens["bob"])
+                err = str(polled_closed.get("error") or "").lower()
+                if polled_closed.get("status") == "failed" and ("closed" in err or "400" in err):
+                    ok("Closed-job block (DevOps)")
+                elif polled_closed.get("status") == "completed":
+                    print(f"  {YELLOW}⚠ Expected closed-job failure — application completed unexpectedly{RESET}")
+                else:
+                    print(f"  {YELLOW}⚠ Unexpected polled status for closed job demo: {polled_closed}{RESET}")
+            else:
+                print(f"  {YELLOW}⚠ submit response missing command_id{RESET}")
 
         # ── STEP 7: Messaging ─────────────────────────────────────────
         section("7 / Messaging")
 
-        r1 = client.post(
-            f"{BASE['messaging']}/threads/open",
-            json={"participant_ids": [dana_id, users["alice"]]},
-            headers={"Authorization": f"Bearer {tokens['recruiter_dana']}"},
+        thread1 = post(
+            client,
+            "messaging",
+            "/threads/open",
+            {"participant_ids": [dana_id, users["alice"]]},
+            token=tokens["recruiter_dana"],
         )
-        if r1.status_code in (200, 201):
-            thread1 = r1.json()["data"]
+        if thread1 and thread1.get("thread_id"):
             ok("Thread Dana ↔ Alice", {"thread_id": thread1["thread_id"]})
             for tok, sender, text in [
                 (
@@ -772,15 +886,16 @@ def main():
             )
             ok("Messages Dana ↔ Alice")
         else:
-            ok(f"Dana ↔ Alice thread ({r1.status_code} — may already exist)")
+            ok("Dana ↔ Alice thread (skipped — thread open returned no thread_id)")
 
-        r2 = client.post(
-            f"{BASE['messaging']}/threads/open",
-            json={"participant_ids": [users["bob"], dana_id]},
-            headers={"Authorization": f"Bearer {tokens['bob']}"},
+        thread2 = post(
+            client,
+            "messaging",
+            "/threads/open",
+            {"participant_ids": [users["bob"], dana_id]},
+            token=tokens["bob"],
         )
-        if r2.status_code in (200, 201):
-            thread2 = r2.json()["data"]
+        if thread2 and thread2.get("thread_id"):
             post(
                 client,
                 "messaging",
@@ -795,7 +910,7 @@ def main():
             )
             ok("Thread Bob ↔ Dana", {"thread_id": thread2["thread_id"]})
         else:
-            ok(f"Bob ↔ Dana thread ({r2.status_code} — may already exist)")
+            ok("Bob ↔ Dana thread (skipped — thread open returned no thread_id)")
 
         # ── STEP 8: Analytics (all 5 charts) ──────────────────────────
         seed_analytics_charts(

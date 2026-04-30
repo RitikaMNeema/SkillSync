@@ -56,12 +56,16 @@ async function pollAiCommand(commandId: string) {
 }
 
 async function pollAiTrace(traceId: string) {
-  for (let attempt = 0; attempt < 45; attempt += 1) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
     const status = await getAgentStatus(traceId);
     if (AI_TRACE_TERMINAL_STATUSES.has(status.status)) return status;
-    await new Promise((resolve) => window.setTimeout(resolve, 1200));
+    await new Promise((resolve) => window.setTimeout(resolve, 1500));
   }
-  return getAgentStatus(traceId);
+  const latest = await getAgentStatus(traceId);
+  if (!AI_TRACE_TERMINAL_STATUSES.has(latest.status)) {
+    throw new Error(`AI workflow still running (${latest.status})`);
+  }
+  return latest;
 }
 
 function resolveResumeUrl(resumeUrl?: string | null): string | null {
@@ -105,6 +109,7 @@ export function ApplicantReviewPage() {
   const [aiByApplicationId, setAiByApplicationId] = useState<Record<number, AIAssessment>>({});
   const [aiError, setAiError] = useState<string | null>(null);
   const [approvingAi, setApprovingAi] = useState(false);
+  const [aiRetryTick, setAiRetryTick] = useState(0);
   const aiInFlightRef = useRef<Record<number, boolean>>({});
   const appsSignatureRef = useRef<string>("");
   const selectedIdRef = useRef<number | null>(null);
@@ -318,7 +323,6 @@ export function ApplicantReviewPage() {
       job: jobPayload,
       workflow_type: "shortlist_outreach",
       require_human_approval: true,
-      idempotency_key: `applicant-review:${job.job_id}:${selected.application_id}`,
     })
       .then((queued) => pollAiCommand(queued.command_id))
       .then((commandDone) => {
@@ -328,10 +332,16 @@ export function ApplicantReviewPage() {
       })
       .then(({ trace, traceId }) => {
         if (cancelled) return;
+        if (trace.status === "failed" || trace.status === "rejected") {
+          throw new Error(`AI workflow ${trace.status}`);
+        }
         const match = trace.final_result?.match_result ?? {};
         const outreachMessage = trace.final_result?.outreach_draft?.message ?? "";
         const rawScore = Number(match.match_score);
         const score = Number.isFinite(rawScore) ? Math.max(0, Math.min(100, rawScore)) : null;
+        if (score == null) {
+          throw new Error("AI workflow completed without numeric match_score");
+        }
         const matchedSkills = Array.isArray(match.matched_skills) ? match.matched_skills.filter(Boolean) : [];
         const missingSkills = Array.isArray(match.missing_skills) ? match.missing_skills.filter(Boolean) : [];
         const steps = Array.isArray(trace.steps) ? trace.steps : [];
@@ -361,6 +371,11 @@ export function ApplicantReviewPage() {
       .catch((error: unknown) => {
         if (!cancelled) {
           setAiError(error instanceof Error ? error.message : "AI analysis unavailable");
+          setAiByApplicationId((current) => {
+            const next = { ...current };
+            delete next[selected.application_id];
+            return next;
+          });
         }
       })
       .finally(() => {
@@ -371,7 +386,20 @@ export function ApplicantReviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [aiByApplicationId, job, profile, selected]);
+  }, [aiByApplicationId, job, profile, selected, aiRetryTick]);
+
+  const handleRetryAiAnalysis = () => {
+    if (!selected) return;
+    aiInFlightRef.current[selected.application_id] = false;
+    setAiByApplicationId((current) => {
+      const next = { ...current };
+      delete next[selected.application_id];
+      return next;
+    });
+    setAiError(null);
+    setAiLoading(true);
+    setAiRetryTick((current) => current + 1);
+  };
 
   const handleApproveAndSend = () => {
     if (!selected || !activeAi) {
@@ -555,6 +583,8 @@ export function ApplicantReviewPage() {
                 confidence={activeAi?.confidence}
                 strongReasons={activeAi?.strongReasons ?? []}
                 topGaps={activeAi?.topGaps ?? []}
+                error={aiError}
+                onRetry={handleRetryAiAnalysis}
               />
               <Card className="rounded-xl border border-gray-200 p-5 shadow-sm">
                 <label className="text-sm font-semibold text-[#1f2937]" htmlFor="app-status">
@@ -593,12 +623,19 @@ export function ApplicantReviewPage() {
                   <div className="rounded-xl border border-[#f3dfbf] bg-[#fff8ee] px-5 py-4">
                     <p className="text-[15px] font-semibold text-[#b45309]">
                       <Sparkles className="mr-2 inline-block h-4 w-4 align-[-2px]" />
-                      AI suggests: {activeAi?.recommendation || "—"}
+                      AI suggests: {activeAi?.recommendation || (aiLoading ? "Analyzing candidate profile..." : "No recommendation returned")}
                     </p>
                     <p className="mt-2 border-b border-[#f3dfbf] pb-3 text-[15px] leading-7 text-[#374151]">
-                      {activeAi?.reasoning || "—"}
+                      {activeAi?.reasoning || (aiLoading ? "Please wait while AI completes matching and reasoning." : "No reasoning returned by AI for this run.")}
                     </p>
-                    {aiError ? <p className="mt-2 text-xs text-[#b45309]">AI error: {aiError}</p> : null}
+                    {aiError ? (
+                      <div className="mt-2 flex items-center justify-between gap-3">
+                        <p className="text-xs text-[#b45309]">AI error: {aiError}</p>
+                        <button type="button" className="text-xs font-semibold text-[#0a66c2] hover:underline" onClick={handleRetryAiAnalysis}>
+                          Retry analysis
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </Card>
@@ -730,18 +767,25 @@ function AIMatchCard({
   score,
   confidence,
   strongReasons,
-  topGaps
+  topGaps,
+  error,
+  onRetry
 }: {
   loading: boolean;
   score: number | null | undefined;
   confidence?: number | null;
   strongReasons: string[];
   topGaps: string[];
+  error?: string | null;
+  onRetry: () => void;
 }) {
   const numericScore = typeof score === "number" && Number.isFinite(score) ? score : null;
+  const isScorePending = loading && numericScore == null;
   const label =
     numericScore == null
-      ? "Score Unavailable"
+      ? isScorePending
+        ? "Analyzing..."
+        : "Score Unavailable"
       : numericScore >= 80
         ? "Strong Match"
         : numericScore >= 60
@@ -753,9 +797,17 @@ function AIMatchCard({
   return (
     <Card className="rounded-xl border border-gray-200 p-5 shadow-sm transition hover:shadow-md">
       <div className="mb-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[#6b7280]">AI Match Score</div>
+      {error ? (
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+          <p className="text-xs text-amber-800">{error}</p>
+          <button type="button" className="shrink-0 text-xs font-semibold text-[#0a66c2] hover:underline" onClick={onRetry}>
+            Retry
+          </button>
+        </div>
+      ) : null}
       <div className="flex items-start gap-4">
         <div className="flex h-24 w-24 shrink-0 flex-col items-center justify-center rounded-full border-[6px] border-[#10b981] bg-white">
-          <span className="text-[28px] font-semibold leading-none text-[#0b4f35]">{numericScore == null ? "--" : `${Math.round(numericScore)}%`}</span>
+          <span className="text-[28px] font-semibold leading-none text-[#0b4f35]">{numericScore == null ? (isScorePending ? "..." : "--") : `${Math.round(numericScore)}%`}</span>
           <span className="mt-1 text-[11px] font-medium text-[#059669]">{label}</span>
         </div>
         <div className="min-w-0 flex-1">
@@ -773,7 +825,7 @@ function AIMatchCard({
                 <ul className="mt-2 space-y-1.5 text-sm text-[#374151]">
                   {strongReasons.length ? strongReasons.map((reason) => (
                     <li key={reason} className="flex items-start gap-1.5"><CheckCircle2 className="mt-0.5 h-3.5 w-3.5 text-emerald-500" />{reason}</li>
-                  )) : <li className="text-[#6b7280]">No matched skills returned.</li>}
+                  )) : <li className="text-[#6b7280]">{isScorePending ? "Waiting for AI match results..." : "No matched skills returned."}</li>}
                 </ul>
               </div>
               <div>
@@ -781,7 +833,7 @@ function AIMatchCard({
                 <ul className="mt-2 space-y-1.5 text-sm text-[#374151]">
                   {topGaps.length ? topGaps.map((gap) => (
                     <li key={gap} className="flex items-start gap-1.5"><CircleDashed className="mt-0.5 h-3.5 w-3.5 text-amber-500" />{gap}</li>
-                  )) : <li className="text-[#6b7280]">No missing skills returned.</li>}
+                  )) : <li className="text-[#6b7280]">{isScorePending ? "Waiting for AI gap analysis..." : "No missing skills returned."}</li>}
                 </ul>
               </div>
             </div>
