@@ -42,16 +42,29 @@ async def update_request_status(request_id, status) -> None:
             )
 
 
-async def get_pending_requests(receiver_id) -> list:
+async def get_pending_requests(user_id) -> list:
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                """SELECT cr.*, u.email AS requester_email
-                   FROM connection_requests cr JOIN users u ON cr.requester_id=u.id
-                   WHERE cr.receiver_id=%s AND cr.status='pending'
+                """SELECT
+                     cr.*,
+                     req.email AS requester_email,
+                     rec.email AS receiver_email,
+                     CASE
+                       WHEN cr.receiver_id = %s THEN 'incoming'
+                       ELSE 'outgoing'
+                     END AS direction,
+                     CASE
+                       WHEN cr.receiver_id = %s THEN req.email
+                       ELSE rec.email
+                     END AS counterpart_email
+                   FROM connection_requests cr
+                   JOIN users req ON cr.requester_id = req.id
+                   JOIN users rec ON cr.receiver_id = rec.id
+                   WHERE (cr.receiver_id=%s OR cr.requester_id=%s) AND cr.status='pending'
                    ORDER BY cr.created_at DESC""",
-                (receiver_id,),
+                (user_id, user_id, user_id, user_id),
             )
             return await cur.fetchall()
 
@@ -68,7 +81,7 @@ async def connection_exists(uid1, uid2) -> bool:
 
 
 async def accept_connection_transaction(requester_id, receiver_id, request_id) -> None:
-    """Accept: create connection + increment both counts atomically."""
+    """Accept: create connection atomically; profile counters update via events."""
     a, b = (requester_id, receiver_id) if requester_id < receiver_id else (receiver_id, requester_id)
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -80,12 +93,6 @@ async def accept_connection_transaction(requester_id, receiver_id, request_id) -
                 )
                 await cur.execute(
                     "INSERT INTO connections (user_id_1,user_id_2) VALUES(%s,%s)", (a, b)
-                )
-                await cur.execute(
-                    "UPDATE members SET connections_count=connections_count+1 WHERE member_id=%s", (requester_id,)
-                )
-                await cur.execute(
-                    "UPDATE members SET connections_count=connections_count+1 WHERE member_id=%s", (receiver_id,)
                 )
             await conn.commit()
         except Exception:
@@ -102,12 +109,6 @@ async def remove_connection_transaction(uid1, uid2) -> None:
             async with conn.cursor() as cur:
                 await cur.execute(
                     "DELETE FROM connections WHERE user_id_1=%s AND user_id_2=%s", (a, b)
-                )
-                await cur.execute(
-                    "UPDATE members SET connections_count=GREATEST(connections_count-1,0) WHERE member_id=%s", (uid1,)
-                )
-                await cur.execute(
-                    "UPDATE members SET connections_count=GREATEST(connections_count-1,0) WHERE member_id=%s", (uid2,)
                 )
             await conn.commit()
         except Exception:
@@ -150,3 +151,4 @@ async def get_mutual_connections(uid1, uid2) -> list:
                 (uid1, uid1, uid1, uid2, uid2, uid2),
             )
             return await cur.fetchall()
+

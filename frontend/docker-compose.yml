@@ -1,0 +1,35 @@
+services:
+  frontend-dev:
+    build:
+      context: .
+      target: dev
+    container_name: skillsync_frontend_dev
+    ports:
+      - "5173:5173"
+    environment:
+      # If you run the backend gateway on your host (or in Docker), set this to route /api through it.
+      # Example (host): http://host.docker.internal:3000
+      VITE_PROXY_GATEWAY: ${VITE_PROXY_GATEWAY:-}
+    volumes:
+      - .:/app
+      - node_modules_cache:/app/node_modules
+
+  frontend:
+    build:
+      context: .
+      target: prod
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+        VITE_WS_BASE_URL: ${VITE_WS_BASE_URL:-ws://localhost:3007}
+    container_name: skillsync_frontend
+    ports:
+      - "8080:80"
+    # Needed on Linux so nginx can resolve host.docker.internal → host gateway (published service ports).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # Where nginx should proxy /api/* (defaults for Docker Desktop).
+      API_HOST: ${API_HOST:-host.docker.internal}
+
+volumes:
+  node_modules_cache:

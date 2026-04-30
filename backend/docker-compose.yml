@@ -14,16 +14,20 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     ports:
-      - "3307:3306"
+      - "3310:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./database/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      test:
+        [
+          "CMD-SHELL",
+          'mysqladmin ping -h 127.0.0.1 -uroot -p"$$MYSQL_ROOT_PASSWORD" --silent || exit 1',
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 30s
+      start_period: 45s
 
   mongo:
     image: mongo:7.0
@@ -37,12 +41,27 @@ services:
     volumes:
       - mongo_data:/data/db
       - ./database/mongodb/init.js:/docker-entrypoint-initdb.d/init.js
+    # Use CMD-SHELL so credentials come from the container env (reliable with .env).
+    # If this stays unhealthy, the mongo_data volume may be from an older run with
+    # different auth: `docker compose down -v` (wipes DBs) then `docker compose up -d`.
     healthcheck:
-      test: ["CMD", "mongosh", "-u", "${MONGO_INITDB_ROOT_USERNAME}", "-p", "${MONGO_INITDB_ROOT_PASSWORD}", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')"]
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "-u",
+          "${MONGO_INITDB_ROOT_USERNAME}",
+          "-p",
+          "${MONGO_INITDB_ROOT_PASSWORD}",
+          "--authenticationDatabase",
+          "admin",
+          "--eval",
+          "db.adminCommand('ping')"
+        ]
       interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
 
   # Applies database/mongodb/init.js on every `docker compose up`.
   # The mongo image only runs /docker-entrypoint-initdb.d/ when /data/db is empty;
@@ -85,18 +104,18 @@ services:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:9093,CONTROLLER://0.0.0.0:9094
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://127.0.0.1:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://127.0.0.1:9094
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9094
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
     ports:
-      - "9093:9093"
+      - "9094:9093"
     volumes:
       - kafka_data:/var/lib/kafka/data
     healthcheck:
@@ -142,7 +161,7 @@ services:
     environment:
       PORT: ${AUTH_SERVICE_PORT}
       PYTHONPATH: /app
-      <<: *redis-in-docker
+      <<: *docker-runtime-env
     ports:
       - "${AUTH_SERVICE_PORT}:${AUTH_SERVICE_PORT}"
     depends_on:
@@ -167,7 +186,7 @@ services:
     environment:
       PORT: ${PROFILE_SERVICE_PORT}
       PYTHONPATH: /app
-      <<: *redis-in-docker
+      <<: *docker-runtime-env
     ports:
       - "${PROFILE_SERVICE_PORT}:${PROFILE_SERVICE_PORT}"
     depends_on:
@@ -187,7 +206,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-
+      
   recruiter-service:
     build:
       context: .
@@ -198,6 +217,7 @@ services:
     environment:
       PORT: ${RECRUITER_SERVICE_PORT}
       PYTHONPATH: /app
+      <<: *docker-runtime-env
     ports:
       - "${RECRUITER_SERVICE_PORT}:${RECRUITER_SERVICE_PORT}"
     depends_on:
@@ -220,7 +240,7 @@ services:
     environment:
       PORT: ${CONNECTION_SERVICE_PORT}
       PYTHONPATH: /app
-      <<: *redis-in-docker
+      <<: *docker-runtime-env
     ports:
       - "${CONNECTION_SERVICE_PORT}:${CONNECTION_SERVICE_PORT}"
     depends_on:
@@ -247,7 +267,7 @@ services:
     environment:
       PORT: ${JOB_SERVICE_PORT}
       PYTHONPATH: /app
-      <<: *redis-in-docker
+      <<: *docker-runtime-env
     ports:
       - "${JOB_SERVICE_PORT}:${JOB_SERVICE_PORT}"
     depends_on:
@@ -274,7 +294,7 @@ services:
     environment:
       PORT: ${APPLICATION_SERVICE_PORT}
       PYTHONPATH: /app
-      <<: *redis-in-docker
+      <<: *docker-runtime-env
     ports:
       - "${APPLICATION_SERVICE_PORT}:${APPLICATION_SERVICE_PORT}"
     depends_on:
@@ -301,13 +321,12 @@ services:
     environment:
       PORT: ${MESSAGING_SERVICE_PORT}
       PYTHONPATH: /app
+      <<: *docker-runtime-env
     ports:
       - "${MESSAGING_SERVICE_PORT}:${MESSAGING_SERVICE_PORT}"
     depends_on:
       mongo:
         condition: service_healthy
-      mongo-init:
-        condition: service_completed_successfully
       kafka:
         condition: service_healthy
     healthcheck:
@@ -327,14 +346,12 @@ services:
     environment:
       PORT: ${ANALYTICS_SERVICE_PORT}
       PYTHONPATH: /app
-      <<: *redis-in-docker
+      <<: *docker-runtime-env
     ports:
       - "${ANALYTICS_SERVICE_PORT}:${ANALYTICS_SERVICE_PORT}"
     depends_on:
       mongo:
         condition: service_healthy
-      mongo-init:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
       kafka:
@@ -361,6 +378,8 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      mongo:
+        condition: service_healthy
       mongo-init:
         condition: service_completed_successfully
       redis:
@@ -379,6 +398,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 25s
+
 
 volumes:
   mysql_data:

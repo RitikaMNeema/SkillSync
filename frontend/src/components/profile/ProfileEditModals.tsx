@@ -159,6 +159,14 @@ interface HeadlineFormValues {
   headline: string;
 }
 
+interface ProfileLanguageFormValues {
+  profile_language: string;
+}
+
+interface PublicProfileUrlFormValues {
+  profile_slug: string;
+}
+
 export interface ContactInfoValues {
   phone: string;
   birthday: string;
@@ -308,20 +316,36 @@ export function SkillFormModal({
       widthClass="max-w-[1180px]"
       onClose={onClose}
       footer={
-        <ModalFooter
-          onDelete={
-            mode === "edit" && onDelete
-              ? () => {
+        <div className="flex w-full items-center justify-between gap-4">
+          <div>
+            {mode === "edit" && onDelete ? (
+              <button
+                type="button"
+                className="text-[1.05rem] font-semibold text-[#4b4b4b] transition hover:text-[#1f1f1f] disabled:pointer-events-none disabled:opacity-50"
+                disabled={saveDisabled}
+                onClick={() => {
                   setDeleting(true);
                   void Promise.resolve(onDelete()).finally(() => setDeleting(false));
-                }
-              : undefined
-          }
-          deleteText="Delete skill"
-          submitLabel="Save"
-          formId={formId}
-          disabled={saveDisabled}
-        />
+                }}
+              >
+                Delete skill
+              </button>
+            ) : null}
+          </div>
+          <Button
+            type="button"
+            disabled={saveDisabled}
+            className="rounded-full px-7 py-2.5 text-[1.05rem] font-semibold"
+            onClick={() => {
+              const node = typeof document !== "undefined" ? document.getElementById(formId) : null;
+              if (node instanceof HTMLFormElement) {
+                node.requestSubmit();
+              }
+            }}
+          >
+            Save
+          </Button>
+        </div>
       }
     >
       <form id={formId} className="space-y-8" onSubmit={onFormSubmit}>
@@ -524,6 +548,7 @@ export function AddLanguageModal({
 }) {
   const isEdit = Boolean(initialValues);
   const { register, handleSubmit, formState, reset } = useForm<LanguageFormValues>({
+    mode: "onBlur",
     defaultValues: {
       name: initialValues?.name ?? "",
       proficiency: initialValues?.proficiency ?? "",
@@ -568,10 +593,11 @@ export function AddLanguageModal({
         <div>
           <FieldLabel>Language*</FieldLabel>
           <Input {...register("name", { required: true })} className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
+          {formState.errors.name ? <p className="mt-1 text-sm font-medium text-red-600">Language name is required.</p> : null}
         </div>
         <div>
           <FieldLabel>Proficiency level</FieldLabel>
-          <Select {...register("proficiency", { required: true })}>
+          <Select {...register("proficiency", { required: "Choose a proficiency level." })}>
             <option value="">Select proficiency</option>
             <option value="Elementary proficiency">Elementary proficiency</option>
             <option value="Limited working proficiency">Limited working proficiency</option>
@@ -579,6 +605,9 @@ export function AddLanguageModal({
             <option value="Full professional proficiency">Full professional proficiency</option>
             <option value="Native or bilingual proficiency">Native or bilingual proficiency</option>
           </Select>
+          {formState.errors.proficiency ? (
+            <p className="mt-1 text-sm font-medium text-red-600">{formState.errors.proficiency.message as string}</p>
+          ) : null}
         </div>
         <div>
           <FieldLabel>Score or certification (optional)</FieldLabel>
@@ -629,6 +658,90 @@ export function EditHeadlineModal({
           <p className="mt-2 text-sm text-[#6b7280]">Review and edit your headline before saving so it reflects your profile clearly.</p>
           <p className="text-right text-sm text-[#777777]">{length}/220</p>
         </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+export function EditProfileLanguageModal({
+  onClose,
+  onSave,
+  initialValue
+}: {
+  onClose: () => void;
+  onSave: (profileLanguage: string) => Promise<void>;
+  initialValue?: string | null;
+}) {
+  const { register, handleSubmit, formState } = useForm<ProfileLanguageFormValues>({
+    defaultValues: { profile_language: initialValue ?? "English" }
+  });
+
+  return (
+    <ModalShell
+      title="Edit profile language"
+      widthClass="max-w-[760px]"
+      onClose={onClose}
+      footer={<ModalFooter submitLabel="Save" formId="edit-profile-language-form" disabled={formState.isSubmitting} />}
+    >
+      <form
+        id="edit-profile-language-form"
+        className="space-y-4"
+        onSubmit={handleSubmit(async (values) => onSave(values.profile_language.trim()))}
+      >
+        <FieldLabel>Profile language</FieldLabel>
+        <Input
+          {...register("profile_language", { required: true, maxLength: 64 })}
+          placeholder="English"
+          className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none"
+        />
+      </form>
+    </ModalShell>
+  );
+}
+
+export function EditPublicProfileUrlModal({
+  onClose,
+  onSave,
+  initialValue
+}: {
+  onClose: () => void;
+  onSave: (profileSlug: string) => Promise<void>;
+  initialValue?: string | null;
+}) {
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://www.linkedin.com";
+  const { register, handleSubmit, formState, setValue } = useForm<PublicProfileUrlFormValues>({
+    defaultValues: { profile_slug: initialValue ?? "" }
+  });
+
+  return (
+    <ModalShell
+      title="Edit public profile URL"
+      widthClass="max-w-[760px]"
+      onClose={onClose}
+      footer={<ModalFooter submitLabel="Save" formId="edit-public-url-form" disabled={formState.isSubmitting} />}
+    >
+      <form
+        id="edit-public-url-form"
+        className="space-y-4"
+        onSubmit={handleSubmit(async (values) => onSave(values.profile_slug.trim()))}
+      >
+        <FieldLabel>Public profile URL</FieldLabel>
+        <div className="flex items-center rounded-[10px] border border-[#b8c0c7] bg-white px-4 py-3">
+          <span className="mr-1 shrink-0 text-sm text-[#6b7280]">{origin}/in/</span>
+          <Input
+            {...register("profile_slug", { required: true, minLength: 3, maxLength: 160 })}
+            onChange={(event) => {
+              const normalized = event.target.value
+                .toLowerCase()
+                .replace(/[^a-z0-9-]/g, "-")
+                .replace(/-{2,}/g, "-")
+                .replace(/^-+|-+$/g, "");
+              setValue("profile_slug", normalized, { shouldDirty: true, shouldValidate: true });
+            }}
+            className="h-auto min-h-0 flex-1 border-0 px-0 py-0 text-[1rem] focus-visible:ring-0"
+          />
+        </div>
+        <p className="text-sm text-[#6b7280]">Use letters, numbers, and dashes.</p>
       </form>
     </ModalShell>
   );

@@ -1,0 +1,36 @@
+SKILLSYNC SAMPLE RESUME
+=======================
+
+Name: Demo Candidate
+Email: demo.candidate@skillsync.local
+Phone: (555) 123-4567
+Location: San Francisco, CA
+
+Summary
+-------
+Full-stack engineer with 5+ years of experience building distributed systems and
+recruiter-facing workflows. Strong in Python, TypeScript, React, FastAPI, SQL,
+and event-driven architecture with Kafka.
+
+Core Skills
+-----------
+- Python, FastAPI, SQL, Redis, Kafka
+- TypeScript, React, Vite, Tailwind CSS
+- API design, analytics pipelines, dashboard development
+- CI/CD, Docker, testing and observability
+
+Experience
+----------
+Senior Software Engineer | Acme Tech | 2022 - Present
+- Built recruiter dashboard metrics for applications, clicks, saves, and geo trends.
+- Implemented resilient messaging flows with retries and delivery-status tracking.
+- Improved API authorization and idempotent processing for distributed services.
+
+Software Engineer | Northwind Labs | 2019 - 2022
+- Developed full-stack web features for hiring and messaging workflows.
+- Integrated SQL and Mongo models for structured and event data.
+
+Education
+---------
+B.S. Computer Science, University of California
+

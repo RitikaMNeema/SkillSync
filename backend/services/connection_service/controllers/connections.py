@@ -4,13 +4,25 @@ from ..models.connection import (
     get_pending_requests, connection_exists, accept_connection_transaction,
     remove_connection_transaction, get_user_connections, get_mutual_connections,
 )
-from ..producers.connection_producer import emit_connection_requested, emit_connection_accepted
+from ..producers.connection_producer import (
+    emit_connection_requested,
+    emit_connection_accepted,
+    emit_connection_removed,
+)
+from ..producers.connection_command_producer import enqueue_connection_command
+from ..models.command_status import get_command_status
 from shared.redis_utils.cache import cache_get, cache_set, cache_del
 
 CONN_TTL = 120
 
 
 def _conn_key(uid): return f"connections:{uid}"
+
+
+def _is_connection_actor(actor: dict) -> bool:
+    """Members and recruiters share the same social graph / invitations UX."""
+    role = str(actor.get("role", "")).lower()
+    return role in ("member", "recruiter")
 
 
 async def request(requester_id, receiver_id) -> dict:
@@ -38,7 +50,7 @@ async def accept(request_id) -> dict:
     await accept_connection_transaction(req["requester_id"], req["receiver_id"], request_id)
     await cache_del(_conn_key(req["requester_id"]))
     await cache_del(_conn_key(req["receiver_id"]))
-    await emit_connection_accepted(req["receiver_id"], request_id, req["requester_id"])
+    await emit_connection_accepted(req["receiver_id"], request_id, req["requester_id"], req["receiver_id"])
     return {"request_id": request_id, "status": "accepted"}
 
 
@@ -88,4 +100,79 @@ async def remove(uid1, uid2) -> dict:
     await remove_connection_transaction(uid1, uid2)
     await cache_del(_conn_key(uid1))
     await cache_del(_conn_key(uid2))
+    await emit_connection_removed(uid1, uid1, uid2)
     return {"removed": True}
+
+
+async def enqueue_request(requester_id: int, receiver_id: int, actor: dict) -> dict:
+    if not _is_connection_actor(actor) or str(actor["user_id"]) != str(requester_id):
+        raise HTTPException(403, "You may only create connection requests for yourself")
+    return await enqueue_connection_command(
+        "request",
+        actor,
+        {"requester_id": requester_id, "receiver_id": receiver_id},
+    )
+
+
+async def enqueue_accept(request_id: int, actor: dict) -> dict:
+    if not _is_connection_actor(actor):
+        raise HTTPException(403, "Only signed-in users can accept requests")
+    req_row = await find_request_by_id(request_id)
+    if not req_row:
+        raise HTTPException(404, "Connection request not found")
+    if str(actor["user_id"]) != str(req_row["receiver_id"]):
+        raise HTTPException(403, "Only the recipient can accept this request")
+    return await enqueue_connection_command(
+        "accept",
+        actor,
+        {"request_id": request_id},
+    )
+
+
+async def enqueue_reject(request_id: int, actor: dict) -> dict:
+    if not _is_connection_actor(actor):
+        raise HTTPException(403, "Only signed-in users can decline requests")
+    req_row = await find_request_by_id(request_id)
+    if not req_row:
+        raise HTTPException(404, "Connection request not found")
+    if str(actor["user_id"]) != str(req_row["receiver_id"]):
+        raise HTTPException(403, "Only the recipient can decline this request")
+    return await enqueue_connection_command(
+        "reject",
+        actor,
+        {"request_id": request_id},
+    )
+
+
+async def enqueue_withdraw(request_id: int, actor: dict) -> dict:
+    if not _is_connection_actor(actor):
+        raise HTTPException(403, "Only signed-in users can withdraw requests")
+    req_row = await find_request_by_id(request_id)
+    if not req_row:
+        raise HTTPException(404, "Connection request not found")
+    if str(actor["user_id"]) != str(req_row["requester_id"]):
+        raise HTTPException(403, "Only the requester can withdraw this request")
+    return await enqueue_connection_command(
+        "withdraw",
+        actor,
+        {"request_id": request_id},
+    )
+
+
+async def enqueue_remove(uid1: int, uid2: int, actor: dict) -> dict:
+    if not _is_connection_actor(actor):
+        raise HTTPException(403, "Only signed-in users can remove connections")
+    if str(actor["user_id"]) not in {str(uid1), str(uid2)}:
+        raise HTTPException(403, "Cannot remove someone else's connection")
+    return await enqueue_connection_command(
+        "remove",
+        actor,
+        {"user_id_1": uid1, "user_id_2": uid2},
+    )
+
+
+async def get_command(command_id: str, actor: dict) -> dict:
+    status = await get_command_status(command_id)
+    if not status:
+        raise HTTPException(404, "Command not found")
+    return status

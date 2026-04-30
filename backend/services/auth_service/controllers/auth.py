@@ -1,15 +1,21 @@
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
 from jose import jwt, JWTError
 from passlib.context import CryptContext
-from models.user import find_user_by_email, find_user_by_id, create_user
+from models.account_deletion import purge_mongodb_for_user
+from models.user import find_user_by_email, find_user_by_id, create_user, delete_user
+from models.command_status import get_command_status
+from producers.auth_command_producer import enqueue_auth_command
 from shared.redis_utils.client import get_redis
 from shared.utils.validation import is_valid_email
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 JWT_SECRET  = os.getenv("JWT_SECRET", "secret")
 JWT_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", 10080))  # 7 days
+
+log = logging.getLogger(__name__)
 
 
 def _make_token(user_id: int, role: str) -> str:
@@ -65,3 +71,63 @@ async def validate(token: str) -> dict:
         raise HTTPException(404, "User not found")
 
     return {"user_id": payload["user_id"], "role": payload["role"]}
+
+
+async def email_exists(email: str) -> dict:
+    if not is_valid_email(email):
+        raise HTTPException(400, "Invalid email format")
+    return {"exists": await find_user_by_email(email) is not None}
+
+
+async def enqueue_register(email: str, password: str, role: str) -> dict:
+    return await enqueue_auth_command("register", {"email": email, "password": password, "role": role}, actor_id=email)
+
+
+async def enqueue_login(email: str, password: str) -> dict:
+    return await enqueue_auth_command("login", {"email": email, "password": password}, actor_id=email)
+
+
+async def enqueue_logout(token: str) -> dict:
+    return await enqueue_auth_command("logout", {"token": token})
+
+
+async def get_command(command_id: str) -> dict:
+    status = await get_command_status(command_id)
+    if not status:
+        raise HTTPException(404, "Command not found")
+    return status
+
+
+async def delete_my_account(actor: dict) -> dict:
+    """
+    Remove persisted data for the authenticated user, delete the row, and blacklist the current token.
+    user_id is taken only from the verified JWT (passed in ``actor``).
+    """
+    uid = int(actor["user_id"])
+    token = actor["token"]
+
+    user_row = await find_user_by_id(uid)
+    if not user_row:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    role = user_row.get("role") or ""
+    log.info("account_deletion started user_id=%s role=%s", uid, role)
+
+    try:
+        await purge_mongodb_for_user(uid, role)
+        deleted = await delete_user(uid)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="User not found")
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("account_deletion failed user_id=%s", uid)
+        raise HTTPException(status_code=500, detail="Account deletion failed")
+
+    try:
+        await logout(token)
+    except Exception:
+        log.warning("token blacklist failed after delete user_id=%s", uid)
+
+    log.info("account_deletion completed user_id=%s", uid)
+    return {"message": "Account deleted successfully"}

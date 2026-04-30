@@ -1,6 +1,7 @@
 import api from "./axios";
+import { resolveCommandResult } from "./commands";
 import type { ApiResponse } from "../types/common";
-import type { LanguageEntry, MemberProfile, MemberSearchResponse } from "../types/member";
+import type { MemberProfile, MemberProfileUpdateInput, MemberSearchResponse } from "../types/member";
 
 export async function getMember(member_id: number) {
   const response = await api.post<ApiResponse<MemberProfile>>("/members/get", { member_id });
@@ -14,25 +15,12 @@ export async function createMember(
   const response = await api.post<ApiResponse<{ member_id: number }>>("/members/create", payload, {
     headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined
   });
-  return response.data.data;
+  return resolveCommandResult<{ member_id: number }>(response.data.data, "/members/commandStatus");
 }
 
-export async function updateMember(
-  payload: Partial<MemberProfile> & {
-    member_id: number;
-    about?: string | null;
-    summary?: string | null;
-    freeform_experience?: unknown;
-    open_to?: string | null;
-    profile_language?: string | null;
-    birthday?: string | null;
-    website?: string | null;
-    languages?: LanguageEntry[] | null;
-    followed_skills?: string[] | null;
-  }
-) {
+export async function updateMember(payload: MemberProfileUpdateInput) {
   const response = await api.post<ApiResponse<{ member_id: number; updated: boolean }>>("/members/update", payload);
-  return response.data.data;
+  return resolveCommandResult<{ member_id: number; updated: boolean }>(response.data.data, "/members/commandStatus");
 }
 
 export async function searchMembers(payload: { keyword?: string; skill?: string; location?: string; page?: number }) {
@@ -42,7 +30,7 @@ export async function searchMembers(payload: { keyword?: string; skill?: string;
 
 export async function uploadResume(payload: { member_id: number; resume_url: string }) {
   const response = await api.post<ApiResponse<{ member_id: number; resume_url: string }>>("/members/uploadResume", payload);
-  return response.data.data;
+  return resolveCommandResult<{ member_id: number; resume_url: string }>(response.data.data, "/members/commandStatus");
 }
 
 export async function getResume(member_id: number) {
@@ -94,7 +82,10 @@ export async function deleteCoverPhoto(member_id: number) {
   const response = await api.post<ApiResponse<{ member_id: number; deleted: boolean }>>("/members/deleteCover", {
     member_id
   });
-  return response.data.data;
+  return resolveCommandResult<{ member_id: number; deleted: boolean }>(
+    response.data.data,
+    "/members/commandStatus"
+  );
 }
 
 export async function uploadResumeFile(member_id: number, file: File) {

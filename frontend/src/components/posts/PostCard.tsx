@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { MessageCircle, MoreHorizontal, ThumbsUp, Trash2 } from "lucide-react";
 import clsx from "clsx";
 import toast from "react-hot-toast";
@@ -8,7 +9,6 @@ import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { CommentsPanel } from "./CommentsPanel";
 import { deletePost, likePost } from "../../api/posts";
-import { formatRelativeDate } from "../../utils/formatDate";
 import type { FeedPost } from "../../types/post";
 
 interface PostCardProps {
@@ -91,6 +91,7 @@ export function PostCard({ post, viewerId, onUpdate, onDelete }: PostCardProps) 
 
   const authorName =
     `${post.author.first_name ?? ""} ${post.author.last_name ?? ""}`.trim() || "Member";
+  const formattedTime = formatTimeAgo(post.created_at);
 
   const mediaBlock = post.media_url
     ? post.post_type === "photo"
@@ -116,49 +117,51 @@ export function PostCard({ post, viewerId, onUpdate, onDelete }: PostCardProps) 
   return (
     <div className={clsx("rounded-card border p-4 transition-opacity", deleting && "opacity-50")}>
       <div className="flex items-start gap-3">
-        <Avatar
-          src={post.author.profile_photo_url ?? undefined}
-          alt={authorName}
-          name={authorName}
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="font-semibold">{authorName}</p>
-              <p className="text-sm text-text-secondary">{post.author.headline || "Member"}</p>
-            </div>
-            <div className="flex items-start gap-2">
-              <div className="text-right">
-                <Badge className="bg-slate-100 text-slate-600">{post.post_type}</Badge>
-                <p className="mt-1 text-xs text-text-tertiary">{formatRelativeDate(post.created_at)}</p>
+  <Link to={`/profile/${post.member_id}`} className="flex-shrink-0">
+    <Avatar
+      src={post.author.profile_photo_url ?? undefined}
+      alt={authorName}
+      name={authorName}
+    />
+  </Link>
+  <div className="min-w-0 flex-1">
+    <div className="flex items-start justify-between gap-3">
+      <Link to={`/profile/${post.member_id}`} className="min-w-0 hover:underline">
+        <p className="font-semibold">{authorName}</p>
+        <p className="text-sm text-text-secondary">{post.author.headline || "Member"}</p>
+      </Link>
+      <div className="flex items-start gap-2">
+        <div className="text-right">
+          <Badge className="bg-slate-100 text-slate-600">{post.post_type}</Badge>
+          <p className="mt-1 text-xs text-text-tertiary">{formattedTime}</p>
+        </div>
+        {isOwner ? (
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              className="rounded-full p-1 text-text-secondary hover:bg-hover"
+              aria-label="Post options"
+              disabled={deleting}
+            >
+              <MoreHorizontal className="h-5 w-5" />
+            </button>
+            {menuOpen ? (
+              <div className="absolute right-0 top-8 z-10 w-40 rounded-card border bg-white py-1 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => void handleDelete()}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete post
+                </button>
               </div>
-              {isOwner ? (
-                <div className="relative" ref={menuRef}>
-                  <button
-                    type="button"
-                    onClick={() => setMenuOpen((v) => !v)}
-                    className="rounded-full p-1 text-text-secondary hover:bg-hover"
-                    aria-label="Post options"
-                    disabled={deleting}
-                  >
-                    <MoreHorizontal className="h-5 w-5" />
-                  </button>
-                  {menuOpen ? (
-                    <div className="absolute right-0 top-8 z-10 w-40 rounded-card border bg-white py-1 shadow-lg">
-                      <button
-                        type="button"
-                        onClick={() => void handleDelete()}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Delete post
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
+            ) : null}
           </div>
+        ) : null}
+      </div>
+    </div>
 
           {post.content ? (
             <p className="mt-3 whitespace-pre-wrap text-sm text-text-primary">{post.content}</p>
@@ -223,4 +226,25 @@ function resolveMediaUrl(url: string): string {
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
   const base = import.meta.env.VITE_API_BASE_URL ?? "/api";
   return `${base.replace(/\/$/, "")}${url}`;
+}
+
+function formatTimeAgo(isoString: string): string {
+  const now = new Date();
+  const postTime = new Date(isoString);
+  const diffMs = now.getTime() - postTime.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMins < 1) return "just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+
+  // For older posts, show the actual date
+  return postTime.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: postTime.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+  });
 }

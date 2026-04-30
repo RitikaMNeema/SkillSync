@@ -1,6 +1,7 @@
 import type { JsonValue } from "./common";
 
 export type OpenToOption = "job" | "hiring" | "services" | "volunteer";
+export type ProfileStatusOption = "none" | "open_to_work" | "hiring";
 
 export interface ExperienceEntry {
   title?: string | null;
@@ -66,6 +67,7 @@ export interface MemberProfile {
   resume_content_type?: string | null;
   resume_uploaded_at?: string | null;
   open_to?: OpenToOption | null;
+  profile_status?: ProfileStatusOption | null;
   profile_language?: string | null;
   profile_slug?: string | null;
   connections_count?: number;
@@ -81,6 +83,18 @@ export interface MemberProfile {
     followed_skills?: string[];
   };
 }
+
+/**
+ * Flat fields accepted by `/members/update` and `updateUnifiedProfile` in addition to
+ * {@link MemberProfile} (some also live under {@link MemberProfile.unstructured} when read).
+ */
+export type MemberProfileUpdateInput = Partial<MemberProfile> & {
+  member_id: number;
+  about?: string | null;
+  languages?: LanguageEntry[] | null;
+  followed_skills?: string[] | null;
+  freeform_experience?: unknown;
+};
 
 export interface MemberSearchItem {
   member_id: number;

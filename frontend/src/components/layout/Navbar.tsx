@@ -1,13 +1,31 @@
 import type { FormEvent } from "react";
-import { BarChart3, Bookmark, BriefcaseBusiness, ChevronDown, Home, LogOut, MessageSquare, Search, User, Users } from "lucide-react";
+import {
+  BarChart3,
+  Bookmark,
+  BriefcaseBusiness,
+  ChevronDown,
+  Home,
+  LogOut,
+  MessageSquare,
+  Search,
+  Settings,
+  Trash2,
+  User,
+  Users
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { logout as logoutRequest } from "../../api/auth";
+import { listPendingConnections } from "../../api/connections";
+import { getMember } from "../../api/members";
+import { getThreadsByUser } from "../../api/messages";
+import { getRecruiter } from "../../api/recruiters";
 import { authStore } from "../../context/AuthContext";
-import { getHomePath, getProfilePath } from "../../utils/navigation";
+import { getHomePath } from "../../utils/navigation";
 import { Avatar } from "../ui/Avatar";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
+import { DeleteAccountDialogs } from "./DeleteAccountDialogs";
 import { LinkedInWordmark } from "./LinkedInWordmark";
 
 export function Navbar() {
@@ -18,9 +36,16 @@ export function Navbar() {
   const clearAuth = authStore((state) => state.logout);
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
+  const [networkCount, setNetworkCount] = useState(0);
+  const [messageCount, setMessageCount] = useState(0);
+  const [seenNetworkCount, setSeenNetworkCount] = useState(0);
+  const [seenMessageCount, setSeenMessageCount] = useState(0);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const homePath = getHomePath(role);
-  const profilePath = getProfilePath(role, userId);
+  /** Same full profile shell as members (`ProfilePage`); `/recruiters/:id` only showed a minimal card. */
+  const profileMeHref = userId ? `/profile/${userId}` : "/feed";
 
   const navItems = useMemo(
     () =>
@@ -43,10 +68,6 @@ export function Navbar() {
 
   function handleSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (role === "recruiter") {
-      navigate("/recruiter/jobs");
-      return;
-    }
     const keyword = query.trim();
     navigate(keyword ? `/search?q=${encodeURIComponent(keyword)}` : "/search");
   }
@@ -79,6 +100,69 @@ export function Navbar() {
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (!userId || !role) return;
+    void (async () => {
+      try {
+        if (role === "member") {
+          const member = await getMember(userId);
+          setAvatarUrl(member.profile_photo_url ?? undefined);
+          return;
+        }
+        if (role === "recruiter") {
+          const recruiter = await getRecruiter(userId);
+          setAvatarUrl(recruiter.profile_photo_url ?? undefined);
+        }
+      } catch {
+        setAvatarUrl(undefined);
+      }
+    })();
+  }, [role, userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    void (async () => {
+      try {
+        const pending = await listPendingConnections(userId);
+        const incoming = pending.filter((request) => (request.direction ?? "incoming") === "incoming");
+        setNetworkCount(incoming.length);
+      } catch {
+        setNetworkCount(0);
+      }
+    })();
+  }, [userId, location.pathname]);
+
+  useEffect(() => {
+    if (!userId) return;
+    void (async () => {
+      try {
+        const threads = await getThreadsByUser(userId, 1);
+        setMessageCount(threads.total ?? threads.threads.length ?? 0);
+      } catch {
+        setMessageCount(0);
+      }
+    })();
+  }, [userId, location.pathname]);
+
+  useEffect(() => {
+    if (location.pathname.startsWith("/connections")) {
+      setSeenNetworkCount(networkCount);
+    }
+    if (location.pathname.startsWith("/messages")) {
+      setSeenMessageCount(messageCount);
+    }
+  }, [location.pathname, networkCount, messageCount]);
+
+  const navItemsWithBadges = navItems.map((item) => {
+    if (item.to === "/connections") {
+      return { ...item, badge: Math.max(0, networkCount - seenNetworkCount) };
+    }
+    if (item.to === "/messages") {
+      return { ...item, badge: Math.max(0, messageCount - seenMessageCount) };
+    }
+    return { ...item, badge: 0 };
+  });
+
   return (
     <>
       <nav className="sticky top-0 z-50 border-b bg-white shadow-navbar">
@@ -96,17 +180,20 @@ export function Navbar() {
             </form>
           </div>
           <div className="ml-auto hidden items-stretch gap-1 md:flex">
-            {navItems.map(({ to, label, icon: Icon }) => (
+            {navItemsWithBadges.map(({ to, label, icon: Icon, badge }) => (
               <NavLink
                 key={to}
                 to={to}
                 className={({ isActive }) =>
-                  `flex min-w-[80px] flex-col items-center justify-center border-b-2 px-2 text-xs ${
+                  `flex min-w-[84px] flex-col items-center justify-center border-b-2 px-2 text-xs ${
                     isActive ? "border-brand text-brand" : "border-transparent text-text-secondary"
                   }`
                 }
               >
-                <Icon className="h-5 w-5" />
+                <div className="relative">
+                  <Icon className="h-5 w-5" />
+                  <NotificationBadge count={badge} />
+                </div>
                 <span>{label}</span>
               </NavLink>
             ))}
@@ -118,26 +205,36 @@ export function Navbar() {
                 }`}
                 onClick={() => setMenuOpen((current) => !current)}
               >
-                <Avatar alt="Profile" name={role ?? "User"} size="sm" />
+                <Avatar src={avatarUrl} alt="Profile" name={role ?? "User"} size="sm" />
                 <span className="flex items-center gap-1">
                   Me
                   <ChevronDown className="h-3.5 w-3.5" />
                 </span>
               </button>
               {menuOpen ? (
-                <div className="absolute right-0 top-full z-50 mt-3 w-60 rounded-card border bg-white p-2 shadow-modal">
+                <div className="absolute right-0 top-full z-50 mt-3 w-64 rounded-card border bg-white p-2 shadow-modal">
                   <Link
-                    to={profilePath}
+                    to={profileMeHref}
                     className="flex items-center gap-3 rounded-card px-3 py-2 text-sm font-semibold text-text-primary hover:bg-hover hover:no-underline"
+                    onClick={() => setMenuOpen(false)}
                   >
                     <User className="h-4 w-4 text-brand" />
-                    {role === "recruiter" ? "Open dashboard" : "View profile"}
+                    View profile
+                  </Link>
+                  <Link
+                    to={profileMeHref}
+                    className="flex items-center gap-3 rounded-card px-3 py-2 text-sm font-semibold text-text-primary hover:bg-hover hover:no-underline"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    <Settings className="h-4 w-4 text-brand" />
+                    Settings
                   </Link>
                   {role === "member" ? (
                     <>
                       <Link
                         to="/applications"
                         className="flex items-center gap-3 rounded-card px-3 py-2 text-sm font-semibold text-text-primary hover:bg-hover hover:no-underline"
+                        onClick={() => setMenuOpen(false)}
                       >
                         <BriefcaseBusiness className="h-4 w-4 text-brand" />
                         My applications
@@ -145,21 +242,46 @@ export function Navbar() {
                       <Link
                         to="/saved-jobs"
                         className="flex items-center gap-3 rounded-card px-3 py-2 text-sm font-semibold text-text-primary hover:bg-hover hover:no-underline"
+                        onClick={() => setMenuOpen(false)}
                       >
                         <Bookmark className="h-4 w-4 text-brand" />
                         Saved jobs
                       </Link>
                     </>
                   ) : (
-                    <Link
-                      to="/recruiter/jobs"
-                      className="flex items-center gap-3 rounded-card px-3 py-2 text-sm font-semibold text-text-primary hover:bg-hover hover:no-underline"
-                    >
-                      <BriefcaseBusiness className="h-4 w-4 text-brand" />
-                      Manage jobs
-                    </Link>
+                    <>
+                      <Link
+                        to="/recruiter/jobs"
+                        className="flex items-center gap-3 rounded-card px-3 py-2 text-sm font-semibold text-text-primary hover:bg-hover hover:no-underline"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        <BriefcaseBusiness className="h-4 w-4 text-brand" />
+                        Manage job posts
+                      </Link>
+                      <Link
+                        to="/jobs"
+                        className="flex items-center gap-3 rounded-card px-3 py-2 text-sm font-semibold text-text-primary hover:bg-hover hover:no-underline"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        <Bookmark className="h-4 w-4 text-brand" />
+                        Browse jobs
+                      </Link>
+                    </>
                   )}
-                  <div className="my-2 border-t" />
+                  <div className="my-2 border-t border-[#e5e7eb]" />
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-3 rounded-card px-3 py-2 text-left text-sm font-semibold hover:bg-[#fef2f2]"
+                    style={{ color: "#B91C1C" }}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setDeleteConfirmOpen(true);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4 shrink-0" style={{ color: "#B91C1C" }} />
+                    Delete account
+                  </button>
+                  <div className="my-2 border-t border-[#e5e7eb]" />
                   <Button fullWidth variant="ghost" className="justify-start px-3 py-2 text-sm font-semibold" onClick={() => void handleLogout()}>
                     <LogOut className="h-4 w-4" />
                     Logout
@@ -170,14 +292,36 @@ export function Navbar() {
           </div>
         </div>
       </nav>
-      <div className="fixed bottom-0 left-0 right-0 z-50 flex h-10 items-center justify-around border-t bg-white md:hidden">
-        {navItems.map(({ to, icon: Icon, label }) => (
+      <div className="fixed bottom-0 left-0 right-0 z-50 flex h-12 items-center justify-around border-t bg-white md:hidden">
+        {navItemsWithBadges.map(({ to, icon: Icon, label, badge }) => (
           <NavLink key={to} to={to} className="flex items-center justify-center text-text-secondary" aria-label={label}>
-            <Icon className="h-5 w-5" />
+            <div className="relative">
+              <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
+              <NotificationBadge count={badge} />
+            </div>
           </NavLink>
         ))}
       </div>
       <div className="hidden">{userId}</div>
+
+      <DeleteAccountDialogs
+        confirmOpen={deleteConfirmOpen}
+        onCloseConfirm={() => setDeleteConfirmOpen(false)}
+        onNavigateAfterSuccess={() => {
+          clearAuth();
+          navigate("/login", { replace: true });
+        }}
+      />
     </>
+  );
+}
+
+function NotificationBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  const text = count > 99 ? "99+" : String(count);
+  return (
+    <span className="absolute -right-2 -top-2 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-[#d11124] px-1 text-[10px] font-semibold leading-none text-white">
+      {text}
+    </span>
   );
 }

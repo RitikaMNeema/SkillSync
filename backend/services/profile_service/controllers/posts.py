@@ -1,31 +1,35 @@
 from fastapi import HTTPException, UploadFile
 
 from models.member_mysql import get_member_by_id
-from models.post_mongo import (
-    create_post, list_feed_posts, list_member_posts, post_exists,
-)
 from models.post_interactions_mongo import (
     toggle_like, create_comment, list_comments,
 )
 from models.post_media_mongo import upload_image
+from models.post_mongo import (
+    create_post,
+    delete_post,
+    get_post_owner,
+    list_feed_posts,
+    list_member_posts,
+    post_exists,
+)
 from producers.post_producer import (
     emit_post_created, emit_post_liked, emit_post_commented,
 )
-from models.post_mongo import (
-    create_post, list_feed_posts, list_member_posts, post_exists,
-    delete_post, get_post_owner,
-)
+from producers.profile_command_producer import enqueue_profile_command
 
 
 async def create(body: dict, viewer_id: int) -> dict:
-    if body["member_id"] != viewer_id:
+    mid = int(body["member_id"])
+    vid = int(viewer_id)
+    if mid != vid:
         raise HTTPException(403, "Cannot create post for another member")
-    member = await get_member_by_id(body["member_id"])
+    member = await get_member_by_id(mid)
     if not member:
         raise HTTPException(404, "Member not found")
 
     post = await create_post(
-        body["member_id"],
+        mid,
         member,
         (body.get("content") or "").strip(),
         body["post_type"],
@@ -34,7 +38,7 @@ async def create(body: dict, viewer_id: int) -> dict:
 
     try:
         await emit_post_created(
-            viewer_id, post["post_id"], post["post_type"],
+            vid, post["post_id"], post["post_type"],
             has_media=bool(post.get("media_url")),
         )
     except Exception:
@@ -117,3 +121,23 @@ async def delete(post_id: str, member_id: int, viewer_id: int) -> dict:
         pass
 
     return {"post_id": post_id, **result}
+
+
+async def enqueue_create(body: dict, actor: dict) -> dict:
+    return await enqueue_profile_command("post_create", actor, {"body": body})
+
+
+async def enqueue_like(post_id: str, member_id: int, actor: dict) -> dict:
+    return await enqueue_profile_command("post_like", actor, {"post_id": post_id, "member_id": member_id})
+
+
+async def enqueue_comment(post_id: str, member_id: int, content: str, actor: dict) -> dict:
+    return await enqueue_profile_command(
+        "post_comment",
+        actor,
+        {"post_id": post_id, "member_id": member_id, "content": content},
+    )
+
+
+async def enqueue_delete(post_id: str, member_id: int, actor: dict) -> dict:
+    return await enqueue_profile_command("post_delete", actor, {"post_id": post_id, "member_id": member_id})

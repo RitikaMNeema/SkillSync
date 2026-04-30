@@ -86,6 +86,7 @@ MEMBER_FILE_COLUMNS: list[tuple[str, str]] = [
     ("resume_content_type", "VARCHAR(100)"),
     ("resume_uploaded_at", "TIMESTAMP NULL DEFAULT NULL"),
     ("open_to", "VARCHAR(32)"),
+    ("profile_status", "VARCHAR(32)"),
     ("profile_language", "VARCHAR(64)"),
     ("profile_slug", "VARCHAR(160)"),
     ("cover_photo_url", "VARCHAR(512)"),
@@ -94,6 +95,7 @@ MEMBER_FILE_COLUMNS: list[tuple[str, str]] = [
 ]
 
 OPEN_TO_VALUES = {"job", "hiring", "services", "volunteer"}
+PROFILE_STATUS_VALUES = {"none", "open_to_work", "hiring"}
 SKILL_CANONICAL_MAP = {
     "power bi": "Microsoft Power BI",
     "microsoft power bi": "Microsoft Power BI",
@@ -116,6 +118,16 @@ def build_profile_slug(first_name: str | None, last_name: str | None, member_id:
     return f"{prefix}-{member_id}"
 
 
+def normalize_profile_slug(raw_slug: Any, member_id: int) -> str:
+    token = str(raw_slug or "").strip().lower()
+    slug = "".join(ch if ch.isalnum() or ch == "-" else "-" for ch in token)
+    slug = "-".join(piece for piece in slug.split("-") if piece)
+    if not slug:
+        return f"user-{member_id}"
+    suffix = f"-{member_id}"
+    return slug if slug.endswith(suffix) else f"{slug}{suffix}"
+
+
 def _safe_int(value: Any) -> int | None:
     if value in (None, ""):
         return None
@@ -130,6 +142,19 @@ def _safe_str(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _legacy_json_field(value: Any) -> Any:
+    """Parse legacy JSON text columns on members; tolerate empty or invalid JSON."""
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if not stripped:
+        return None
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
 
 
 def _first(entry: dict, *keys: str):
@@ -334,6 +359,20 @@ async def member_exists(member_id: int) -> bool:
             return await cur.fetchone() is not None
 
 
+async def apply_connection_delta(member_id: int, delta: int) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                UPDATE members
+                SET connections_count = GREATEST(connections_count + %s, 0)
+                WHERE member_id = %s AND is_deleted = 0
+                """,
+                (delta, member_id),
+            )
+
+
 async def user_exists(user_id: int) -> bool:
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -462,8 +501,8 @@ async def create_member(member_id: int, fields: dict) -> None:
             await cur.execute(
                 """INSERT INTO members
                    (member_id, first_name, last_name, phone, location_city, location_state,
-                    location_country, headline, summary, birthday, website, experience, education, skills, profile_photo_url)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    location_country, headline, summary, birthday, website, experience, education, skills, profile_photo_url, open_to, profile_status, profile_language, profile_slug)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     member_id,
                     fields.get("first_name"),
@@ -480,6 +519,22 @@ async def create_member(member_id: int, fields: dict) -> None:
                     _serialize_json(education_entries),
                     _serialize_json(skills),
                     fields.get("profile_photo_url"),
+                    fields.get("open_to"),
+                    (
+                        fields.get("profile_status")
+                        if fields.get("profile_status") in PROFILE_STATUS_VALUES
+                        else "hiring"
+                        if fields.get("open_to") == "hiring"
+                        else "open_to_work"
+                        if fields.get("open_to") == "job"
+                        else "none"
+                    ),
+                    fields.get("profile_language") or "English",
+                    normalize_profile_slug(
+                        fields.get("profile_slug")
+                        or build_profile_slug(fields.get("first_name"), fields.get("last_name"), member_id),
+                        member_id,
+                    ),
                 ),
             )
             await _replace_member_experience(cur, member_id, experience_entries)
@@ -563,9 +618,9 @@ async def get_member_by_id(member_id: int) -> dict | None:
             if not row:
                 return None
 
-            legacy_experience = json.loads(row["experience"]) if isinstance(row.get("experience"), str) else row.get("experience")
-            legacy_education = json.loads(row["education"]) if isinstance(row.get("education"), str) else row.get("education")
-            legacy_skills = json.loads(row["skills"]) if isinstance(row.get("skills"), str) else row.get("skills")
+            legacy_experience = _legacy_json_field(row.get("experience"))
+            legacy_education = _legacy_json_field(row.get("education"))
+            legacy_skills = _legacy_json_field(row.get("skills"))
             legacy_experience_entries = [_experience_response_entry(entry) for entry in _normalize_experience(legacy_experience)]
             legacy_education_entries = [_education_response_entry(entry) for entry in _normalize_education(legacy_education)]
             legacy_skill_entries = _normalize_skills(legacy_skills)
@@ -615,6 +670,14 @@ async def get_member_by_id(member_id: int) -> dict | None:
                 row["profile_slug"] = slug
             if not row.get("profile_language"):
                 row["profile_language"] = "English"
+            if row.get("profile_status") not in PROFILE_STATUS_VALUES:
+                # Backfill from legacy open_to when possible.
+                if row.get("open_to") == "hiring":
+                    row["profile_status"] = "hiring"
+                elif row.get("open_to") == "job":
+                    row["profile_status"] = "open_to_work"
+                else:
+                    row["profile_status"] = "none"
             return row
 
 
@@ -638,6 +701,12 @@ async def update_member(member_id: int, fields: dict) -> None:
         value = fields["open_to"]
         if value not in (None, "") and value not in OPEN_TO_VALUES:
             fields = {**fields, "open_to": None}
+    if "profile_status" in fields:
+        value = fields["profile_status"]
+        if value not in PROFILE_STATUS_VALUES:
+            fields = {**fields, "profile_status": "none"}
+    if "profile_slug" in fields and fields.get("profile_slug") is not None:
+        fields = {**fields, "profile_slug": normalize_profile_slug(fields.get("profile_slug"), member_id)}
 
     json_fields = {"experience", "education", "skills"}
     allowed = {
@@ -656,6 +725,7 @@ async def update_member(member_id: int, fields: dict) -> None:
         "skills",
         "profile_photo_url",
         "open_to",
+        "profile_status",
         "profile_language",
         "profile_slug",
     }
@@ -874,9 +944,9 @@ async def search_members(keyword, skill, location, page, page_size=PAGE_SIZE) ->
     values = []
 
     if keyword:
-        conditions.append("(m.headline LIKE %s OR m.summary LIKE %s OR m.first_name LIKE %s OR m.last_name LIKE %s OR JSON_SEARCH(m.skills, 'one', %s) IS NOT NULL)")
+        conditions.append("(m.headline LIKE %s OR m.summary LIKE %s OR m.first_name LIKE %s OR m.last_name LIKE %s OR JSON_SEARCH(LOWER(m.skills), 'one', %s) IS NOT NULL)")
         like = f"%{keyword}%"
-        values += [like, like, like, like, keyword]
+        values += [like, like, like, like, keyword.lower()]
     if skill:
         conditions.append('JSON_SEARCH(m.skills, "one", %s) IS NOT NULL')
         values.append(skill)
@@ -902,7 +972,8 @@ async def search_members(keyword, skill, location, page, page_size=PAGE_SIZE) ->
             rows = await cur.fetchall()
             for row in rows:
                 if isinstance(row.get("skills"), str):
-                    row["skills"] = json.loads(row["skills"])
+                    parsed = _legacy_json_field(row.get("skills"))
+                    row["skills"] = parsed if parsed is not None else []
             await cur.execute(f"SELECT COUNT(*) as total FROM members m {where}", values)
             total = (await cur.fetchone())["total"]
     return rows, total

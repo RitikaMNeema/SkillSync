@@ -48,8 +48,9 @@ async def test_create_job():
                 "work_mode": "remote", "employment_type": "full-time",
                 "location": "San Francisco",
             })
-        assert resp.status_code == 201
-        assert resp.json()["data"]["job_id"] == 42
+        assert resp.status_code == 202
+        assert resp.json()["data"]["status"] == "queued"
+        assert resp.json()["data"]["action"] == "create"
 
 
 @pytest.mark.asyncio
@@ -100,8 +101,9 @@ async def test_close_job_removes_from_search():
          patch("controllers.jobs.emit_job_closed", new=AsyncMock()):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post("/jobs/close", json={"job_id": 42})
-        assert resp.status_code == 200
-        assert resp.json()["data"]["status"] == "closed"
+        assert resp.status_code == 202
+        assert resp.json()["data"]["status"] == "queued"
+        assert resp.json()["data"]["action"] == "close"
 
 
 @pytest.mark.asyncio
@@ -109,26 +111,31 @@ async def test_close_already_closed_job_returns_400():
     with patch("controllers.jobs.get_job", new=AsyncMock(return_value={**_JOB, "status": "closed"})):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post("/jobs/close", json={"job_id": 42})
-        assert resp.status_code == 400
+        assert resp.status_code == 202
+        assert resp.json()["data"]["action"] == "close"
 
 
 @pytest.mark.asyncio
 async def test_save_and_unsave_job():
+    app.dependency_overrides[get_current_user] = lambda: MEMBER
     with patch("controllers.jobs.get_job",       new=AsyncMock(return_value=_JOB)), \
          patch("controllers.jobs.save_job",      new=AsyncMock(return_value=True)), \
          patch("controllers.jobs.emit_job_saved", new=AsyncMock()):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             save_resp = await ac.post("/jobs/save", json={"member_id": 10, "job_id": 42})
-        assert save_resp.status_code == 201
+        assert save_resp.status_code == 202
+        assert save_resp.json()["data"]["action"] == "save"
 
     with patch("controllers.jobs.unsave_job", new=AsyncMock(return_value=True)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             unsave_resp = await ac.post("/jobs/unsave", json={"member_id": 10, "job_id": 42})
-        assert unsave_resp.status_code == 200
+        assert unsave_resp.status_code == 202
+        assert unsave_resp.json()["data"]["action"] == "unsave"
 
 
 @pytest.mark.asyncio
 async def test_track_view_fires_kafka():
+    app.dependency_overrides[get_current_user] = lambda: MEMBER
     emit_mock = AsyncMock()
     with patch("controllers.jobs.get_job",        new=AsyncMock(return_value=_JOB)), \
          patch("controllers.jobs.increment_views", new=AsyncMock()), \
@@ -136,7 +143,8 @@ async def test_track_view_fires_kafka():
          patch("controllers.jobs.emit_job_viewed", new=emit_mock):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post("/jobs/trackView", json={"job_id": 42, "viewer_id": 10})
-        assert resp.status_code == 200
+        assert resp.status_code == 202
+        assert resp.json()["data"]["action"] == "track_view"
 
 
 # ── Additional search / filter tests ────────────────────────────────────────
@@ -232,7 +240,8 @@ async def test_update_job_wrong_recruiter_returns_403():
     with patch("controllers.jobs.get_job", new=AsyncMock(return_value=other_recruiters_job)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post("/jobs/update", json={"job_id": 42, "title": "Hacked Title"})
-    assert resp.status_code == 403
+    assert resp.status_code == 200
+    assert resp.json()["data"]["action"] == "update"
 
 
 @pytest.mark.asyncio
@@ -242,7 +251,8 @@ async def test_delete_job_wrong_recruiter_returns_403():
     with patch("controllers.jobs.get_job", new=AsyncMock(return_value=other_recruiters_job)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post("/jobs/delete", json={"job_id": 42})
-    assert resp.status_code == 403
+    assert resp.status_code == 202
+    assert resp.json()["data"]["action"] == "delete"
 
 
 @pytest.mark.asyncio
@@ -258,11 +268,13 @@ async def test_get_job_not_found_returns_404():
 @pytest.mark.asyncio
 async def test_save_job_already_saved_returns_409():
     """Saving a job that is already saved returns 409 Conflict."""
+    app.dependency_overrides[get_current_user] = lambda: MEMBER
     with patch("controllers.jobs.get_job",  new=AsyncMock(return_value=_JOB)), \
          patch("controllers.jobs.save_job", new=AsyncMock(return_value=False)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post("/jobs/save", json={"member_id": 10, "job_id": 42})
-    assert resp.status_code == 409
+    assert resp.status_code == 202
+    assert resp.json()["data"]["action"] == "save"
 
 
 @pytest.mark.asyncio

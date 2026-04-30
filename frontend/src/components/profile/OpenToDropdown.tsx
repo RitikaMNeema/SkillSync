@@ -1,41 +1,47 @@
 import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { OpenToOption } from "../../types/member";
+import type { ProfileStatusOption } from "../../types/member";
 
 export interface OpenToItem {
-  value: OpenToOption;
+  value: ProfileStatusOption;
   title: string;
   description: string;
 }
 
 export const OPEN_TO_OPTIONS: OpenToItem[] = [
   {
-    value: "job",
-    title: "Finding a new job",
-    description: "Show recruiters and others that you're open to work"
+    value: "open_to_work",
+    title: "Open to work",
+    description: "Show recruiters and connections that you are open to work"
   },
   {
     value: "hiring",
     title: "Hiring",
-    description: "Share that you're hiring and attract qualified candidates"
-  },
-  {
-    value: "services",
-    title: "Providing services",
-    description: "Showcase services you offer so new clients can discover you"
-  },
-  {
-    value: "volunteer",
-    title: "Finding volunteer opportunities",
-    description: "Show that you are open to skill-based volunteering"
+    description: "Let candidates know you are hiring"
   }
 ];
 
-export function openToLabel(value: OpenToOption | string | null | undefined): string {
+export function openToLabel(value: ProfileStatusOption | string | null | undefined): string {
   if (!value) return "Open to";
+  if (value === "none") return "Open to";
   const match = OPEN_TO_OPTIONS.find((opt) => opt.value === value);
   return match ? match.title : "Open to";
+}
+
+/**
+ * Trigger-button color palette keyed on the selected status. Green surfaces the
+ * "Open to work" affordance (LinkedIn's signature green), while purple is used
+ * for the "Hiring" state so recruiters are visually distinct.
+ */
+const TRIGGER_STYLES: Record<"open_to_work" | "hiring", { bg: string; bgHover: string }> = {
+  open_to_work: { bg: "#046a38", bgHover: "#035a2f" },
+  hiring: { bg: "#6e4dc9", bgHover: "#5d3eb5" }
+};
+
+function triggerStyle(value: ProfileStatusOption | string | null | undefined) {
+  if (value === "hiring") return TRIGGER_STYLES.hiring;
+  return TRIGGER_STYLES.open_to_work;
 }
 
 export function OpenToDropdown({
@@ -43,8 +49,8 @@ export function OpenToDropdown({
   onSelect,
   disabled
 }: {
-  value: OpenToOption | string | null | undefined;
-  onSelect: (next: OpenToOption | null) => void;
+  value: ProfileStatusOption | string | null | undefined;
+  onSelect: (next: ProfileStatusOption) => void;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -95,9 +101,8 @@ export function OpenToDropdown({
     };
   }, [open]);
 
-  function handleSelect(option: OpenToOption) {
-    const next = option === value ? null : option;
-    onSelect(next);
+  function handleSelect(option: ProfileStatusOption) {
+    onSelect(option);
     setOpen(false);
   }
 
@@ -135,6 +140,8 @@ export function OpenToDropdown({
     </div>
   ) : null;
 
+  const style = triggerStyle(value);
+
   return (
     <>
       <button
@@ -144,7 +151,16 @@ export function OpenToDropdown({
         onClick={() => setOpen((current) => !current)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="inline-flex items-center gap-1.5 rounded-full border border-[#046a38] bg-[#046a38] px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-[#035a2f] disabled:opacity-60"
+        style={{ backgroundColor: style.bg, borderColor: style.bg }}
+        onMouseEnter={(event) => {
+          event.currentTarget.style.backgroundColor = style.bgHover;
+          event.currentTarget.style.borderColor = style.bgHover;
+        }}
+        onMouseLeave={(event) => {
+          event.currentTarget.style.backgroundColor = style.bg;
+          event.currentTarget.style.borderColor = style.bg;
+        }}
+        className="inline-flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-semibold text-white transition disabled:opacity-60"
       >
         {openToLabel(value)}
         <ChevronDown className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`} />

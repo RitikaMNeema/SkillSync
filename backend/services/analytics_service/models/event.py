@@ -138,33 +138,47 @@ async def geo_distribution(month: str | None = None, recruiter_id: int | None = 
 
 async def member_dashboard(member_id) -> dict:
     db = get_db()
-    since = datetime.utcnow() - timedelta(days=30)
-    views, search_appearances, breakdown = await __import__("asyncio").gather(
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(days=30)
+    views_total, views_daily, search_appearances, status_changed, submitted = await __import__("asyncio").gather(
         db.events.count_documents({
-            "event_type": {"$in": ["profile.viewed", "profile.updated"]},
+            "event_type": "profile.viewed",
             "timestamp": {"$gte": since},
-            "$or": [
-                {"payload.member_id": str(member_id)},
-                {"entity.entity_id": str(member_id)},
-                {"actor_id": str(member_id)},
-            ],
+            "$or": [{"payload.member_id": str(member_id)}, {"entity.entity_id": str(member_id)}],
         }),
+        db.events.aggregate([
+            {"$match": {
+                "event_type": "profile.viewed",
+                "timestamp": {"$gte": since},
+                "$or": [{"payload.member_id": str(member_id)}, {"entity.entity_id": str(member_id)}],
+            }},
+            {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}}, "count": {"$sum": 1}}},
+        ]).to_list(length=60),
         db.events.count_documents({
-            "event_type": {"$in": ["member.searchAppeared", "profile.search.appeared"]},
+            "event_type": "member.searchAppeared",
             "timestamp": {"$gte": since},
-            "$or": [
-                {"payload.member_id": str(member_id)},
-                {"entity.entity_id": str(member_id)},
-                {"actor_id": str(member_id)},
-            ],
+            "$or": [{"payload.member_id": str(member_id)}, {"entity.entity_id": str(member_id)}],
         }),
         db.events.aggregate([
             {"$match":  {"event_type": "application.statusChanged", "payload.member_id": str(member_id)}},
             {"$group":  {"_id": "$payload.new_status", "count": {"$sum": 1}}},
         ]).to_list(length=10),
+        db.events.count_documents({
+            "event_type": "application.submitted",
+            "payload.member_id": str(member_id),
+        }),
     )
+    daily_map = {row["_id"]: row["count"] for row in views_daily}
+    profile_views_daily = []
+    for i in range(30):
+        day = (since + timedelta(days=i + 1)).strftime("%Y-%m-%d")
+        profile_views_daily.append({"date": day, "count": daily_map.get(day, 0)})
+    statuses = {row["_id"]: row["count"] for row in status_changed}
+    statuses["submitted"] = statuses.get("submitted", 0) + submitted
+    breakdown = [{"_id": status, "count": count} for status, count in statuses.items() if status]
     return {
-        "profile_views_30d": views,
+        "profile_views_30d": views_total,
+        "profile_views_daily_30d": profile_views_daily,
         "search_appearances_30d": search_appearances,
         "application_status_breakdown": breakdown,
     }
@@ -181,3 +195,24 @@ async def recruiter_dashboard(recruiter_id) -> list:
         },
         {"$group":  {"_id": "$event_type", "count": {"$sum": 1}}},
     ]).to_list(length=10)
+
+
+async def event_counts_by_type(
+    month: str | None = None,
+    recruiter_id: int | None = None,
+    job_id: str | None = None,
+) -> list:
+    db = get_db()
+    match: dict = {}
+    if month:
+        start, end = _month_window(month)
+        match["timestamp"] = {"$gte": start, "$lt": end}
+    if recruiter_id is not None:
+        match.update(_recruiter_payload_match(recruiter_id))
+    if job_id:
+        match.update(_job_payload_match(job_id))
+    return await db.events.aggregate([
+        {"$match": match},
+        {"$group": {"_id": "$event_type", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+    ]).to_list(length=200)

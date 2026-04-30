@@ -36,8 +36,25 @@ export default defineConfig(function (_a) {
         "/api/analytics": __assign({ target: "http://localhost:3008", rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
         "/api/events": __assign({ target: "http://localhost:3008", rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong)
     };
+    var redirectLegacyRecruiterUrls = function () { return ({
+        name: "redirect-legacy-recruiter-route",
+        configureServer: function (server) {
+            server.middlewares.use(function (req, res, next) {
+                var _a, _b;
+                var pathOnly = (_b = (_a = req.url) === null || _a === void 0 ? void 0 : _a.split("?")[0]) !== null && _b !== void 0 ? _b : "";
+                var match = pathOnly.match(/^\/recruiters\/(\d+)\/?$/);
+                if (match) {
+                    res.statusCode = 302;
+                    res.setHeader("Location", "/profile/".concat(match[1], "?type=recruiter"));
+                    res.end();
+                    return;
+                }
+                next();
+            });
+        }
+    }); };
     return {
-        plugins: [react()],
+        plugins: [react(), redirectLegacyRecruiterUrls()],
         server: {
             port: 5173,
             proxy: gateway

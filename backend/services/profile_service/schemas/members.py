@@ -23,6 +23,10 @@ class CreateMemberRequest(BaseModel):
     about: Optional[str] = None
     freeform_experience: Optional[Any] = None
     followed_skills: Optional[Any] = None
+    open_to: Optional[str] = None
+    profile_status: Optional[str] = None
+    profile_language: Optional[str] = None
+    profile_slug: Optional[str] = None
 
     @field_validator("headline")
     @classmethod
@@ -62,6 +66,7 @@ class UpdateMemberRequest(BaseModel):
     freeform_experience: Optional[Any] = None
     followed_skills: Optional[Any] = None
     open_to: Optional[str] = None
+    profile_status: Optional[str] = None
     profile_language: Optional[str] = None
     profile_slug: Optional[str] = None
 
@@ -96,3 +101,7 @@ class UploadResumeRequest(BaseModel):
 
 class GetResumeRequest(BaseModel):
     member_id: int
+
+
+class CommandStatusRequest(BaseModel):
+    command_id: str

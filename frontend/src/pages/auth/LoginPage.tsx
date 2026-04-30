@@ -29,6 +29,12 @@ function mapLoginFailureToMessage(error: unknown): string {
   if (status === 429) {
     return "Too many sign-in attempts. Please wait a few minutes and try again.";
   }
+  if (status === 502 || status === 503) {
+    if (import.meta.env.DEV) {
+      return "The backend is not reachable from the dev server. Start services (from the repo root: cd backend && docker compose up -d — auth listens on localhost:3001). If frontend/.env sets VITE_PROXY_GATEWAY=http://127.0.0.1:3000, start the gateway on port 3000 or remove VITE_PROXY_GATEWAY and restart npm run dev.";
+    }
+    return "The backend is not reachable. If you use Docker, ensure backend compose is up (auth port 3001 on the host) and rebuild the frontend so nginx can proxy. On Linux Docker, ensure API_HOST=host.docker.internal works or set frontend/docker-compose.yml extra_hosts (see comment in docker-compose.yml).";
+  }
   if (status !== undefined && status >= 500) {
     return "Something went wrong on our end. Please try again in a moment.";
   }

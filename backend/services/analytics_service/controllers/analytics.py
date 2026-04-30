@@ -1,5 +1,5 @@
 import json
-from shared.redis_utils.cache import cache_get, cache_set
+from shared.redis_utils.cache import cache_del_pattern, cache_get, cache_set
 from shared.utils.idempotency import is_duplicate
 from models.event import (
     insert_event,
@@ -11,6 +11,7 @@ from models.event import (
     geo_distribution,
     member_dashboard,
     recruiter_dashboard,
+    event_counts_by_type,
 )
 
 TTL = 300
@@ -21,6 +22,8 @@ async def ingest(envelope: dict) -> dict:
     if key and await is_duplicate(f"analytics:{key}"):
         return {"status": "duplicate"}
     await insert_event(envelope)
+    # Keep dashboard data fresh after new events arrive.
+    await cache_del_pattern("analytics:*")
     return {"status": "ok"}
 
 
@@ -90,7 +93,8 @@ async def get_geo(month: str | None = None, recruiter_id: int | None = None, job
 
 
 async def get_member_dashboard(member_id: int) -> dict:
-    ck = f"analytics:member:{member_id}"
+    # Version cache key so old dashboard shape/count logic does not keep stale zeros.
+    ck = f"analytics:member:v2:{member_id}"
     hit = await cache_get(ck)
     if hit is not None:
         return hit
@@ -110,5 +114,16 @@ async def get_recruiter_dashboard(recruiter_id: int) -> list:
         return hit
     data = await recruiter_dashboard(recruiter_id)
     result = [{"event_type": r["_id"], "count": r["count"]} for r in data]
+    await cache_set(ck, result, TTL)
+    return result
+
+
+async def get_event_counts(month: str | None = None, recruiter_id: int | None = None, job_id: str | None = None) -> list:
+    ck = f"analytics:event_counts:{month or 'all'}:{recruiter_id or 'all'}:{job_id or 'all'}"
+    hit = await cache_get(ck)
+    if hit is not None:
+        return hit
+    rows = await event_counts_by_type(month, recruiter_id, job_id)
+    result = [{"event_type": r["_id"], "count": r["count"]} for r in rows]
     await cache_set(ck, result, TTL)
     return result

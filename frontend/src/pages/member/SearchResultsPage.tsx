@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { searchMembers } from "../../api/members";
 import { searchJobs } from "../../api/jobs";
+import { searchRecruiters } from "../../api/recruiters";
 import { JobCard } from "../../components/jobs/JobCard";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
@@ -10,6 +11,7 @@ import { CardSkeleton } from "../../components/ui/Skeleton";
 import { useDebounce } from "../../hooks/useDebounce";
 import type { MemberSearchItem } from "../../types/member";
 import type { Job } from "../../types/job";
+import type { RecruiterProfile } from "../../types/recruiter";
 
 function MemberCard({ member }: { member: MemberSearchItem }) {
   const location = [member.location_city, member.location_state].filter(Boolean).join(", ");
@@ -46,6 +48,30 @@ function MemberCard({ member }: { member: MemberSearchItem }) {
   );
 }
 
+function RecruiterCard({ recruiter }: { recruiter: RecruiterProfile }) {
+  const subtitle = [recruiter.role, recruiter.company_name].filter(Boolean).join(" · ");
+  const location = recruiter.company_location || "";
+  return (
+    <Link
+      to={`/profile/${recruiter.recruiter_id}?type=recruiter`}
+      className="flex items-start gap-4 rounded-card border bg-white p-4 transition-colors hover:bg-hover hover:no-underline"
+    >
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#0a66c2] text-lg font-bold text-white">
+        {recruiter.name?.[0]?.toUpperCase() || "R"}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="font-semibold text-text-primary">{recruiter.name}</p>
+        {subtitle ? <p className="text-sm text-text-secondary line-clamp-1">{subtitle}</p> : null}
+        {location ? (
+          <p className="mt-0.5 flex items-center gap-1 text-xs text-text-tertiary">
+            <MapPin className="h-3 w-3" />{location}
+          </p>
+        ) : null}
+      </div>
+    </Link>
+  );
+}
+
 function SectionHeader({ icon: Icon, title, count }: { icon: React.ElementType; title: string; count: number }) {
   return (
     <div className="flex items-center gap-2 border-b pb-2">
@@ -62,10 +88,13 @@ export function SearchResultsPage() {
   const debounced = useDebounce(query, 300);
 
   const [members, setMembers] = useState<MemberSearchItem[]>([]);
+  const [recruiters, setRecruiters] = useState<RecruiterProfile[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [membersTotal, setMembersTotal] = useState(0);
+  const [recruitersTotal, setRecruitersTotal] = useState(0);
   const [jobsTotal, setJobsTotal] = useState(0);
   const [loadingMembers, setLoadingMembers] = useState(true);
+  const [loadingRecruiters, setLoadingRecruiters] = useState(true);
   const [loadingJobs, setLoadingJobs] = useState(true);
 
   useEffect(() => {
@@ -79,6 +108,13 @@ export function SearchResultsPage() {
       setMembersTotal(data.total);
       setLoadingMembers(false);
     }).catch(() => setLoadingMembers(false));
+
+    setLoadingRecruiters(true);
+    void searchRecruiters({ name: debounced, page: 1 }).then((data) => {
+      setRecruiters(data.recruiters);
+      setRecruitersTotal(data.total);
+      setLoadingRecruiters(false);
+    }).catch(() => setLoadingRecruiters(false));
 
     setLoadingJobs(true);
     void searchJobs({ keyword: debounced, page: 1 }).then((data) => {
@@ -115,14 +151,15 @@ export function SearchResultsPage() {
       </div>
 
       <div className="space-y-4">
-        <SectionHeader icon={Users} title="People" count={membersTotal} />
-        {loadingMembers ? (
+        <SectionHeader icon={Users} title="People" count={membersTotal + recruitersTotal} />
+        {loadingMembers || loadingRecruiters ? (
           <><CardSkeleton /><CardSkeleton /></>
-        ) : members.length === 0 ? (
+        ) : members.length === 0 && recruiters.length === 0 ? (
           <p className="text-sm text-text-tertiary">No people match your search.</p>
         ) : (
           <div className="space-y-3">
             {members.map((m) => <MemberCard key={m.member_id} member={m} />)}
+            {recruiters.map((r) => <RecruiterCard key={r.recruiter_id} recruiter={r} />)}
           </div>
         )}
       </div>

@@ -9,7 +9,10 @@ function isAuthCredentialRequest(url: string | undefined): boolean {
 }
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL ?? "/api"
+  baseURL: import.meta.env.VITE_API_BASE_URL ?? "/api",
+  // Paths like `/auth/login` must still go under `/api/...` for the Vite proxy / gateway.
+  // Without this, axios treats a leading `/` as host-absolute and drops the baseURL path.
+  allowAbsoluteUrls: false,
   // NOTE: intentionally no default Content-Type. axios auto-sets
   //   • application/json  for plain objects
   //   • multipart/form-data; boundary=... for FormData (browser sets boundary)
@@ -18,6 +21,15 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
+  // Axios can still resolve `baseURL: "/api"` + `url: "/auth/login"` as `/auth/login` (404 in dev).
+  // Fold root-relative API paths under the base explicitly, then clear baseURL for this request.
+  const base = typeof config.baseURL === "string" ? config.baseURL.replace(/\/$/, "") : "";
+  const u = typeof config.url === "string" ? config.url : "";
+  if (base && u.startsWith("/") && !u.startsWith("http") && !u.startsWith(`${base}/`)) {
+    config.url = `${base}${u}`;
+    config.baseURL = "";
+  }
+
   const token =
     authStore.getState().token ??
     localStorage.getItem("linkedin_token") ??

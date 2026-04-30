@@ -1,4 +1,5 @@
 import api from "./axios";
+import { resolveCommandResult } from "./commands";
 import type { ApiResponse } from "../types/common";
 import type {
   FeedPost,
@@ -17,7 +18,7 @@ export async function createPost(payload: {
   media_url?: string;
 }) {
   const response = await api.post<ApiResponse<FeedPost>>("/posts/create", payload);
-  return response.data.data;
+  return resolveCommandResult<FeedPost>(response.data.data, "/posts/commandStatus");
 }
 
 export async function getFeedPosts(page = 1) {
@@ -38,7 +39,7 @@ export async function likePost(post_id: string, member_id: number) {
     post_id,
     member_id
   });
-  return response.data.data;
+  return resolveCommandResult<LikeToggleResponse>(response.data.data, "/posts/commandStatus");
 }
 
 export async function createComment(post_id: string, member_id: number, content: string) {
@@ -47,7 +48,7 @@ export async function createComment(post_id: string, member_id: number, content:
     member_id,
     content
   });
-  return response.data.data;
+  return resolveCommandResult<PostComment>(response.data.data, "/posts/commandStatus");
 }
 
 export async function listComments(post_id: string, page = 1) {
@@ -61,9 +62,8 @@ export async function listComments(post_id: string, page = 1) {
 export async function uploadPostImage(file: File): Promise<string> {
   const form = new FormData();
   form.append("file", file);
-  const response = await api.post<ApiResponse<UploadImageResponse>>("/posts/upload-image", form, {
-    headers: { "Content-Type": "multipart/form-data" }
-  });
+  // Do not set Content-Type manually — the browser must add the multipart boundary.
+  const response = await api.post<ApiResponse<UploadImageResponse>>("/posts/upload-image", form);
   return response.data.data.media_url;
 }
 
@@ -72,5 +72,5 @@ export async function deletePost(post_id: string, member_id: number) {
     "/posts/delete",
     { post_id, member_id }
   );
-  return response.data.data;
+  return resolveCommandResult<{ post_id: string; deleted: boolean }>(response.data.data, "/posts/commandStatus");
 }

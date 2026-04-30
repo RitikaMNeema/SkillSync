@@ -59,3 +59,25 @@ def test_get_low_traction_uses_recruiter_scoped_cache_key():
     assert result == [{"job_id": "job-2", "applications": 1}]
     low_jobs.assert_awaited_once_with("2026-04-01", 33)
     cache_set.assert_awaited_once_with("analytics:low_traction:2026-04-01:33", result, ctrl.TTL)
+
+
+def test_ingest_invalidates_analytics_cache():
+    envelope = {"event_type": "job.saved", "timestamp": "2026-04-01T00:00:00Z", "idempotency_key": "abc-1"}
+    with patch("controllers.analytics.is_duplicate", new=AsyncMock(return_value=False)), \
+         patch("controllers.analytics.insert_event", new=AsyncMock()) as insert_event, \
+         patch("controllers.analytics.cache_del_pattern", new=AsyncMock()) as cache_del_pattern:
+        result = asyncio.run(ctrl.ingest(envelope))
+    assert result == {"status": "ok"}
+    insert_event.assert_awaited_once_with(envelope)
+    cache_del_pattern.assert_awaited_once_with("analytics:*")
+
+
+def test_get_event_counts_uses_cache_and_formats_rows():
+    rows = [{"_id": "job.saved", "count": 4}]
+    with patch("controllers.analytics.cache_get", new=AsyncMock(return_value=None)), \
+         patch("controllers.analytics.event_counts_by_type", new=AsyncMock(return_value=rows)) as counts, \
+         patch("controllers.analytics.cache_set", new=AsyncMock()) as cache_set:
+        result = asyncio.run(ctrl.get_event_counts("2026-04-01", recruiter_id=9, job_id="44"))
+    assert result == [{"event_type": "job.saved", "count": 4}]
+    counts.assert_awaited_once_with("2026-04-01", 9, "44")
+    cache_set.assert_awaited_once()

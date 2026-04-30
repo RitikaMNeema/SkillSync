@@ -1,30 +1,39 @@
 import { formatRelativeDate } from "../../utils/formatDate";
 import type { Thread } from "../../types/message";
 import { Avatar } from "../ui/Avatar";
-
-function formatParticipants(participantIds: string[]) {
-  if (!participantIds.length) return "No participants";
-  if (participantIds.length <= 2) return `${participantIds.length} participant${participantIds.length > 1 ? "s" : ""}`;
-  return `${participantIds.slice(0, 2).join(", ")} +${participantIds.length - 2} more`;
-}
+import { Star } from "lucide-react";
 
 export function ThreadList({
   threads,
   activeThreadId,
   onSelect,
   threadLabels,
-  unreadCountByThread
+  unreadCountByThread,
+  starredThreadIds,
+  previewByThread,
+  onStartNewMessage
 }: {
   threads: Thread[];
   activeThreadId: string | null;
   onSelect: (thread: Thread) => void;
   threadLabels?: Record<string, string>;
   unreadCountByThread?: Record<string, number>;
+  starredThreadIds?: Record<string, boolean>;
+  previewByThread?: Record<string, string>;
+  onStartNewMessage?: () => void;
 }) {
   if (!threads.length) {
     return (
-      <div className="rounded-card border border-dashed p-4 text-sm text-text-secondary">
-        No conversations yet. Click the pencil icon to start a new message.
+      <div className="flex min-h-[420px] flex-col items-center justify-center px-6 text-center">
+        <img
+          src="https://www.vecteezy.com/vector-art/59454813-convenient-cash-payment-delivery"
+          alt="No messages illustration"
+          className="h-24 w-24 rounded-full bg-[#f3f2ef] object-cover p-2"
+        />
+        <p className="mt-5 text-[28px] font-normal leading-tight text-[#1f1f1f]">No messages yet</p>
+        <p className="mt-3 max-w-[260px] text-[16px] leading-8 text-[#4b5563]">
+          Reach out and start a conversation to advance your career
+        </p>
       </div>
     );
   }
@@ -35,6 +44,7 @@ export function ThreadList({
         const label = threadLabels?.[thread.thread_id] ?? `Conversation ${thread.thread_id.slice(0, 6)}`;
         const avatarName = label.split(",")[0]?.trim().split(" ")[0] || label;
         const unreadCount = unreadCountByThread?.[thread.thread_id] ?? 0;
+        const isStarred = Boolean(starredThreadIds?.[thread.thread_id]);
         const active = activeThreadId === thread.thread_id;
         return (
         <button
@@ -50,9 +60,12 @@ export function ThreadList({
               <p className="truncate font-semibold leading-5">{label}</p>
               <span className="shrink-0 text-xs text-text-tertiary">{formatRelativeDate(thread.last_message_at)}</span>
             </div>
-            <p className="mt-0.5 truncate text-sm text-text-secondary">{formatParticipants(thread.participant_ids)}</p>
+            <p className="mt-0.5 truncate text-sm text-text-secondary">
+              {previewByThread?.[thread.thread_id] || "No messages yet"}
+            </p>
           </div>
-          <div className="pt-0.5">
+          <div className="flex items-center gap-1 pt-0.5">
+            {isStarred ? <Star className="h-3.5 w-3.5 fill-[#d49100] text-[#d49100]" /> : null}
             {unreadCount > 0 ? (
               <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-brand px-1.5 text-[10px] font-semibold text-white shadow-sm">
                 {unreadCount > 99 ? "99+" : unreadCount}

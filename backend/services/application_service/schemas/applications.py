@@ -33,3 +33,7 @@ class AddNoteRequest(BaseModel):
     application_id: int
     recruiter_id: int
     note_text: str
+
+
+class CommandStatusRequest(BaseModel):
+    command_id: str

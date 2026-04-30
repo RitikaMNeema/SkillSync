@@ -29,3 +29,16 @@ class ListMessagesRequest(BaseModel):
 class MarkReadRequest(BaseModel):
     thread_id: str
     user_id: int
+
+
+class ThreadPreferenceUpdateRequest(BaseModel):
+    thread_id: str
+    starred: Optional[bool] = None
+    muted: Optional[bool] = None
+    archived: Optional[bool] = None
+    force_unread: Optional[bool] = None
+    hidden: Optional[bool] = None
+
+
+class CommandStatusRequest(BaseModel):
+    command_id: str
