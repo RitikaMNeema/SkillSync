@@ -26,11 +26,11 @@ export function ProfileCompletionCard({
   onDismiss
 }: ProfileCompletionCardProps) {
   return (
-    <div className="rounded-[22px] border border-[#d9dee5] bg-white p-7 shadow-[0_8px_30px_rgba(15,23,42,0.05)]">
+    <div className="rounded-2xl border border-[#d9dee5] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-[2rem] font-semibold tracking-[-0.03em] text-[#1f1f1f]">{title}</h3>
-          <p className="mt-3 max-w-[760px] text-[1.05rem] leading-8 text-[#525252]">{helper}</p>
+          <h3 className="text-[1.55rem] font-semibold tracking-[-0.02em] text-[#1f1f1f]">{title}</h3>
+          <p className="mt-2 max-w-[760px] text-[1rem] leading-7 text-[#525252]">{helper}</p>
         </div>
         <button
           type="button"
@@ -42,14 +42,14 @@ export function ProfileCompletionCard({
         </button>
       </div>
 
-      <div className="mb-7 flex items-start gap-4 rounded-[18px] border border-dashed border-[#d0d7df] bg-[#fbfcfd] p-5 text-[#a3a3a3]">
-        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[16px] border border-[#c8d0d9] bg-white">
+      <div className="mb-6 flex items-start gap-4 rounded-2xl border border-dashed border-[#d0d7df] bg-[#fbfcfd] p-4 text-[#a3a3a3]">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[14px] border border-[#c8d0d9] bg-white">
           <Icon className="h-7 w-7 text-[#a8adb3]" />
         </div>
         <div>
-          <p className="text-[1.45rem] font-semibold text-[#b1b1b1]">{previewTitle}</p>
-          <p className="text-[1.05rem]">{previewSubtitle}</p>
-          {previewMeta ? <p className="text-[1.05rem]">{previewMeta}</p> : null}
+          <p className="text-[1.25rem] font-semibold text-[#b1b1b1]">{previewTitle}</p>
+          <p className="text-[1rem]">{previewSubtitle}</p>
+          {previewMeta ? <p className="text-[1rem]">{previewMeta}</p> : null}
         </div>
       </div>
 

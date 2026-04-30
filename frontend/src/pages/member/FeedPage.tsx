@@ -38,6 +38,7 @@ import type { FeedPost, PostType } from "../../types/post";
 import type { RecruiterProfile } from "../../types/recruiter";
 import { formatRelativeDate } from "../../utils/formatDate";
 import { getApiErrorMessage, getHttpStatus } from "../../utils/getApiErrorMessage";
+import { getUnifiedProfile } from "../../utils/profileAdapter";
 import { getStatusColor } from "../../utils/getStatusColor";
 import type { PendingConnection } from "../../types/connection";
 
@@ -78,6 +79,7 @@ function outgoingPendingIndex(pendingRequests: PendingConnection[], userId: numb
 export function FeedPage() {
   const navigate = useNavigate();
   const userId = authStore((state) => state.userId);
+  const role = authStore((state) => state.role);
   const [profile, setProfile] = useState<MemberProfile | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [savedJobIds, setSavedJobIds] = useState<number[]>([]);
@@ -112,18 +114,22 @@ export function FeedPage() {
 
     try {
       let member: MemberProfile;
-      try {
-        member = await getMember(userId);
-      } catch (memberError) {
-        if (getHttpStatus(memberError) !== 404) throw memberError;
-        // Some users can authenticate before a member profile row exists.
-        await createMember({
-          member_id: userId,
-          first_name: "First",
-          last_name: "Last",
-          headline: "Aspiring professional"
-        });
-        member = await getMember(userId);
+      if (role === "recruiter") {
+        member = await getUnifiedProfile(userId, "recruiter");
+      } else {
+        try {
+          member = await getMember(userId);
+        } catch (memberError) {
+          if (getHttpStatus(memberError) !== 404) throw memberError;
+          // Some users can authenticate before a member profile row exists.
+          await createMember({
+            member_id: userId,
+            first_name: "First",
+            last_name: "Last",
+            headline: "Aspiring professional"
+          });
+          member = await getMember(userId);
+        }
       }
       setProfile(member);
 
@@ -144,7 +150,7 @@ export function FeedPage() {
       ]);
 
       const recommendedJobs = results[0].status === "fulfilled" ? results[0].value.jobs.slice(0, 3) : [];
-      const applicationItems = results[1].status === "fulfilled" ? results[1].value.applications.slice(0, 4) : [];
+      const applicationItems = role === "member" && results[1].status === "fulfilled" ? results[1].value.applications.slice(0, 4) : [];
       const savedJobs = results[2].status === "fulfilled" ? results[2].value.jobs : [];
       const feedPosts = results[3].status === "fulfilled" ? results[3].value.posts.slice(0, 5) : [];
       const memberResults = results[4].status === "fulfilled" ? results[4].value.members : [];
@@ -208,7 +214,7 @@ export function FeedPage() {
 
   useEffect(() => {
     void loadFeed();
-  }, [userId]);
+  }, [userId, role]);
 
   const applicationSummary = useMemo(() => {
     if (!dashboard?.application_status_breakdown?.length) return [];
@@ -349,8 +355,8 @@ export function FeedPage() {
   return (
     <div className="grid gap-6 lg:grid-cols-[225px_minmax(0,554px)_300px]">
       <Sidebar>
-        <Card className="overflow-hidden p-0">
-          <div className="h-[60px] bg-gradient-to-r from-[#1d4477] to-[#1568bf]" />
+        <Card className="overflow-hidden rounded-2xl border border-[#dde3ea] p-0 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+          <div className="h-[68px] bg-gradient-to-r from-[#1d4477] to-[#1568bf]" />
           <div className="-mt-9 px-4 pb-4">
             <Avatar
               src={profile.profile_photo_url}
@@ -363,32 +369,32 @@ export function FeedPage() {
               className="mt-3 block text-left hover:underline"
               onClick={() => navigate(`/profile/${profile.member_id}`)}
             >
-              <p className="font-semibold">
+              <p className="text-[1.35rem] font-semibold leading-tight text-[#1f1f1f]">
                 {profile.first_name} {profile.last_name}
               </p>
-              <p className="text-sm text-text-secondary">{profile.headline || "Complete your profile headline"}</p>
+              <p className="mt-1 text-sm text-text-secondary">{profile.headline || "Complete your profile headline"}</p>
+              <p className="mt-1 text-sm text-[#5f6368]">
+                {[profile.location_city, profile.location_state, profile.location_country].filter(Boolean).join(", ") || "Location not set"}
+              </p>
             </button>
-            <div className="mt-4 space-y-2 border-t pt-4 text-sm">
+            <div className="mt-4 space-y-2 border-t border-[#e6eaef] pt-4 text-sm">
               <button
                 type="button"
-                className="flex w-full justify-between text-left hover:text-brand"
+                className="flex w-full items-center justify-between text-left font-semibold text-[#444] hover:text-brand"
                 onClick={() => navigate("/dashboard")}
               >
-                <span>Profile views</span>
-                <span>{dashboard?.profile_views_30d ?? 0}</span>
+                <span>Profile viewers</span>
+                <span className="font-semibold text-brand">{dashboard?.profile_views_30d ?? 0}</span>
               </button>
               <button
                 type="button"
-                className="flex w-full justify-between text-left hover:text-brand"
+                className="flex w-full items-center justify-between text-left font-semibold text-[#444] hover:text-brand"
                 onClick={goToConnectionsPage}
               >
                 <span>Connections</span>
-                <span>{profile.connections_count ?? 0}</span>
+                <span className="font-semibold text-brand">{profile.connections_count ?? 0}</span>
               </button>
             </div>
-            <Button fullWidth variant="secondary" className="mt-4" onClick={() => navigate(`/profile/${profile.member_id}`)}>
-              View profile
-            </Button>
           </div>
         </Card>
       </Sidebar>
@@ -564,44 +570,46 @@ export function FeedPage() {
           )}
         </Card>
 
-        <Card>
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Your application updates</h2>
-            <Button variant="ghost" onClick={() => navigate("/applications")}>
-              See all
-            </Button>
-          </div>
-          {applications.length ? (
-            <div className="space-y-3">
-              {applications.map((application) => (
-                <button
-                  key={application.application_id}
-                  type="button"
-                  className="block w-full rounded-card p-3 text-left hover:bg-hover"
-                  onClick={() => navigate("/applications")}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold">{application.job_title || `Application #${application.application_id}`}</p>
-                      <p className="text-sm text-text-secondary">
-                        {application.company_name || "Company"} · {formatRelativeDate(application.application_datetime)}
-                      </p>
-                    </div>
-                    <Badge className={getStatusColor(application.status)}>{application.status}</Badge>
-                  </div>
-                </button>
-              ))}
+        {role === "member" ? (
+          <Card>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Your application updates</h2>
+              <Button variant="ghost" onClick={() => navigate("/applications")}>
+                See all
+              </Button>
             </div>
-          ) : (
-            <EmptyState
-              icon={FileText}
-              title="No applications yet"
-              description="Once you apply to jobs, status updates will appear here."
-              actionLabel="Find jobs"
-              onAction={() => goToJobs()}
-            />
-          )}
-        </Card>
+            {applications.length ? (
+              <div className="space-y-3">
+                {applications.map((application) => (
+                  <button
+                    key={application.application_id}
+                    type="button"
+                    className="block w-full rounded-card p-3 text-left hover:bg-hover"
+                    onClick={() => navigate("/applications")}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{application.job_title || `Application #${application.application_id}`}</p>
+                        <p className="text-sm text-text-secondary">
+                          {application.company_name || "Company"} · {formatRelativeDate(application.application_datetime)}
+                        </p>
+                      </div>
+                      <Badge className={getStatusColor(application.status)}>{application.status}</Badge>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                icon={FileText}
+                title="No applications yet"
+                description="Once you apply to jobs, status updates will appear here."
+                actionLabel="Find jobs"
+                onAction={() => goToJobs()}
+              />
+            )}
+          </Card>
+        ) : null}
       </div>
       <RightSidebar>
         <div className="space-y-4">

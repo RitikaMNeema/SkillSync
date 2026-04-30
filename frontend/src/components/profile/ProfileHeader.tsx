@@ -223,9 +223,9 @@ export function ProfileHeader({
   }
 
   return (
-    <Card className="overflow-hidden p-0">
+    <Card className="overflow-hidden rounded-2xl border border-[#dde3ea] bg-white p-0 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
       <div
-        className="relative z-0 h-[200px] bg-cover bg-center"
+        className="relative z-0 h-[174px] bg-cover bg-center"
         style={{
           backgroundImage: member.cover_photo_url
             ? `linear-gradient(rgba(15,23,42,0.12), rgba(15,23,42,0.12)), url("${member.cover_photo_url}")`
@@ -287,8 +287,8 @@ export function ProfileHeader({
           </div>
         ) : null}
       </div>
-      <div className="relative z-10 -mt-[76px] px-6 pb-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+      <div className="relative z-10 -mt-[62px] px-6 pb-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <Avatar
             src={member.profile_photo_url}
             alt={`${member.first_name} ${member.last_name}`}
@@ -298,13 +298,13 @@ export function ProfileHeader({
             onFileSelected={isOwnProfile && allowMediaEditing ? handlePhoto : undefined}
             uploading={uploading}
           />
-          <div className="hidden md:block md:mt-[84px]">
+          <div className="hidden md:block md:mt-[70px]">
             <AffiliationPills experience={member.experience} education={member.education} />
           </div>
         </div>
-        <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
-            <h1 className="text-2xl font-bold">
+            <h1 className="text-[2rem] font-semibold leading-tight text-[#1f1f1f]">
               {member.first_name} {member.last_name}
             </h1>
             <div className="mt-1 flex items-start gap-2">
@@ -322,7 +322,7 @@ export function ProfileHeader({
                 </button>
               ) : null}
             </div>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-text-secondary">
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[#5f6368]">
               <span className="inline-flex items-center gap-1">
                 <MapPin className="h-4 w-4" />
                 {[member.location_city, member.location_state, member.location_country].filter(Boolean).join(", ") || "Location not set"}
@@ -332,28 +332,35 @@ export function ProfileHeader({
                 Contact info
               </button>
             </div>
-            <p className="mt-1 text-sm font-semibold text-text-secondary">
+            <p className="mt-1 text-sm font-semibold text-[#5f6368]">
               {member.connections_count ?? 0} connections
             </p>
             <div className="mt-3 md:hidden">
               <AffiliationPills experience={member.experience} education={member.education} />
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2 pt-1">
             {isOwnProfile ? (
               <>
-                <OpenToDropdown
-                  value={profileStatus}
-                  onSelect={handleOpenToChange}
-                  disabled={savingOpenTo}
-                />
-                <Button variant="secondary" onClick={() => onAddSection?.()}>
+                <div className="[&>button]:h-10 [&>button]:rounded-full [&>button]:px-4 [&>button]:text-sm [&>button]:font-semibold [&>button]:shadow-none">
+                  <OpenToDropdown
+                    value={profileStatus}
+                    onSelect={handleOpenToChange}
+                    disabled={savingOpenTo}
+                  />
+                </div>
+                <Button
+                  variant="secondary"
+                  className="h-10 rounded-full border-[1.5px] border-[#0a66c2] px-4 text-sm font-semibold text-[#0a66c2] hover:bg-[#eef3f8]"
+                  onClick={() => onAddSection?.()}
+                >
                   Add profile section
                 </Button>
               </>
             ) : (
               <>
                 <Button
+                  className="h-10 rounded-full border-[1.5px] border-[#0a66c2] px-4 text-sm font-semibold"
                   onClick={onConnect}
                   disabled={connectDisabled}
                   onMouseEnter={() => {
@@ -363,7 +370,13 @@ export function ProfileHeader({
                 >
                   {connectLabel === "Pending" && hoveringPendingConnect ? "Withdraw" : connectLabel}
                 </Button>
-                <Button variant="secondary" onClick={onMessage}>Message</Button>
+                <Button
+                  variant="secondary"
+                  className="h-10 rounded-full border-[1.5px] border-[#0a66c2] px-4 text-sm font-semibold text-[#0a66c2] hover:bg-[#eef3f8]"
+                  onClick={onMessage}
+                >
+                  Message
+                </Button>
               </>
             )}
           </div>

@@ -146,10 +146,10 @@ export function ExperienceCard({
   }
 
   return (
-    <Card className="rounded-[22px] border border-[#dde3ea] bg-white p-6 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
+    <Card className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
       {!compact ? (
         <div className="mb-5 flex items-center justify-between gap-4">
-          <h2 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#1f1f1f]">{title}</h2>
+          <h2 className="text-[1.55rem] font-semibold tracking-[-0.02em] text-[#1f1f1f]">{title}</h2>
           <div className="flex items-center gap-2">
             {onAdd ? (
               <button

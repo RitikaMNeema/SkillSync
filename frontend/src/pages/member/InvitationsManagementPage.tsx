@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { acceptConnection, getMutualConnections, listPendingConnections, rejectConnection, withdrawConnection } from "../../api/connections";
 import { getMember } from "../../api/members";
+import { getRecruiter } from "../../api/recruiters";
 import { Button } from "../../components/ui/Button";
 import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
@@ -27,6 +28,40 @@ function mutualCaptionLine(mutuals: MutualConnection[], count: number): string {
   const first = titleCaseFromEmailLocal(mutuals[0].email);
   if (count === 1) return `${first} · 1 mutual connection`;
   return `${first} and ${count - 1} other${count - 1 === 1 ? "" : "s"}`;
+}
+
+async function loadInvitationProfile(userId: number): Promise<{
+  profilePhotoUrl: string | null;
+  name: string;
+  headline: string | null;
+}> {
+  try {
+    const member = await getMember(userId);
+    const fullName = `${member.first_name ?? ""} ${member.last_name ?? ""}`.trim() || "Member";
+    return {
+      profilePhotoUrl: member.profile_photo_url ?? null,
+      name: fullName,
+      headline: member.headline ?? null,
+    };
+  } catch {
+    // Fall through to recruiter profile lookup.
+  }
+
+  try {
+    const recruiter = await getRecruiter(userId);
+    const recruiterName =
+      `${recruiter.first_name ?? ""} ${recruiter.last_name ?? ""}`.trim() ||
+      recruiter.name?.trim() ||
+      recruiter.email ||
+      "Recruiter";
+    return {
+      profilePhotoUrl: recruiter.profile_photo_url ?? null,
+      name: recruiterName,
+      headline: recruiter.headline ?? recruiter.role ?? null,
+    };
+  } catch {
+    return { profilePhotoUrl: null, name: "Member", headline: null };
+  }
 }
 
 export function InvitationsManagementPage() {
@@ -54,13 +89,8 @@ export function InvitationsManagementPage() {
 
     const profileEntries = await Promise.all(
       profileIds.map(async (memberId) => {
-        try {
-          const profile = await getMember(memberId);
-          const fullName = `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() || "Member";
-          return [memberId, { profilePhotoUrl: profile.profile_photo_url ?? null, name: fullName, headline: profile.headline ?? null }] as const;
-        } catch {
-          return [memberId, { profilePhotoUrl: null, name: "Member", headline: null }] as const;
-        }
+        const profile = await loadInvitationProfile(memberId);
+        return [memberId, profile] as const;
       })
     );
     setProfiles(Object.fromEntries(profileEntries));

@@ -1,4 +1,4 @@
-import { BriefcaseBusiness, GraduationCap, Pencil, Plus, Sparkles } from "lucide-react";
+import { BriefcaseBusiness, CircleHelp, Eye, EyeOff, GraduationCap, Lightbulb, Pencil, Plus, Search, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import toast from "react-hot-toast";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -114,7 +114,11 @@ export function ProfilePage() {
   const [pendingIsOutgoing, setPendingIsOutgoing] = useState(false);
   const [sendingConnection, setSendingConnection] = useState(false);
   const [resolvedConnectionsCount, setResolvedConnectionsCount] = useState<number | null>(null);
-  const [activityStats, setActivityStats] = useState<{ profileViews: number; searchAppearances: number } | null>(null);
+  const [activityStats, setActivityStats] = useState<{
+    profileViews: number;
+    searchAppearances: number;
+    profileViewsTrend: number;
+  } | null>(null);
   const [activeModal, setActiveModal] = useState<ProfileActiveModal | null>(null);
   const [skillsListModalOpen, setSkillsListModalOpen] = useState(false);
   const [showAllLanguages, setShowAllLanguages] = useState(false);
@@ -162,9 +166,22 @@ export function ProfilePage() {
     void getMemberDashboard(parsedMemberId)
       .then((dashboard) => {
         if (cancelled) return;
+        const daily = dashboard.profile_views_daily_30d ?? [];
+        let profileViewsTrend = 0;
+        if (daily.length > 0) {
+          const midpoint = Math.floor(daily.length / 2);
+          const previous = daily.slice(0, midpoint).reduce((sum, point) => sum + point.count, 0);
+          const recent = daily.slice(midpoint).reduce((sum, point) => sum + point.count, 0);
+          if (previous <= 0) {
+            profileViewsTrend = recent > 0 ? 100 : 0;
+          } else {
+            profileViewsTrend = ((recent - previous) / previous) * 100;
+          }
+        }
         setActivityStats({
           profileViews: dashboard.profile_views_30d ?? 0,
-          searchAppearances: dashboard.search_appearances_30d ?? 0
+          searchAppearances: dashboard.search_appearances_30d ?? 0,
+          profileViewsTrend
         });
       })
       .catch(() => {
@@ -347,7 +364,12 @@ export function ProfilePage() {
     }
     const loadingToast = toast.loading("Saving language...");
     try {
-      await updateUnifiedProfile({ member_id: member.member_id, languages: nextLanguages }, profileApiRole);
+      try {
+        await updateUnifiedProfile({ member_id: member.member_id, languages: nextLanguages }, profileApiRole);
+      } catch (err) {
+        if (profileApiRole !== "recruiter") throw err;
+        await updateUnifiedProfile({ member_id: member.member_id, languages: nextLanguages }, "member");
+      }
       await loadMemberProfile();
       setActiveModal(null);
       toast.success(editIndex !== undefined ? "Language updated" : "Language added", { id: loadingToast });
@@ -407,7 +429,12 @@ export function ProfilePage() {
     }
     const loadingToast = toast.loading("Saving profile language...");
     try {
-      await updateUnifiedProfile({ member_id: member.member_id, profile_language: value }, profileApiRole);
+      try {
+        await updateUnifiedProfile({ member_id: member.member_id, profile_language: value }, profileApiRole);
+      } catch (err) {
+        if (profileApiRole !== "recruiter") throw err;
+        await updateUnifiedProfile({ member_id: member.member_id, profile_language: value }, "member");
+      }
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Profile language updated", { id: loadingToast });
@@ -667,10 +694,27 @@ export function ProfilePage() {
   const birthdayText = member.birthday
     ? new Date(member.birthday).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })
     : null;
+  const profileViewsValue = activityStats?.profileViews ?? member.profile_views ?? 0;
+  const searchAppearancesValue = activityStats?.searchAppearances ?? 0;
+  const profileViewsTrendValue = activityStats?.profileViewsTrend ?? 0;
+  const searchAppearancesTrendValue = 0;
+  const formatTrend = (value: number) => {
+    if (!Number.isFinite(value) || Math.abs(value) < 0.5) {
+      return { label: "0%", colorClass: "text-[#6b7280]", prefix: "•" as const };
+    }
+    const isPositive = value > 0;
+    return {
+      label: `${Math.abs(value).toFixed(0)}%`,
+      colorClass: isPositive ? "text-[#0f8f58]" : "text-[#b91c1c]",
+      prefix: isPositive ? "▲" as const : "▼" as const
+    };
+  };
+  const profileViewsTrend = formatTrend(profileViewsTrendValue);
+  const searchAppearancesTrend = formatTrend(searchAppearancesTrendValue);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-      <div className="space-y-4 animate-fade-in">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="space-y-3 animate-fade-in">
         <ProfileHeader
           member={headerMember}
           isOwnProfile={isOwnProfile}
@@ -734,9 +778,9 @@ export function ProfilePage() {
           onConnect={() => void handleConnect()}
           onMessage={handleMessage}
         />
-        <Card ref={aboutRef} className="rounded-[22px] border border-[#dde3ea] bg-white p-6 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
+        <Card ref={aboutRef} className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
           <div className="mb-3 flex items-start justify-between gap-3">
-            <h2 className="text-[1.5rem] font-semibold tracking-[-0.03em] text-[#1f1f1f]">About</h2>
+            <h2 className="text-[1.55rem] font-semibold tracking-[-0.02em] text-[#1f1f1f]">About</h2>
             {isOwnProfile ? (
               <button
                 type="button"
@@ -824,9 +868,9 @@ export function ProfilePage() {
             onManageSection={isOwnProfile ? () => navigate(`/profile/${member.member_id}/details/education`) : undefined}
           />
         </div>
-        <Card ref={skillsRef} className="rounded-[22px] border border-[#dde3ea] bg-white p-6 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
+        <Card ref={skillsRef} className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
           <div className="mb-5 flex items-center justify-between gap-4">
-            <h2 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#1f1f1f]">Skills</h2>
+            <h2 className="text-[1.55rem] font-semibold tracking-[-0.02em] text-[#1f1f1f]">Skills</h2>
             {isOwnProfile ? (
               <div className="flex items-center gap-2">
                 <button type="button" aria-label="Add skill" className="rounded-full p-2 text-[#434343] transition hover:bg-[#f3f6f8]" onClick={() => setActiveModal({ type: "skills" })}>
@@ -885,9 +929,9 @@ export function ProfilePage() {
             </button>
           ) : null}
         </Card>
-        <Card className="rounded-[22px] border border-[#dde3ea] bg-white p-6 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
+        <Card className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
           <div className="mb-5 flex items-center justify-between gap-4">
-            <h2 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#1f1f1f]">Languages</h2>
+            <h2 className="text-[1.55rem] font-semibold tracking-[-0.02em] text-[#1f1f1f]">Languages</h2>
             {isOwnProfile ? (
               <div className="flex items-center gap-2">
                 <button
@@ -914,22 +958,12 @@ export function ProfilePage() {
               {visibleLanguages.map((entry, langIndex) => (
                 <div
                   key={`${entry.name}-${entry.proficiency}-${langIndex}`}
-                  className="flex items-start justify-between gap-3 border-t border-[#edf1f4] pt-3 first:border-t-0 first:pt-0"
+                  className="border-t border-[#edf1f4] pt-3 first:border-t-0 first:pt-0"
                 >
                   <div className="min-w-0">
                     <p className="text-[1.2rem] font-semibold text-[#1f1f1f]">{entry.name}</p>
                     <p className="text-sm text-[#555555]">{entry.proficiency}</p>
                   </div>
-                  {isOwnProfile ? (
-                    <button
-                      type="button"
-                      aria-label={`Edit ${entry.name}`}
-                      className="shrink-0 rounded-full p-2 text-[#434343] transition hover:bg-[#f3f6f8]"
-                      onClick={() => setActiveModal({ type: "language", index: langIndex })}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                  ) : null}
                 </div>
               ))}
             </div>
@@ -953,8 +987,8 @@ export function ProfilePage() {
         ) : null}
       </div>
       <RightSidebar>
-        <div className="space-y-4">
-        <Card className="rounded-[22px] border border-[#dde3ea] bg-white p-5 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
+        <div className="space-y-3">
+        <Card className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h3 className="text-lg font-semibold text-[#1f1f1f]">Profile language</h3>
@@ -972,7 +1006,7 @@ export function ProfilePage() {
             ) : null}
           </div>
         </Card>
-        <Card className="rounded-[22px] border border-[#dde3ea] bg-white p-5 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
+        <Card className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h3 className="text-lg font-semibold text-[#1f1f1f]">Public profile & URL</h3>
@@ -990,16 +1024,78 @@ export function ProfilePage() {
             ) : null}
           </div>
         </Card>
-        <Card className="rounded-[22px] border border-[#dde3ea] bg-white p-5 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
-          <h3 className="text-lg font-semibold text-[#1f1f1f]">Activity</h3>
-          <div className="mt-4 space-y-3">
-            <div>
-              <p className="text-2xl font-bold text-[#1f1f1f]">{activityStats?.profileViews ?? member.profile_views ?? 0}</p>
-              <p className="text-sm text-[#666666]">Profile views (last 30 days)</p>
+        <Card className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-[#1f1f1f]">Analytics</h3>
+            <CircleHelp className="h-4 w-4 text-[#6b7280]" />
+          </div>
+          <p className="mt-1 inline-flex items-center gap-1 text-sm text-[#6b7280]">
+            <EyeOff className="h-4 w-4" />
+            Private to you
+          </p>
+          <div className="mt-4 space-y-4">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#eef4fb]">
+                <Eye className="h-5 w-5 text-[#0a66c2]" />
+              </span>
+              <div>
+                <p className="text-2xl font-semibold leading-none text-[#1f1f1f]">{profileViewsValue}</p>
+                <p className="mt-1 text-[1.05rem] text-[#444]">Profile views</p>
+                <p className="text-sm text-[#6b7280]">Last 30 days</p>
+                <p className={`mt-2 text-sm font-semibold ${profileViewsTrend.colorClass}`}>
+                  {profileViewsTrend.prefix} {profileViewsTrend.label}
+                </p>
+              </div>
             </div>
+            <div className="border-t border-[#e6eaef] pt-4">
+              <div className="flex items-start gap-3">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#eaf8ef]">
+                  <Search className="h-5 w-5 text-[#0f8f58]" />
+                </span>
+                <div>
+                  <p className="text-2xl font-semibold leading-none text-[#1f1f1f]">{searchAppearancesValue}</p>
+                  <p className="mt-1 text-[1.05rem] text-[#444]">Search appearances</p>
+                  <p className="text-sm text-[#6b7280]">Last 30 days</p>
+                  <p className={`mt-2 text-sm font-semibold ${searchAppearancesTrend.colorClass}`}>
+                    {searchAppearancesTrend.prefix} {searchAppearancesTrend.label}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="mt-4 text-[1.05rem] font-semibold text-[#0a66c2] hover:underline"
+            onClick={() => navigate("/dashboard")}
+          >
+            View all analytics →
+          </button>
+        </Card>
+        <Card className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-[#1f1f1f]">Suggested for you</h3>
+            <CircleHelp className="h-4 w-4 text-[#6b7280]" />
+          </div>
+          <p className="mt-1 inline-flex items-center gap-1 text-sm text-[#6b7280]">
+            <EyeOff className="h-4 w-4" />
+            Private to you
+          </p>
+          <div className="mt-4 flex items-start gap-3">
+            <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#fff8de]">
+              <Lightbulb className="h-5 w-5 text-[#b08900]" />
+            </span>
             <div>
-              <p className="text-2xl font-bold text-[#1f1f1f]">{activityStats?.searchAppearances ?? 0}</p>
-              <p className="text-sm text-[#666666]">Search appearances (last 30 days)</p>
+              <p className="text-[1.05rem] text-[#444]">
+                Add a summary about your skills and experience to stand out to recruiters.
+              </p>
+              <Button
+                type="button"
+                variant="secondary"
+                className="mt-3 h-10 rounded-full border-[#aeb5bd] px-5 text-[1.05rem] font-semibold text-[#444] hover:bg-[#f3f6f8]"
+                onClick={() => setActiveModal({ type: "about" })}
+              >
+                Add summary
+              </Button>
             </div>
           </div>
         </Card>
