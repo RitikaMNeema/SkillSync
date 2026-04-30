@@ -78,7 +78,7 @@ export function LandingPage() {
             </Link>
             <Link
               to="/register"
-              className="rounded-full border border-brand bg-brand px-6 py-3 text-[1.05rem] font-semibold text-white transition hover:bg-[#005eb8] hover:no-underline"
+              className="rounded-full border border-[#0a66c2] bg-[#0a66c2] px-6 py-3 text-[1.05rem] font-semibold text-white transition hover:bg-[#005eb8] hover:no-underline"
             >
               Join now
             </Link>
@@ -99,7 +99,7 @@ export function LandingPage() {
           <div className="mt-10 flex flex-col gap-4 sm:max-w-[380px]">
             <Link
               to="/register"
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-brand px-7 py-4 text-lg font-semibold text-white transition hover:bg-[#005eb8] hover:no-underline"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0a66c2] px-7 py-4 text-lg font-semibold text-white transition hover:bg-[#005eb8] hover:no-underline"
             >
               Get started
               <ArrowRight className="h-5 w-5" />
@@ -118,7 +118,7 @@ export function LandingPage() {
           </p>
           <p className="mt-8 text-[1.05rem] text-[#393939]">
             New here?{" "}
-            <Link to="/register" className="font-semibold text-brand">
+            <Link to="/register" className="font-semibold text-[#0a66c2]">
               Join now
             </Link>
           </p>
