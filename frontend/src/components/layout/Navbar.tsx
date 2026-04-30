@@ -8,7 +8,6 @@ import {
   LogOut,
   MessageSquare,
   Search,
-  Settings,
   Trash2,
   User,
   Users
@@ -220,14 +219,6 @@ export function Navbar() {
                   >
                     <User className="h-4 w-4 text-brand" />
                     View profile
-                  </Link>
-                  <Link
-                    to={profileMeHref}
-                    className="flex items-center gap-3 rounded-card px-3 py-2 text-sm font-semibold text-text-primary hover:bg-hover hover:no-underline"
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    <Settings className="h-4 w-4 text-brand" />
-                    Settings
                   </Link>
                   {role === "member" ? (
                     <>

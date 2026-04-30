@@ -130,11 +130,10 @@ export function ProfileSectionDetailsPage() {
     if (q === null) return;
     const idx = parseInt(q, 10);
     const langs = member.unstructured?.languages ?? [];
-    if (!Number.isNaN(idx) && idx >= 0 && idx < langs.length) {
-      openedQueryEdit.current = true;
-      setSheet({ kind: "languages", mode: "edit", index: idx });
-      setSearchParams({}, { replace: true });
-    }
+    if (Number.isNaN(idx) || idx < 0 || idx >= langs.length) return;
+    openedQueryEdit.current = true;
+    setSheet({ kind: "languages", mode: "edit", index: idx });
+    setSearchParams({}, { replace: true });
   }, [member, section, searchParams, setSearchParams]);
 
   const backToProfile = useCallback(() => {
@@ -471,7 +470,6 @@ export function ProfileSectionDetailsPage() {
                   <div className="min-w-0">
                     <p className="text-[1.15rem] font-semibold text-[#1f1f1f]">{entry.name}</p>
                     <p className="text-sm text-[#555555]">{entry.proficiency}</p>
-                    {entry.score ? <p className="mt-1 text-sm text-[#6b7280]">{entry.score}</p> : null}
                   </div>
                   <button
                     type="button"

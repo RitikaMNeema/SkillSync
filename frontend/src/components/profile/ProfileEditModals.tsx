@@ -148,7 +148,6 @@ interface SkillFormValues {
 interface LanguageFormValues {
   name: string;
   proficiency: string;
-  score: string;
 }
 
 interface AboutFormValues {
@@ -162,6 +161,19 @@ interface HeadlineFormValues {
 interface ProfileLanguageFormValues {
   profile_language: string;
 }
+
+const SUPPORTED_PROFILE_LANGUAGES = [
+  "English",
+  "Spanish",
+  "French",
+  "German",
+  "Hindi",
+  "Chinese",
+  "Japanese",
+  "Korean",
+  "Portuguese",
+  "Arabic"
+];
 
 interface PublicProfileUrlFormValues {
   profile_slug: string;
@@ -542,8 +554,8 @@ export function AddLanguageModal({
   onDelete
 }: {
   onClose: () => void;
-  onSave: (language: { name: string; proficiency: string; score?: string | null }) => Promise<void>;
-  initialValues?: { name: string; proficiency: string; score?: string | null } | null;
+  onSave: (language: { name: string; proficiency: string }) => Promise<void>;
+  initialValues?: { name: string; proficiency: string } | null;
   onDelete?: (() => Promise<void>) | null;
 }) {
   const isEdit = Boolean(initialValues);
@@ -551,15 +563,13 @@ export function AddLanguageModal({
     mode: "onBlur",
     defaultValues: {
       name: initialValues?.name ?? "",
-      proficiency: initialValues?.proficiency ?? "",
-      score: initialValues?.score ?? ""
+      proficiency: initialValues?.proficiency ?? ""
     }
   });
   useEffect(() => {
     reset({
       name: initialValues?.name ?? "",
-      proficiency: initialValues?.proficiency ?? "",
-      score: initialValues?.score ?? ""
+      proficiency: initialValues?.proficiency ?? ""
     });
   }, [initialValues, reset]);
 
@@ -584,8 +594,7 @@ export function AddLanguageModal({
         onSubmit={handleSubmit(async (values) =>
           onSave({
             name: values.name.trim(),
-            proficiency: values.proficiency,
-            score: values.score.trim() || null
+            proficiency: values.proficiency
           })
         )}
       >
@@ -608,10 +617,6 @@ export function AddLanguageModal({
           {formState.errors.proficiency ? (
             <p className="mt-1 text-sm font-medium text-red-600">{formState.errors.proficiency.message as string}</p>
           ) : null}
-        </div>
-        <div>
-          <FieldLabel>Score or certification (optional)</FieldLabel>
-          <Input {...register("score")} placeholder="e.g. IELTS 8.0" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
         </div>
       </form>
     </ModalShell>
@@ -673,12 +678,12 @@ export function EditProfileLanguageModal({
   initialValue?: string | null;
 }) {
   const { register, handleSubmit, formState } = useForm<ProfileLanguageFormValues>({
-    defaultValues: { profile_language: initialValue ?? "English" }
+    defaultValues: { profile_language: initialValue?.trim() || "English" }
   });
 
   return (
     <ModalShell
-      title="Edit profile language"
+      title="Edit current profile language"
       widthClass="max-w-[760px]"
       onClose={onClose}
       footer={<ModalFooter submitLabel="Save" formId="edit-profile-language-form" disabled={formState.isSubmitting} />}
@@ -688,12 +693,20 @@ export function EditProfileLanguageModal({
         className="space-y-4"
         onSubmit={handleSubmit(async (values) => onSave(values.profile_language.trim()))}
       >
-        <FieldLabel>Profile language</FieldLabel>
-        <Input
-          {...register("profile_language", { required: true, maxLength: 64 })}
-          placeholder="English"
-          className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none"
-        />
+        <p className="text-sm text-[#6b7280]">
+          Choose the language currently used for your profile. This updates the active profile language shown to others.
+        </p>
+        <FieldLabel>Current profile language</FieldLabel>
+        <Select {...register("profile_language", { required: "Choose a language." })}>
+          {SUPPORTED_PROFILE_LANGUAGES.map((language) => (
+            <option key={language} value={language}>
+              {language}
+            </option>
+          ))}
+        </Select>
+        {formState.errors.profile_language ? (
+          <p className="mt-1 text-sm font-medium text-red-600">{formState.errors.profile_language.message as string}</p>
+        ) : null}
       </form>
     </ModalShell>
   );

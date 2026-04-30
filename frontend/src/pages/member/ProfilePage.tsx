@@ -1,7 +1,7 @@
 import { BriefcaseBusiness, GraduationCap, Pencil, Plus, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import toast from "react-hot-toast";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { RightSidebar } from "../../components/layout/Sidebar";
 import {
   AddEducationModal,
@@ -94,6 +94,7 @@ function buildDefaultProfileSlug(firstName: string, lastName: string, memberId: 
 export function ProfilePage() {
   const { member_id } = useParams();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const currentUserId = authStore((state) => state.userId);
   const currentRole = authStore((state) => state.role);
@@ -112,6 +113,7 @@ export function ProfilePage() {
   const [pendingRequestId, setPendingRequestId] = useState<number | null>(null);
   const [pendingIsOutgoing, setPendingIsOutgoing] = useState(false);
   const [sendingConnection, setSendingConnection] = useState(false);
+  const [resolvedConnectionsCount, setResolvedConnectionsCount] = useState<number | null>(null);
   const [activityStats, setActivityStats] = useState<{ profileViews: number; searchAppearances: number } | null>(null);
   const [activeModal, setActiveModal] = useState<ProfileActiveModal | null>(null);
   const [skillsListModalOpen, setSkillsListModalOpen] = useState(false);
@@ -175,16 +177,25 @@ export function ProfilePage() {
   }, [parsedMemberId]);
 
   useEffect(() => {
-    if (!member || !currentUserId || member.member_id === currentUserId) {
+    if (!member || !currentUserId) {
       setConnectionStatus("none");
       setPendingRequestId(null);
       setPendingIsOutgoing(false);
+      setResolvedConnectionsCount(null);
       return;
     }
     let cancelled = false;
     void Promise.all([listConnections(currentUserId), listPendingConnections(currentUserId)])
       .then(([connections, pending]) => {
         if (cancelled) return;
+        if (member.member_id === currentUserId) {
+          setResolvedConnectionsCount(connections.length);
+          setConnectionStatus("none");
+          setPendingRequestId(null);
+          setPendingIsOutgoing(false);
+          return;
+        }
+        setResolvedConnectionsCount(null);
         const isConnected = connections.some((entry) => entry.connected_user_id === member.member_id);
         if (isConnected) {
           setConnectionStatus("connected");
@@ -209,6 +220,7 @@ export function ProfilePage() {
       })
       .catch(() => {
         if (cancelled) return;
+        setResolvedConnectionsCount(null);
         setConnectionStatus("none");
         setPendingRequestId(null);
         setPendingIsOutgoing(false);
@@ -216,7 +228,7 @@ export function ProfilePage() {
     return () => {
       cancelled = true;
     };
-  }, [member, currentUserId]);
+  }, [member, currentUserId, location.key]);
 
   async function handleConnect() {
     if (!member || !currentUserId || member.member_id === currentUserId) return;
@@ -615,6 +627,10 @@ export function ProfilePage() {
   if (error || !member) return <Alert message={error || "Profile not found"} />;
 
   const isOwnProfile = member.member_id === currentUserId;
+  const headerMember =
+    isOwnProfile && resolvedConnectionsCount !== null
+      ? { ...member, connections_count: resolvedConnectionsCount }
+      : member;
   const showExperiencePrompt = isOwnProfile && !member.experience?.length && !dismissedCards.experience;
   const showEducationPrompt = isOwnProfile && !member.education?.length && !dismissedCards.education;
   const showSkillsPrompt = isOwnProfile && !member.skills?.length && !dismissedCards.skills;
@@ -656,7 +672,7 @@ export function ProfilePage() {
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
       <div className="space-y-4 animate-fade-in">
         <ProfileHeader
-          member={member}
+          member={headerMember}
           isOwnProfile={isOwnProfile}
           allowMediaEditing
           onProfilePhotoUpload={
@@ -874,7 +890,12 @@ export function ProfilePage() {
             <h2 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#1f1f1f]">Languages</h2>
             {isOwnProfile ? (
               <div className="flex items-center gap-2">
-                <button type="button" aria-label="Add language" className="rounded-full p-2 text-[#434343] transition hover:bg-[#f3f6f8]" onClick={() => setActiveModal({ type: "language" })}>
+                <button
+                  type="button"
+                  aria-label="Add language"
+                  className="rounded-full p-2 text-[#434343] transition hover:bg-[#f3f6f8]"
+                  onClick={() => setActiveModal({ type: "language" })}
+                >
                   <Plus className="h-6 w-6" />
                 </button>
                 <button
@@ -893,10 +914,22 @@ export function ProfilePage() {
               {visibleLanguages.map((entry, langIndex) => (
                 <div
                   key={`${entry.name}-${entry.proficiency}-${langIndex}`}
-                  className="border-t border-[#edf1f4] pt-3 first:border-t-0 first:pt-0"
+                  className="flex items-start justify-between gap-3 border-t border-[#edf1f4] pt-3 first:border-t-0 first:pt-0"
                 >
-                  <p className="text-[1.2rem] font-semibold text-[#1f1f1f]">{entry.name}</p>
-                  <p className="text-sm text-[#555555]">{entry.proficiency}</p>
+                  <div className="min-w-0">
+                    <p className="text-[1.2rem] font-semibold text-[#1f1f1f]">{entry.name}</p>
+                    <p className="text-sm text-[#555555]">{entry.proficiency}</p>
+                  </div>
+                  {isOwnProfile ? (
+                    <button
+                      type="button"
+                      aria-label={`Edit ${entry.name}`}
+                      className="shrink-0 rounded-full p-2 text-[#434343] transition hover:bg-[#f3f6f8]"
+                      onClick={() => setActiveModal({ type: "language", index: langIndex })}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -1046,7 +1079,18 @@ export function ProfilePage() {
           }
         />
       ) : null}
-      {activeModal?.type === "language" ? <AddLanguageModal onClose={() => setActiveModal(null)} onSave={saveLanguage} /> : null}
+      {activeModal?.type === "language" ? (
+        <AddLanguageModal
+          onClose={() => setActiveModal(null)}
+          onSave={(lang) =>
+            saveLanguage(
+              lang,
+              activeModal.index !== undefined && activeModal.type === "language" ? activeModal.index : undefined
+            )
+          }
+          initialValues={activeModal.index !== undefined ? member.unstructured?.languages?.[activeModal.index] ?? null : null}
+        />
+      ) : null}
       {activeModal?.type === "about" ? (
         <EditAboutModal
           onClose={() => setActiveModal(null)}
