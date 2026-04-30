@@ -38,7 +38,6 @@ export interface EducationEntry {
 export interface LanguageEntry {
   name: string;
   proficiency: string;
-  score?: string | null;
 }
 
 export interface MemberProfile {
