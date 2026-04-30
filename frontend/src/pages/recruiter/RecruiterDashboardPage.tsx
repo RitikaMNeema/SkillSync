@@ -179,8 +179,7 @@ export function RecruiterDashboardPage() {
         setLoading(false);
         setBootstrapped(true);
       });
-  // bootstrapped intentionally excluded: it's set inside this effect and must not retrigger it
-  }, [recruiterId, selectedMonthStart, savedPeriod, selectedGeoJobId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [recruiterId, selectedMonthStart, savedPeriod, selectedGeoJobId]);
 
   if (loading) {
     return (
@@ -200,6 +199,13 @@ export function RecruiterDashboardPage() {
             <p className="text-sm text-text-secondary">Recruiter dashboard for {monthWindowLabel}</p>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="rounded-md border border-[#0a66c2] px-3 py-2 text-xs font-semibold text-[#0a66c2] hover:bg-[#eef5fc]"
+              onClick={() => navigate("/ai-test/1")}
+            >
+              Open AI Hiring
+            </button>
             <input
               type="month"
               className="linkedin-input h-9 px-3 text-sm"
@@ -221,13 +227,16 @@ export function RecruiterDashboardPage() {
           </div>
         </div>
       </div>
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard title="Active Jobs" value={activeJobsCount} subtitle="Open postings" icon={FileText} onClick={() => navigate("/recruiter/jobs?focus=active")} />
         <StatCard title="Applications Submitted" value={stats["application.submitted"] ?? 0} subtitle={`In ${monthWindowLabel}`} icon={Users} onClick={() => navigate("/recruiter/jobs?focus=applicants")} />
         <StatCard title="Saved Job Events" value={savesTotal} subtitle={`${savedPeriod === "day" ? "Daily" : "Weekly"} in ${monthWindowLabel}`} icon={CalendarDays} onClick={() => navigate("/recruiter/jobs?focus=new")} />
         <StatCard title="Status Updates" value={stats["application.statusChanged"] ?? 0} subtitle={`In ${monthWindowLabel}`} icon={Users} onClick={() => navigate("/recruiter/jobs?focus=pending")} />
       </div>
+
       <div className={sectionLabelClass}>Application Performance</div>
+
       <div className="grid gap-4 xl:grid-cols-2">
         <ChartCard className="h-full" title="Top job postings (up to 10)" action={<span className="text-xs text-text-secondary">Window: {monthWindowLabel}</span>}>
           <div className="h-72">
@@ -254,6 +263,7 @@ export function RecruiterDashboardPage() {
             )}
           </div>
         </ChartCard>
+
         <ChartCard className="h-full" title="Lowest applicant jobs (up to 5)" action={<span className="text-xs text-text-secondary">Window: {monthWindowLabel}</span>}>
           <div className="h-72">
             {lowTraction.length ? (
@@ -280,7 +290,9 @@ export function RecruiterDashboardPage() {
           </div>
         </ChartCard>
       </div>
+
       <div className={sectionLabelClass}>Engagement Signals</div>
+
       <div className="grid gap-4 xl:grid-cols-2">
         <ChartCard className="h-full" title="Clicks per posting" action={<span className="text-xs text-text-secondary">Window: {monthWindowLabel}</span>}>
           <div className="h-72">
@@ -299,6 +311,7 @@ export function RecruiterDashboardPage() {
             )}
           </div>
         </ChartCard>
+
         <ChartCard
           className="h-full"
           title="Saved jobs trend"
@@ -337,7 +350,9 @@ export function RecruiterDashboardPage() {
           </div>
         </ChartCard>
       </div>
+
       <div className={sectionLabelClass}>Geo Breakdown</div>
+
       <ChartCard
         className="h-full"
         title="City-wise applications"
@@ -386,5 +401,5 @@ export function RecruiterDashboardPage() {
         </div>
       </ChartCard>
     </section>
-  );
+    );
 }
