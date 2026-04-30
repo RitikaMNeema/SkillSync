@@ -1,7 +1,7 @@
 import { getMember, updateMember } from "../api/members";
 import { getRecruiter, updateRecruiter } from "../api/recruiters";
 import type { UserRole } from "../types/common";
-import type { MemberProfile } from "../types/member";
+import type { MemberProfile, MemberProfileUpdateInput } from "../types/member";
 import type { RecruiterProfile } from "../types/recruiter";
 
 function splitName(name: string | null | undefined): { firstName: string; lastName: string } {
@@ -71,7 +71,7 @@ export function mapRecruiterToMemberProfile(recruiter: RecruiterProfile): Member
   };
 }
 
-function mapMemberPatchToRecruiterPatch(patch: Partial<MemberProfile> & { member_id: number }) {
+function mapMemberPatchToRecruiterPatch(patch: MemberProfileUpdateInput) {
   return {
     recruiter_id: patch.member_id,
     first_name: patch.first_name,
@@ -92,8 +92,8 @@ function mapMemberPatchToRecruiterPatch(patch: Partial<MemberProfile> & { member
     education: patch.education,
     skills: patch.skills,
     about: patch.about,
-    languages: patch.languages,
-    followed_skills: patch.followed_skills
+    languages: patch.languages ?? patch.unstructured?.languages,
+    followed_skills: patch.followed_skills ?? patch.unstructured?.followed_skills
   };
 }
 
@@ -105,10 +105,7 @@ export async function getUnifiedProfile(id: number, role: UserRole | null): Prom
   return getMember(id);
 }
 
-export async function updateUnifiedProfile(
-  patch: Partial<MemberProfile> & { member_id: number },
-  role: UserRole | null
-): Promise<void> {
+export async function updateUnifiedProfile(patch: MemberProfileUpdateInput, role: UserRole | null): Promise<void> {
   if (role === "recruiter") {
     await updateRecruiter(mapMemberPatchToRecruiterPatch(patch));
     return;

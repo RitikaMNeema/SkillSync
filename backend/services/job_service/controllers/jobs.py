@@ -122,8 +122,12 @@ async def track_view(job_id: int, viewer_id) -> dict:
     return {"job_id": job_id, "tracked": True}
 
 
+def _is_recruiter(actor: dict) -> bool:
+    return str(actor.get("role", "")).lower() == "recruiter"
+
+
 async def enqueue_create(body: dict, actor: dict) -> dict:
-    if actor.get("role") != "recruiter":
+    if not _is_recruiter(actor):
         raise HTTPException(403, "Only recruiters can create jobs")
     if str(body.get("recruiter_id")) != str(actor["user_id"]):
         raise HTTPException(403, "Not authorized to create postings for another recruiter")
@@ -131,31 +135,35 @@ async def enqueue_create(body: dict, actor: dict) -> dict:
 
 
 async def enqueue_update(job_id: int, fields: dict, actor: dict) -> dict:
-    if actor.get("role") != "recruiter":
+    if not _is_recruiter(actor):
         raise HTTPException(403, "Only recruiters can update jobs")
     return await enqueue_job_command("update", actor, {"job_id": job_id, "fields": fields})
 
 
 async def enqueue_close(job_id: int, actor: dict) -> dict:
-    if actor.get("role") != "recruiter":
+    if not _is_recruiter(actor):
         raise HTTPException(403, "Only recruiters can close jobs")
     return await enqueue_job_command("close", actor, {"job_id": job_id})
 
 
 async def enqueue_delete(job_id: int, actor: dict) -> dict:
-    if actor.get("role") != "recruiter":
+    if not _is_recruiter(actor):
         raise HTTPException(403, "Only recruiters can delete jobs")
     return await enqueue_job_command("delete", actor, {"job_id": job_id})
 
 
+def _is_member(actor: dict) -> bool:
+    return str(actor.get("role", "")).lower() == "member"
+
+
 async def enqueue_save(member_id: int, job_id: int, actor: dict) -> dict:
-    if actor.get("role") != "member" or str(actor["user_id"]) != str(member_id):
+    if not _is_member(actor) or str(actor["user_id"]) != str(member_id):
         raise HTTPException(403, "Members may only save jobs for themselves")
     return await enqueue_job_command("save", actor, {"member_id": member_id, "job_id": job_id})
 
 
 async def enqueue_unsave(member_id: int, job_id: int, actor: dict) -> dict:
-    if actor.get("role") != "member" or str(actor["user_id"]) != str(member_id):
+    if not _is_member(actor) or str(actor["user_id"]) != str(member_id):
         raise HTTPException(403, "Members may only unsave jobs for themselves")
     return await enqueue_job_command("unsave", actor, {"member_id": member_id, "job_id": job_id})
 

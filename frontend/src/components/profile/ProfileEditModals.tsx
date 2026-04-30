@@ -316,20 +316,36 @@ export function SkillFormModal({
       widthClass="max-w-[1180px]"
       onClose={onClose}
       footer={
-        <ModalFooter
-          onDelete={
-            mode === "edit" && onDelete
-              ? () => {
+        <div className="flex w-full items-center justify-between gap-4">
+          <div>
+            {mode === "edit" && onDelete ? (
+              <button
+                type="button"
+                className="text-[1.05rem] font-semibold text-[#4b4b4b] transition hover:text-[#1f1f1f] disabled:pointer-events-none disabled:opacity-50"
+                disabled={saveDisabled}
+                onClick={() => {
                   setDeleting(true);
                   void Promise.resolve(onDelete()).finally(() => setDeleting(false));
-                }
-              : undefined
-          }
-          deleteText="Delete skill"
-          submitLabel="Save"
-          formId={formId}
-          disabled={saveDisabled}
-        />
+                }}
+              >
+                Delete skill
+              </button>
+            ) : null}
+          </div>
+          <Button
+            type="button"
+            disabled={saveDisabled}
+            className="rounded-full px-7 py-2.5 text-[1.05rem] font-semibold"
+            onClick={() => {
+              const node = typeof document !== "undefined" ? document.getElementById(formId) : null;
+              if (node instanceof HTMLFormElement) {
+                node.requestSubmit();
+              }
+            }}
+          >
+            Save
+          </Button>
+        </div>
       }
     >
       <form id={formId} className="space-y-8" onSubmit={onFormSubmit}>
@@ -532,6 +548,7 @@ export function AddLanguageModal({
 }) {
   const isEdit = Boolean(initialValues);
   const { register, handleSubmit, formState, reset } = useForm<LanguageFormValues>({
+    mode: "onBlur",
     defaultValues: {
       name: initialValues?.name ?? "",
       proficiency: initialValues?.proficiency ?? "",
@@ -576,10 +593,11 @@ export function AddLanguageModal({
         <div>
           <FieldLabel>Language*</FieldLabel>
           <Input {...register("name", { required: true })} className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
+          {formState.errors.name ? <p className="mt-1 text-sm font-medium text-red-600">Language name is required.</p> : null}
         </div>
         <div>
           <FieldLabel>Proficiency level</FieldLabel>
-          <Select {...register("proficiency", { required: true })}>
+          <Select {...register("proficiency", { required: "Choose a proficiency level." })}>
             <option value="">Select proficiency</option>
             <option value="Elementary proficiency">Elementary proficiency</option>
             <option value="Limited working proficiency">Limited working proficiency</option>
@@ -587,6 +605,9 @@ export function AddLanguageModal({
             <option value="Full professional proficiency">Full professional proficiency</option>
             <option value="Native or bilingual proficiency">Native or bilingual proficiency</option>
           </Select>
+          {formState.errors.proficiency ? (
+            <p className="mt-1 text-sm font-medium text-red-600">{formState.errors.proficiency.message as string}</p>
+          ) : null}
         </div>
         <div>
           <FieldLabel>Score or certification (optional)</FieldLabel>

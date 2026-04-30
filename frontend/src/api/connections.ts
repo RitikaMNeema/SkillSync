@@ -30,6 +30,14 @@ export async function rejectConnection(request_id: number) {
   );
 }
 
+export async function withdrawConnection(request_id: number) {
+  const response = await api.post<ApiResponse<{ request_id: number; status: "withdrawn" }>>("/connections/withdraw", { request_id });
+  return resolveCommandResult<{ request_id: number; status: "withdrawn" }>(
+    response.data.data,
+    "/connections/commandStatus"
+  );
+}
+
 export async function listConnections(user_id: number) {
   const response = await api.post<ApiResponse<Connection[]>>("/connections/list", { user_id });
   return response.data.data;
@@ -51,4 +59,9 @@ export async function getMutualConnections(user_id_1: number, user_id_2: number)
 export async function removeConnection(user_id_1: number, user_id_2: number) {
   const response = await api.post<ApiResponse<{ removed: boolean }>>("/connections/remove", { user_id_1, user_id_2 });
   return resolveCommandResult<{ removed: boolean }>(response.data.data, "/connections/commandStatus");
+}
+
+export async function blockConnection(blocker_id: number, blocked_id: number) {
+  const response = await api.post<ApiResponse<{ blocked: boolean }>>("/connections/block", { blocker_id, blocked_id });
+  return response.data.data;
 }
