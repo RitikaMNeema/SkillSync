@@ -86,6 +86,8 @@ export function RecruiterDashboardPage() {
     const label = getJobLabel(value);
     return label.length > 14 ? `${label.slice(0, 14)}...` : label;
   };
+  const verticalBarsMargin = { left: 8, right: 20, top: 8, bottom: 8 };
+  const verticalBarsYAxisWidth = 186;
   const sectionLabelClass = "px-1 text-xs font-semibold uppercase tracking-wide text-text-tertiary";
   const topChartRows = useMemo(() => toPostingChartRows(topJobs), [topJobs, jobNameById]);
   const lowChartRows = useMemo(() => toPostingChartRows(lowTraction), [lowTraction, jobNameById]);
@@ -242,10 +244,18 @@ export function RecruiterDashboardPage() {
           <div className="h-72">
             {topJobs.length ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={topChartRows} layout="vertical" margin={{ left: 12, right: 18, top: 6, bottom: 6 }}>
+                <BarChart data={topChartRows} layout="vertical" margin={verticalBarsMargin} barSize={24} barCategoryGap={16}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#eef1f4" />
-                  <XAxis type="number" />
-                  <YAxis type="category" dataKey="axisLabel" width={220} tick={{ fontSize: 12 }} />
+                  <XAxis type="number" axisLine={false} tickLine={false} />
+                  <YAxis
+                    type="category"
+                    dataKey="axisLabel"
+                    width={verticalBarsYAxisWidth}
+                    tick={{ fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickMargin={8}
+                  />
                   <Tooltip
                     labelFormatter={(_, payload) => {
                       const row = payload?.[0]?.payload as { fullTitle?: string } | undefined;
@@ -268,10 +278,18 @@ export function RecruiterDashboardPage() {
           <div className="h-72">
             {lowTraction.length ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={lowChartRows} layout="vertical" margin={{ left: 12, right: 18, top: 6, bottom: 6 }}>
+                <BarChart data={lowChartRows} layout="vertical" margin={verticalBarsMargin} barSize={24} barCategoryGap={16}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#eef1f4" />
-                  <XAxis type="number" />
-                  <YAxis type="category" dataKey="axisLabel" width={220} tick={{ fontSize: 12 }} />
+                  <XAxis type="number" axisLine={false} tickLine={false} />
+                  <YAxis
+                    type="category"
+                    dataKey="axisLabel"
+                    width={verticalBarsYAxisWidth}
+                    tick={{ fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickMargin={8}
+                  />
                   <Tooltip
                     labelFormatter={(_, payload) => {
                       const row = payload?.[0]?.payload as { fullTitle?: string } | undefined;

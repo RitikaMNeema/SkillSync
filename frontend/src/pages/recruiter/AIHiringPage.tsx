@@ -11,23 +11,23 @@ import {
 } from "../../api/ai";
 import { authStore } from "../../context/AuthContext";
 
-const demoCandidateJson = `{
-  "member_id": 101,
-  "headline": "Backend Engineer",
-  "summary": "Experienced in FastAPI, Kafka, Redis, Docker, and distributed systems.",
-  "skills": ["Python", "FastAPI", "Kafka", "Redis", "Docker"],
-  "experiences": ["Built event-driven backend systems", "Worked on microservices"],
-  "location": "San Jose",
-  "education": ["B.Tech Computer Science"]
+const emptyCandidateJson = `{
+  "member_id": 0,
+  "headline": "",
+  "summary": "",
+  "skills": [],
+  "experiences": [],
+  "location": "",
+  "education": []
 }`;
 
-const demoJobJson = `{
-  "title": "Backend Engineer",
-  "description": "Build scalable microservices and event-driven systems",
-  "skills_required": ["Python", "Kafka", "Docker", "Redis"],
-  "location": "San Jose",
-  "seniority_level": "Mid",
-  "employment_type": "Full-time"
+const emptyJobJson = `{
+  "title": "",
+  "description": "",
+  "skills_required": [],
+  "location": "",
+  "seniority_level": "",
+  "employment_type": ""
 }`;
 
 function getStepData(traceStatus: any, stepName: string) {
@@ -40,8 +40,8 @@ export function AIHiringPage() {
   const { job_id } = useParams();
   const recruiterId = authStore((state) => state.userId);
 
-  const [candidateJson, setCandidateJson] = useState(demoCandidateJson);
-  const [jobJson, setJobJson] = useState(demoJobJson);
+  const [candidateJson, setCandidateJson] = useState(emptyCandidateJson);
+  const [jobJson, setJobJson] = useState(emptyJobJson);
 
   const [loading, setLoading] = useState(false);
 
@@ -164,6 +164,10 @@ export function AIHiringPage() {
       job = { ...JSON.parse(jobJson), job_id: Number(job_id) };
     } catch {
       toast.error("Invalid candidate/job JSON");
+      return;
+    }
+    if (!candidate?.member_id || !job?.title) {
+      toast.error("Candidate member_id and job title are required");
       return;
     }
 
