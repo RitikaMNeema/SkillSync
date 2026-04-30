@@ -34,7 +34,9 @@ interface JobFormValues {
   company_id: number;
   title: string;
   work_mode: "remote" | "hybrid" | "onsite";
-  description: string;
+  about_job: string;
+  responsibilities: string;
+  qualifications: string;
   seniority_level: string;
   employment_type: string;
   location: string;
@@ -77,6 +79,44 @@ function haystackMatchesSearchTokens(searchableLower: string, phrase: string): b
   return tokens.every((token) => searchableLower.includes(token));
 }
 
+function parseDescriptionSections(description: string | null | undefined): {
+  about_job: string;
+  responsibilities: string;
+  qualifications: string;
+} {
+  const text = (description ?? "").trim();
+  if (!text) return { about_job: "", responsibilities: "", qualifications: "" };
+
+  const responsibilitiesMatch = /\bResponsibilities\b/i.exec(text);
+  const qualificationsMatch = /\bQualifications\b/i.exec(text);
+
+  if (!responsibilitiesMatch && !qualificationsMatch) {
+    return { about_job: text, responsibilities: "", qualifications: "" };
+  }
+
+  const respIndex = responsibilitiesMatch?.index ?? -1;
+  const qualIndex = qualificationsMatch?.index ?? -1;
+  const firstSectionIndex = [respIndex, qualIndex].filter((idx) => idx >= 0).sort((a, b) => a - b)[0] ?? text.length;
+  const about = text.slice(0, firstSectionIndex).replace(/^About the job\s*/i, "").trim();
+
+  let responsibilities = "";
+  if (respIndex >= 0) {
+    const end = qualIndex > respIndex ? qualIndex : text.length;
+    responsibilities = text.slice(respIndex, end).replace(/^Responsibilities\s*/i, "").trim();
+  }
+
+  let qualifications = "";
+  if (qualIndex >= 0) {
+    qualifications = text.slice(qualIndex).replace(/^Qualifications\s*/i, "").trim();
+  }
+
+  return {
+    about_job: about,
+    responsibilities,
+    qualifications
+  };
+}
+
 export function JobManagementPage() {
   const navigate = useNavigate();
   const recruiterId = authStore((state) => state.userId);
@@ -117,14 +157,18 @@ export function JobManagementPage() {
       title: "",
       employment_type: "",
       location: "",
-      description: "",
+      about_job: "",
+      responsibilities: "",
+      qualifications: "",
       skills_required: "",
       salary_min: 0,
       salary_max: 0
     }
   });
   const { isSubmitting } = formState;
-  const watchedDescription = watch("description") ?? "";
+  const watchedAbout = watch("about_job") ?? "";
+  const watchedResponsibilities = watch("responsibilities") ?? "";
+  const watchedQualifications = watch("qualifications") ?? "";
   const watchedSkills = watch("skills_required");
 
   useEffect(() => {
@@ -336,8 +380,8 @@ export function JobManagementPage() {
   }
 
   function validateStepThree() {
-    if (!getValues("description")?.trim()) {
-      toast.error("Please add a job description.");
+    if (!getValues("about_job")?.trim() || !getValues("responsibilities")?.trim() || !getValues("qualifications")?.trim()) {
+      toast.error("Please complete About the job, Responsibilities, and Qualifications.");
       return false;
     }
     return true;
@@ -360,7 +404,9 @@ export function JobManagementPage() {
       title: "",
       employment_type: "",
       location: "",
-      description: "",
+      about_job: "",
+      responsibilities: "",
+      qualifications: "",
       skills_required: "",
       salary_min: 0,
       salary_max: 0
@@ -390,13 +436,15 @@ export function JobManagementPage() {
     const title = (values.title ?? "").trim();
     const employmentType = (values.employment_type ?? "").trim();
     const location = (values.location ?? "").trim();
-    const description = (values.description ?? "").trim();
+    const aboutJob = (values.about_job ?? "").trim();
+    const responsibilities = (values.responsibilities ?? "").trim();
+    const qualifications = (values.qualifications ?? "").trim();
     let salaryMin = Number(values.salary_min);
     let salaryMax = Number(values.salary_max);
     if (!Number.isFinite(salaryMin)) salaryMin = 0;
     if (!Number.isFinite(salaryMax)) salaryMax = 0;
-    if (!title || !employmentType || !location || !description) {
-      toast.error("Please fill title, employment type, location and description.");
+    if (!title || !employmentType || !location || !aboutJob || !responsibilities || !qualifications) {
+      toast.error("Please fill title, employment type, location, and all three description fields.");
       return;
     }
     const workMode =
@@ -410,7 +458,9 @@ export function JobManagementPage() {
     const loadingToast = toast.loading(editingJob ? "Updating job..." : "Posting job...");
     try {
       const enrichedDescriptionSections = [
-        description,
+        `About the job\n${aboutJob}`,
+        `Responsibilities\n${responsibilities}`,
+        `Qualifications\n${qualifications}`,
         additionalCompensation.length ? `Additional compensation: ${additionalCompensation.join(", ")}` : "",
         benefits.length ? `Benefits: ${benefits.join(", ")}` : "",
         `Visible to job seekers: ${visibleToSeekers ? "Yes" : "No"}`
@@ -466,6 +516,7 @@ export function JobManagementPage() {
   function handleEditJob(job: Job) {
     setEditingJob(job);
     resetWizardExtras();
+    const parsedSections = parseDescriptionSections(job.description ?? "");
     reset({
       company_id: job.company_id ?? 1,
       title: job.title,
@@ -476,7 +527,9 @@ export function JobManagementPage() {
       salary_min: Number(job.salary_min ?? 0),
       salary_max: Number(job.salary_max ?? 0),
       skills_required: Array.isArray(job.skills_required) ? job.skills_required.join(", ") : "",
-      description: job.description ?? ""
+      about_job: parsedSections.about_job,
+      responsibilities: parsedSections.responsibilities,
+      qualifications: parsedSections.qualifications
     });
     setPostedSuccess(false);
     setCurrentStep(1);
@@ -942,12 +995,36 @@ export function JobManagementPage() {
                   <div className="space-y-4">
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900">Description</h3>
-                      <p className="text-sm text-gray-500">Provide a clear overview of the role and what you&apos;re looking for.</p>
+                      <p className="text-sm text-gray-500">Fill all three sections to structure the posting clearly.</p>
                     </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-semibold text-gray-700">* Job description</label>
-                      <Textarea {...register("description")} className="min-h-[160px]" placeholder="Describe responsibilities, expectations, and impact." />
-                      <p className="mt-1 text-right text-xs text-gray-400">{watchedDescription.length}/5000</p>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold text-gray-700">* About the job</label>
+                        <Textarea
+                          {...register("about_job")}
+                          className="min-h-[160px]"
+                          placeholder="Provide a clear overview of the role and what you're looking for."
+                        />
+                        <p className="mt-1 text-right text-xs text-gray-400">{watchedAbout.length}/5000</p>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold text-gray-700">* Responsibilities</label>
+                        <Textarea
+                          {...register("responsibilities")}
+                          className="min-h-[160px]"
+                          placeholder="List day-to-day responsibilities."
+                        />
+                        <p className="mt-1 text-right text-xs text-gray-400">{watchedResponsibilities.length}/5000</p>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold text-gray-700">* Qualifications</label>
+                        <Textarea
+                          {...register("qualifications")}
+                          className="min-h-[160px]"
+                          placeholder="List required skills and qualifications."
+                        />
+                        <p className="mt-1 text-right text-xs text-gray-400">{watchedQualifications.length}/5000</p>
+                      </div>
                     </div>
                     <div>
                       <label className="mb-1 block text-xs font-semibold text-gray-700">Skills (optional)</label>
@@ -1060,12 +1137,24 @@ export function JobManagementPage() {
                           </button>
                         </div>
                         <p className="text-sm text-gray-600">
-                          Job description:{" "}
-                          {showFullDescription || watchedDescription.length < 220
-                            ? watchedDescription || "-"
-                            : `${watchedDescription.slice(0, 220)}...`}
+                          About the job:{" "}
+                          {showFullDescription || watchedAbout.length < 180
+                            ? watchedAbout || "-"
+                            : `${watchedAbout.slice(0, 180)}...`}
                         </p>
-                        {watchedDescription.length >= 220 ? (
+                        <p className="text-sm text-gray-600">
+                          Responsibilities:{" "}
+                          {showFullDescription || watchedResponsibilities.length < 180
+                            ? watchedResponsibilities || "-"
+                            : `${watchedResponsibilities.slice(0, 180)}...`}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          Qualifications:{" "}
+                          {showFullDescription || watchedQualifications.length < 180
+                            ? watchedQualifications || "-"
+                            : `${watchedQualifications.slice(0, 180)}...`}
+                        </p>
+                        {watchedAbout.length >= 180 || watchedResponsibilities.length >= 180 || watchedQualifications.length >= 180 ? (
                           <button type="button" className="text-xs font-semibold text-[#0A66C2]" onClick={() => setShowFullDescription((value) => !value)}>
                             {showFullDescription ? "Show less" : "Show more"}
                           </button>
