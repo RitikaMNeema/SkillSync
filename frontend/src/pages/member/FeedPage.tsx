@@ -14,7 +14,7 @@ import {
 import toast from "react-hot-toast";
 import { getMemberDashboard, getTopJobs } from "../../api/analytics";
 import { getApplicationsByMember } from "../../api/applications";
-import { getMutualConnections, listConnections, listPendingConnections, requestConnection } from "../../api/connections";
+import { getMutualConnections, listConnections, listPendingConnections, requestConnection, withdrawConnection } from "../../api/connections";
 import { getSavedJobs, getJob, saveJob, searchJobs, unsaveJob } from "../../api/jobs";
 import { createMember, getMember, searchMembers } from "../../api/members";
 import { createPost, getFeedPosts, uploadPostImage } from "../../api/posts";
@@ -39,6 +39,7 @@ import type { RecruiterProfile } from "../../types/recruiter";
 import { formatRelativeDate } from "../../utils/formatDate";
 import { getApiErrorMessage, getHttpStatus } from "../../utils/getApiErrorMessage";
 import { getStatusColor } from "../../utils/getStatusColor";
+import type { PendingConnection } from "../../types/connection";
 
 const composerActions: Array<{ type: PostType; label: string; icon: typeof Image }> = [
   { type: "photo", label: "Photo", icon: Image },
@@ -47,6 +48,31 @@ const composerActions: Array<{ type: PostType; label: string; icon: typeof Image
 
 function currentMonthKey() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function pendingCounterpartyId(request: PendingConnection, userId: number): number {
+  const direction =
+    request.direction ??
+    (request.requester_id === userId ? "outgoing" : "incoming");
+  return direction === "incoming" ? request.requester_id : request.receiver_id;
+}
+
+function outgoingPendingIndex(pendingRequests: PendingConnection[], userId: number): {
+  ids: number[];
+  requestIdsByMember: Record<number, number>;
+} {
+  const outgoing = pendingRequests.filter((request) => {
+    const direction =
+      request.direction ??
+      (request.requester_id === userId ? "outgoing" : "incoming");
+    return direction === "outgoing";
+  });
+  return {
+    ids: outgoing.map((request) => pendingCounterpartyId(request, userId)),
+    requestIdsByMember: Object.fromEntries(
+      outgoing.map((request) => [pendingCounterpartyId(request, userId), request.id] as const)
+    )
+  };
 }
 
 export function FeedPage() {
@@ -62,6 +88,9 @@ export function FeedPage() {
   const [dashboard, setDashboard] = useState<MemberDashboard | null>(null);
   const [trendingJobs, setTrendingJobs] = useState<Job[]>([]);
   const [pendingConnectionIds, setPendingConnectionIds] = useState<number[]>([]);
+  const [pendingRequestIdsByMember, setPendingRequestIdsByMember] = useState<Record<number, number>>({});
+  const [pendingActionMemberId, setPendingActionMemberId] = useState<number | null>(null);
+  const [hoveredPendingMemberId, setHoveredPendingMemberId] = useState<number | null>(null);
   const [connectedUserIds, setConnectedUserIds] = useState<number[]>([]);
   const [suggestionDegrees, setSuggestionDegrees] = useState<Record<number, "2nd" | "3rd+">>({});
   const [suggestionMutualCounts, setSuggestionMutualCounts] = useState<Record<number, number>>({});
@@ -130,13 +159,14 @@ export function FeedPage() {
       setPosts(feedPosts);
       setRecruiterSuggestions(recruiterResults);
       setConnectedUserIds(connectionResults.map((connection) => connection.connected_user_id));
-      setPendingConnectionIds(pendingResults.map((request) => request.requester_id));
+      const pendingIndex = outgoingPendingIndex(pendingResults, userId);
+      setPendingConnectionIds(pendingIndex.ids);
+      setPendingRequestIdsByMember(pendingIndex.requestIdsByMember);
       setDashboard(dashboardResult);
 
       const blockedIds = new Set<number>([
         userId,
-        ...connectionResults.map((connection) => connection.connected_user_id),
-        ...pendingResults.map((request) => request.requester_id)
+        ...connectionResults.map((connection) => connection.connected_user_id)
       ]);
       const suggestions = memberResults.filter((memberItem) => !blockedIds.has(memberItem.member_id)).slice(0, 3);
       setPeopleSuggestions(suggestions);
@@ -250,24 +280,41 @@ export function FeedPage() {
   async function handleConnect(memberId: number) {
     if (!userId) return;
 
-    const loadingToast = toast.loading("Sending invitation...");
+    const isPending = pendingConnectionIds.includes(memberId);
+    setPendingActionMemberId(memberId);
+    const loadingToast = toast.loading(isPending ? "Withdrawing invitation..." : "Sending invitation...");
     try {
+      if (isPending) {
+        let requestId = pendingRequestIdsByMember[memberId];
+        if (!requestId) {
+          const latestPending = await listPendingConnections(userId);
+          const pendingIndex = outgoingPendingIndex(latestPending, userId);
+          setPendingConnectionIds(pendingIndex.ids);
+          setPendingRequestIdsByMember(pendingIndex.requestIdsByMember);
+          requestId = pendingIndex.requestIdsByMember[memberId];
+        }
+        if (!requestId) throw new Error("Pending invitation not found");
+        await withdrawConnection(requestId);
+        setPendingConnectionIds((current) => current.filter((id) => id !== memberId));
+        setPendingRequestIdsByMember((current) => {
+          const next = { ...current };
+          delete next[memberId];
+          return next;
+        });
+        toast.success("Invitation withdrawn", { id: loadingToast });
+        return;
+      }
+
       await requestConnection(userId, memberId);
-      setPendingConnectionIds((current) => [...current, memberId]);
-      setPeopleSuggestions((current) => current.filter((memberItem) => memberItem.member_id !== memberId));
-      setSuggestionDegrees((current) => {
-        const next = { ...current };
-        delete next[memberId];
-        return next;
-      });
-      setSuggestionMutualCounts((current) => {
-        const next = { ...current };
-        delete next[memberId];
-        return next;
-      });
+      const latestPending = await listPendingConnections(userId);
+      const pendingIndex = outgoingPendingIndex(latestPending, userId);
+      setPendingConnectionIds(pendingIndex.ids);
+      setPendingRequestIdsByMember(pendingIndex.requestIdsByMember);
       toast.success("Invitation sent", { id: loadingToast });
     } catch {
-      toast.error("Could not send invitation", { id: loadingToast });
+      toast.error(isPending ? "Could not withdraw invitation" : "Could not send invitation", { id: loadingToast });
+    } finally {
+      setPendingActionMemberId((current) => (current === memberId ? null : current));
     }
   }
 
@@ -328,7 +375,7 @@ export function FeedPage() {
                 onClick={() => navigate("/dashboard")}
               >
                 <span>Profile views</span>
-                <span>{profile.profile_views ?? 0}</span>
+                <span>{dashboard?.profile_views_30d ?? 0}</span>
               </button>
               <button
                 type="button"
@@ -590,12 +637,6 @@ export function FeedPage() {
                 <p className="font-semibold text-text-primary">{dashboard?.profile_views_30d ?? 0} profile views in the last 30 days</p>
                 <p className="mt-1 text-text-secondary">Your profile visibility is now connected to backend analytics.</p>
               </div>
-              {applicationSummary.map((item) => (
-                <div key={item.status} className="flex items-center justify-between rounded-card border p-3">
-                  <span className="font-medium capitalize">{item.status}</span>
-                  <Badge className={getStatusColor(item.status)}>{item.count}</Badge>
-                </div>
-              ))}
               {trendingJobs.map((job) => (
                 <button
                   key={job.job_id}
@@ -642,15 +683,31 @@ export function FeedPage() {
                     </div>
                     <Button
                       variant="secondary"
-                      className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-[#6b7280] px-4 py-1.5 font-semibold text-[#1f2937]"
+                      className={`mt-3 inline-flex items-center gap-1.5 rounded-full border px-4 py-1.5 font-semibold ${
+                        pendingConnectionIds.includes(member.member_id)
+                          ? "border-[#9ca3af] text-[#6b7280] hover:bg-[#f8fafc]"
+                          : "border-[#6b7280] text-[#1f2937]"
+                      }`}
                       onClick={() => void handleConnect(member.member_id)}
-                      disabled={pendingConnectionIds.includes(member.member_id) || connectedUserIds.includes(member.member_id)}
+                      onMouseEnter={() => {
+                        if (pendingConnectionIds.includes(member.member_id)) {
+                          setHoveredPendingMemberId(member.member_id);
+                        }
+                      }}
+                      onMouseLeave={() => {
+                        if (hoveredPendingMemberId === member.member_id) {
+                          setHoveredPendingMemberId(null);
+                        }
+                      }}
+                      disabled={connectedUserIds.includes(member.member_id) || pendingActionMemberId === member.member_id}
                     >
                       <UserRoundPlus className="h-4 w-4" />
                       {connectedUserIds.includes(member.member_id)
                         ? "Connected"
                         : pendingConnectionIds.includes(member.member_id)
-                          ? "Pending"
+                          ? hoveredPendingMemberId === member.member_id
+                            ? "Withdraw"
+                            : "Pending"
                           : "Connect"}
                     </Button>
                   </div>

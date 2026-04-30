@@ -5,6 +5,7 @@ from services.connection_service.schemas.connections import (
     UserIdBody,
     MutualBody,
     RemoveBody,
+    BlockBody,
     CommandStatusRequest,
 )
 from services.connection_service.controllers import connections as ctrl
@@ -44,6 +45,11 @@ async def mutual(body: MutualBody, u=Depends(get_current_user)):
 @router.post("/remove", status_code=202)
 async def remove(body: RemoveBody, u=Depends(get_current_user)):
     return {"success": True, "data": await ctrl.enqueue_remove(body.user_id_1, body.user_id_2, u)}
+
+
+@router.post("/block")
+async def block(body: BlockBody, u=Depends(get_current_user)):
+    return {"success": True, "data": await ctrl.block(body.blocker_id, body.blocked_id, u)}
 
 @router.post("/connected-ids")
 async def get_connected_ids(body: UserIdBody, u=Depends(get_current_user)):

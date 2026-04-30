@@ -68,6 +68,7 @@ export function ProfileHeader({
   const [uploadingCover, setUploadingCover] = useState(false);
   const [savingOpenTo, setSavingOpenTo] = useState(false);
   const [coverMenuOpen, setCoverMenuOpen] = useState(false);
+  const [hoveringPendingConnect, setHoveringPendingConnect] = useState(false);
   const coverMenuButtonRef = useRef<HTMLButtonElement>(null);
   const coverMenuPanelRef = useRef<HTMLDivElement>(null);
   const [coverMenuFixedStyle, setCoverMenuFixedStyle] = useState<CSSProperties>({});
@@ -352,7 +353,16 @@ export function ProfileHeader({
               </>
             ) : (
               <>
-                <Button onClick={onConnect} disabled={connectDisabled}>{connectLabel}</Button>
+                <Button
+                  onClick={onConnect}
+                  disabled={connectDisabled}
+                  onMouseEnter={() => {
+                    if (connectLabel === "Pending") setHoveringPendingConnect(true);
+                  }}
+                  onMouseLeave={() => setHoveringPendingConnect(false)}
+                >
+                  {connectLabel === "Pending" && hoveringPendingConnect ? "Withdraw" : connectLabel}
+                </Button>
                 <Button variant="secondary" onClick={onMessage}>Message</Button>
               </>
             )}

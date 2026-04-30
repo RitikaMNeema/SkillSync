@@ -3,6 +3,7 @@ from ..models.connection import (
     find_request, find_request_by_id, create_request, update_request_status,
     get_pending_requests, connection_exists, accept_connection_transaction,
     remove_connection_transaction, get_user_connections, get_mutual_connections,
+    block_user_transaction,
 )
 from ..producers.connection_producer import (
     emit_connection_requested,
@@ -70,7 +71,8 @@ async def withdraw(request_id) -> dict:
         raise HTTPException(404, "Connection request not found")
     if req["status"] != "pending":
         raise HTTPException(400, f"Cannot withdraw a request that is {req['status']}")
-    await update_request_status(request_id, "withdrawn")
+    # DB enum currently stores pending/accepted/rejected; treat withdraw as a sender-initiated rejection.
+    await update_request_status(request_id, "rejected")
     return {"request_id": request_id, "status": "withdrawn"}
 
 
@@ -176,3 +178,16 @@ async def get_command(command_id: str, actor: dict) -> dict:
     if not status:
         raise HTTPException(404, "Command not found")
     return status
+
+
+async def block(blocker_id: int, blocked_id: int, actor: dict) -> dict:
+    if not _is_connection_actor(actor):
+        raise HTTPException(403, "Only signed-in users can block users")
+    if str(actor["user_id"]) != str(blocker_id):
+        raise HTTPException(403, "You may only block users for yourself")
+    if blocker_id == blocked_id:
+        raise HTTPException(400, "Cannot block yourself")
+    await block_user_transaction(blocker_id, blocked_id)
+    await cache_del(_conn_key(blocker_id))
+    await cache_del(_conn_key(blocked_id))
+    return {"blocked": True}

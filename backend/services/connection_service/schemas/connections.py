@@ -24,5 +24,10 @@ class RemoveBody(BaseModel):
     user_id_2: int
 
 
+class BlockBody(BaseModel):
+    blocker_id: int
+    blocked_id: int
+
+
 class CommandStatusRequest(BaseModel):
     command_id: str
