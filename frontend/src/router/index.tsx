@@ -69,6 +69,7 @@ export const router = createBrowserRouter([
           { path: "/recruiters/:recruiter_id", element: <RecruiterProfilePage /> },
 
           { path: "/ai-test/:job_id", element: <AIHiringPage /> }
+
         ]
       },
       {
@@ -80,7 +81,8 @@ export const router = createBrowserRouter([
         children: [
           { path: "/jobs", element: <JobSearchPage /> },
           { path: "/jobs/:job_id", element: <JobDetailPage /> }
-        ]
+          
+          ]
       },
       {
         element: (
@@ -106,7 +108,7 @@ export const router = createBrowserRouter([
           { path: "/recruiter/dashboard", element: <RecruiterDashboardPage /> },
           { path: "/recruiter/jobs", element: <JobManagementPage /> },
           { path: "/recruiter/jobs/:job_id/applicants", element: <ApplicantReviewPage /> },
-          { path: "/recruiter/ai/:job_id", element: <AIHiringPage /> }
+          { path: "/recruiter/ai/:job_id", element: <AIHiringPage /> },
         ]
       }
     ]
