@@ -6,6 +6,12 @@ server {
   root /usr/share/nginx/html;
   index index.html;
 
+  # Legacy app URL (/recruiters/:id showed a minimal stub). Redirect to full SPA profile.
+  # Include `$http_host` so :8080 and other forwarded ports survive the Location header.
+  location ~ ^/recruiters/(\d+)/?$ {
+    return 302 $scheme://$http_host/profile/$1?type=recruiter;
+  }
+
   # SPA fallback (React Router)
   location / {
     try_files $uri $uri/ /index.html;

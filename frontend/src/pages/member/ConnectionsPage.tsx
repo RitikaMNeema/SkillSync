@@ -1,18 +1,76 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { UserRoundCheck, Users } from "lucide-react";
+import toast from "react-hot-toast";
+import { ChevronDown, MoreHorizontal, Search } from "lucide-react";
 import {
   acceptConnection,
+  getMutualConnections,
   listConnections,
   listPendingConnections,
+  removeConnection,
   rejectConnection,
 } from "../../api/connections";
 import { getMember } from "../../api/members";
-import { Card } from "../../components/ui/Card";
+import { getRecruiter } from "../../api/recruiters";
 import { Button } from "../../components/ui/Button";
 import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
-import type { Connection, PendingConnection } from "../../types/connection";
+import type { Connection, MutualConnection, PendingConnection } from "../../types/connection";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import {
+  MutualAvatarStack,
+  NetworkCard,
+  NetworkCardHeader,
+  NetworkGrowCard,
+  NetworkListRow,
+  NetworkSidebar,
+  type NetworkSidebarKey,
+} from "../../components/network";
+
+function formatConnectedRelative(isoString: string): string {
+  const t = new Date(isoString).getTime();
+  if (!Number.isFinite(t)) return "Recently";
+  const diffMs = Date.now() - t;
+  const days = Math.floor(diffMs / 86400000);
+  if (days < 1) return "Connected today";
+  if (days === 1) return "Connected 1 day ago";
+  return `Connected ${days} days ago`;
+}
+
+function titleCaseFromEmailLocal(email: string): string {
+  const local = email.split("@")[0] ?? email;
+  return local
+    .replace(/[._-]+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function mutualCaptionLine(mutuals: MutualConnection[], count: number): string {
+  if (!count || mutuals.length === 0) return "";
+  const first = titleCaseFromEmailLocal(mutuals[0].email);
+  if (count === 1) return `${first} · 1 mutual connection`;
+  return `${first} and ${count - 1} other${count - 1 === 1 ? "" : "s"}`;
+}
+
+function connectionInitials(name: string, email: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+  if (parts.length === 1 && parts[0].length >= 2) return parts[0].slice(0, 2).toUpperCase();
+  return (email.slice(0, 2) || "?").toUpperCase();
+}
+
+type ConnectionProfile = {
+  profilePhotoUrl: string | null;
+  displayName: string;
+  headline: string | null;
+};
+
+type InvitationMutualBundle = {
+  mutuals: MutualConnection[];
+  count: number;
+};
 
 export function ConnectionsPage() {
   const userId = authStore((state) => state.userId);
@@ -22,7 +80,19 @@ export function ConnectionsPage() {
   const [invitationProfiles, setInvitationProfiles] = useState<
     Record<number, { profilePhotoUrl: string | null; name: string; headline: string | null }>
   >({});
+  const [invitationMutuals, setInvitationMutuals] = useState<Record<number, InvitationMutualBundle | undefined>>({});
+  const [connectionProfiles, setConnectionProfiles] = useState<Record<number, ConnectionProfile>>({});
   const [loading, setLoading] = useState(true);
+  const [sidebarActive, setSidebarActive] = useState<NetworkSidebarKey>("connections");
+  const [connectionQuery, setConnectionQuery] = useState("");
+  const [sortKey, setSortKey] = useState<"recent" | "name">("recent");
+  const [invitationsMenuOpen, setInvitationsMenuOpen] = useState(false);
+  const [activeConnectionMenuId, setActiveConnectionMenuId] = useState<number | null>(null);
+
+  const connectionsListRef = useRef<HTMLDivElement>(null);
+  const followingSectionRef = useRef<HTMLDivElement>(null);
+  const invitationsMenuRef = useRef<HTMLDivElement>(null);
+  const activeConnectionMenuRef = useRef<HTMLDivElement>(null);
 
   const loadNetworkData = async () => {
     if (!userId) return;
@@ -53,8 +123,8 @@ export function ConnectionsPage() {
             {
               profilePhotoUrl: profile.profile_photo_url ?? null,
               name: fullName,
-              headline: profile.headline ?? null
-            }
+              headline: profile.headline ?? null,
+            },
           ] as const;
         } catch {
           return [memberId, { profilePhotoUrl: null, name: "Member", headline: null }] as const;
@@ -62,6 +132,53 @@ export function ConnectionsPage() {
       })
     );
     setInvitationProfiles(Object.fromEntries(entries));
+
+    const incoming = pendingList.filter((r) => (r.direction ?? "incoming") === "incoming");
+    const mutualBundles = await Promise.all(
+      incoming.map(async (request) => {
+        const otherId = request.requester_id;
+        try {
+          const { mutual_connections, count } = await getMutualConnections(userId, otherId);
+          const mutuals = mutual_connections ?? [];
+          const c = count ?? mutuals.length;
+          return [
+            request.id,
+            c > 0 ? { mutuals, count: c } : undefined,
+          ] as const;
+        } catch {
+          return [request.id, undefined] as const;
+        }
+      })
+    );
+    setInvitationMutuals(Object.fromEntries(mutualBundles));
+
+    const connIds = Array.from(new Set(list.map((c) => c.connected_user_id))).filter((id) => Number.isFinite(id) && id > 0);
+    const connEntries = await Promise.all(
+      connIds.map(async (memberId) => {
+        try {
+          const profile = await getMember(memberId);
+          const fullName = `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim();
+          return [
+            memberId,
+            {
+              profilePhotoUrl: profile.profile_photo_url ?? null,
+              displayName: fullName || profile.email || "Member",
+              headline: profile.headline?.trim() || null,
+            },
+          ] as const;
+        } catch {
+          return [
+            memberId,
+            {
+              profilePhotoUrl: null,
+              displayName: "",
+              headline: null,
+            },
+          ] as const;
+        }
+      })
+    );
+    setConnectionProfiles(Object.fromEntries(connEntries));
   };
 
   useEffect(() => {
@@ -71,14 +188,40 @@ export function ConnectionsPage() {
     void loadNetworkData().finally(() => setLoading(false));
   }, [userId]);
 
+  useEffect(() => {
+    function handleOutsideClick(event: MouseEvent) {
+      const target = event.target as Node;
+      if (invitationsMenuOpen && invitationsMenuRef.current && !invitationsMenuRef.current.contains(target)) {
+        setInvitationsMenuOpen(false);
+      }
+      if (activeConnectionMenuId !== null && activeConnectionMenuRef.current && !activeConnectionMenuRef.current.contains(target)) {
+        setActiveConnectionMenuId(null);
+      }
+    }
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [invitationsMenuOpen, activeConnectionMenuId]);
+
   const handleAccept = async (requestId: number) => {
-    await acceptConnection(requestId);
-    await loadNetworkData();
+    const t = toast.loading("Accepting…");
+    try {
+      await acceptConnection(requestId);
+      await loadNetworkData();
+      toast.success("Invitation accepted", { id: t });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err) || "Could not accept invitation", { id: t });
+    }
   };
 
   const handleReject = async (requestId: number) => {
-    await rejectConnection(requestId);
-    await loadNetworkData();
+    const t = toast.loading("Ignoring…");
+    try {
+      await rejectConnection(requestId);
+      await loadNetworkData();
+      toast.success("Invitation dismissed", { id: t });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err) || "Could not ignore invitation", { id: t });
+    }
   };
 
   const getInvitationProfile = (request: PendingConnection) => {
@@ -88,142 +231,406 @@ export function ConnectionsPage() {
     return {
       profilePhotoUrl: profile?.profilePhotoUrl ?? null,
       name: profile?.name || "Member",
-      headline: profile?.headline?.trim() || "LinkedIn member",
-      initials: (request.counterpart_email || request.requester_email).slice(0, 2).toUpperCase()
+      headline: profile?.headline?.trim() || "",
+      initials: (request.counterpart_email || request.requester_email || "?").slice(0, 2).toUpperCase(),
     };
   };
 
-  const incomingPending = pending.filter((request) => (request.direction ?? "incoming") === "incoming");
+  const followingCount = 0;
+  const visiblePending = useMemo(
+    () => pending.filter((request) => (request.direction ?? "incoming") === "incoming"),
+    [pending]
+  );
+
+  const filteredConnections = useMemo(() => {
+    const q = connectionQuery.trim().toLowerCase();
+    let rows = q
+      ? connections.filter(
+          (c) =>
+            c.connected_email.toLowerCase().includes(q) ||
+            String(c.connected_user_id).includes(q) ||
+            (connectionProfiles[c.connected_user_id]?.displayName ?? "").toLowerCase().includes(q)
+        )
+      : connections;
+
+    rows = [...rows];
+    if (sortKey === "recent") {
+      rows.sort((a, b) => new Date(b.connected_at).getTime() - new Date(a.connected_at).getTime());
+    } else {
+      rows.sort((a, b) => {
+        const nameA = (connectionProfiles[a.connected_user_id]?.displayName || a.connected_email).toLowerCase();
+        const nameB = (connectionProfiles[b.connected_user_id]?.displayName || b.connected_email).toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
+    }
+    return rows;
+  }, [connections, connectionQuery, sortKey, connectionProfiles]);
+
+  const handleSidebarSelect = (key: NetworkSidebarKey) => {
+    setSidebarActive(key);
+    if (key === "connections") {
+      connectionsListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      followingSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  };
+
+  const handleRemoveConnection = async (connectedUserId: number) => {
+    if (!userId) return;
+    const t = toast.loading("Removing connection…");
+    try {
+      await removeConnection(userId, connectedUserId);
+      await loadNetworkData();
+      setActiveConnectionMenuId(null);
+      toast.success("Connection removed", { id: t });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err) || "Could not remove connection", { id: t });
+    }
+  };
+
+  const handleViewProfile = async (connectedUserId: number) => {
+    setActiveConnectionMenuId(null);
+    try {
+      await getMember(connectedUserId);
+      navigate(`/profile/${connectedUserId}`);
+      return;
+    } catch {
+      // Fall back to recruiter profile for connections that are recruiter accounts.
+    }
+    try {
+      await getRecruiter(connectedUserId);
+      navigate(`/recruiters/${connectedUserId}`);
+    } catch {
+      toast.error("Could not open profile");
+    }
+  };
+
+  const sidebarColumn = (
+    <div className="flex w-full flex-col gap-3 md:w-[252px]">
+      <NetworkSidebar
+        connectionsCount={connections.length}
+        followingCount={followingCount}
+        active={sidebarActive}
+        onSelect={handleSidebarSelect}
+      />
+      <NetworkGrowCard />
+    </div>
+  );
 
   if (loading) {
     return (
-      <div className="space-y-3">
-        <CardSkeleton />
-        <CardSkeleton />
+      <div className="min-h-[50vh] bg-[#f3f2ef] px-4 py-6">
+        <div className="mx-auto max-w-[1440px] space-y-3">
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
-      <Card className="h-fit rounded-xl border border-[#e0e0e0] bg-white p-0">
-        <h2 className="px-4 pt-4 text-[20px] font-semibold text-[#1f1f1f]">Manage my network</h2>
-        <div className="mt-3 divide-y divide-[#f0f0f0]">
-          <div className="flex items-center justify-between px-4 py-3 text-[15px] text-[#3a3a3a]">
-            <span className="inline-flex items-center gap-2"><Users className="h-4 w-4" />Connections</span>
-            <span className="font-semibold text-[#666]">{connections.length}</span>
-          </div>
-          <div className="flex items-center justify-between px-4 py-3 text-[15px] text-[#3a3a3a]">
-            <span className="inline-flex items-center gap-2"><UserRoundCheck className="h-4 w-4" />Following & followers</span>
-            <span className="font-semibold text-[#666]">0</span>
-          </div>
-        </div>
-      </Card>
+    <div className="min-h-[calc(100vh-100px)] bg-[#f3f2ef] pb-6 pt-2">
+      <div className="relative left-1/2 w-screen -translate-x-1/2">
+        <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-3 px-3 md:flex-row md:items-start md:gap-4 md:px-4">
+          <div className="shrink-0 md:hidden">{sidebarColumn}</div>
 
-      <div className="space-y-4">
-        <Card className="rounded-xl border border-[#e0e0e0] bg-white p-0">
-          <div className="flex items-center px-5 pt-4 text-[18px] font-semibold">
-            <button type="button" className="border-b-[3px] border-[#0a66c2] pb-2 text-[#0a66c2]">Grow</button>
-          </div>
-        </Card>
+          <aside className="hidden shrink-0 md:block md:w-[252px]">{sidebarColumn}</aside>
 
-        <Card className="rounded-xl border border-[#e0e0e0] bg-white p-0">
-          <div className="flex items-center justify-between border-b border-[#ededed] px-5 py-4">
-            <h3 className="text-[20px] font-semibold text-[#1f1f1f]">
-              Invitations ({incomingPending.length})
-            </h3>
-            <span className="text-sm font-semibold text-[#444]">Show all</span>
-          </div>
+          <div className="flex w-full min-w-0 flex-1 flex-col gap-3">
+            <NetworkCard padded={false}>
+              <div className="border-b border-[#e0dfdc] px-5 pt-0 md:px-6">
+                <div className="flex gap-10">
+                  <button
+                    type="button"
+                    className="-mb-px border-b-2 border-[#0a66c2] pb-2 pt-2 text-[17px] font-semibold text-[#0a66c2]"
+                    aria-current="page"
+                  >
+                    My Network
+                  </button>
+                </div>
+              </div>
+            </NetworkCard>
 
-          {pending.length === 0 ? (
-            <p className="px-5 py-6 text-sm text-text-secondary">No pending invitations</p>
-          ) : (
-            <div className="divide-y divide-[#f0f0f0]">
-              {pending.map((request) => {
-                const invitation = getInvitationProfile(request);
-                return (
-                <div
-                  key={request.id}
-                  className="flex items-center justify-between gap-3 px-5 py-4 hover:bg-[#fafafa]"
-                >
-                  <div className="min-w-0 flex items-center gap-3">
-                    {invitation.profilePhotoUrl ? (
-                      <img
-                        src={invitation.profilePhotoUrl}
-                        alt="Profile"
-                        className="h-14 w-14 shrink-0 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#dce6f1] text-base font-semibold text-[#2b5d8d]">
-                        {invitation.initials}
+          <NetworkCard padded={false}>
+            <div className="px-5 pt-3 md:px-6">
+              <NetworkCardHeader
+                border
+                title={<h2 className="text-lg font-semibold text-[#222]">Invitations ({visiblePending.length})</h2>}
+                action={
+                  <div className="relative flex items-center gap-0.5" ref={invitationsMenuRef}>
+                    <button
+                      type="button"
+                      className="px-2 py-1.5 text-sm font-semibold text-[#0a66c2] hover:underline"
+                      onClick={() => {
+                        setInvitationsMenuOpen(false);
+                        navigate("/my-network/invitations");
+                      }}
+                    >
+                      See all
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full p-2 text-[#666] hover:bg-[#f3f2ef]"
+                      aria-label="Invitations menu"
+                      onClick={() => setInvitationsMenuOpen((current) => !current)}
+                    >
+                      <MoreHorizontal className="h-5 w-5" />
+                    </button>
+                    {invitationsMenuOpen ? (
+                      <div className="absolute right-0 top-full z-30 mt-1 w-52 overflow-hidden rounded-lg border border-[#e0dfdc] bg-white shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
+                        <button
+                          type="button"
+                          className="block w-full px-4 py-2.5 text-left text-sm text-[#222] hover:bg-[#f3f2ef]"
+                          onClick={() => {
+                            setInvitationsMenuOpen(false);
+                            navigate("/my-network/invitations");
+                          }}
+                        >
+                          Manage invitations
+                        </button>
+                        <button
+                          type="button"
+                          className="block w-full px-4 py-2.5 text-left text-sm text-[#222] hover:bg-[#f3f2ef]"
+                          onClick={() => {
+                            setInvitationsMenuOpen(false);
+                            navigate("/my-network/invitations?tab=sent");
+                          }}
+                        >
+                          View sent invitations
+                        </button>
                       </div>
-                    )}
-                    <div className="min-w-0">
-                      <p className="truncate text-[22px] font-semibold text-[#1f1f1f]">{invitation.name}</p>
-                      <p className="text-sm text-text-secondary">{invitation.headline}</p>
-                    </div>
+                    ) : null}
                   </div>
-
-                  {(request.direction ?? "incoming") === "incoming" ? (
-                    <div className="flex gap-2">
-                      <Button
-                        variant="secondary"
-                        className="rounded-full border-[#9aa0a6] px-4"
-                        onClick={() => void handleReject(request.id)}
-                      >
-                        Ignore
-                      </Button>
-                      <Button className="rounded-full px-4" onClick={() => void handleAccept(request.id)}>
-                        Accept
-                      </Button>
-                    </div>
-                  ) : (
-                    <span className="text-sm font-semibold text-text-secondary">Pending</span>
-                  )}
-                </div>
-                );
-              })}
+                }
+              />
             </div>
-          )}
-        </Card>
+            {visiblePending.length === 0 ? (
+              <p className="px-5 pb-3 text-sm text-[#666] md:px-6">No pending invitations</p>
+            ) : (
+              <div className="divide-y divide-[#e0dfdc]">
+                {visiblePending.map((request) => {
+                  const invitation = getInvitationProfile(request);
+                  const subtitle =
+                    invitation.headline ||
+                    ((request.direction ?? "incoming") === "incoming"
+                      ? "Wants to connect with you"
+                      : "Invitation sent");
+                  const bundle = invitationMutuals[request.id];
+                  const emails = bundle?.mutuals.map((m) => m.email) ?? [];
+                  const tertiary =
+                    bundle != null && bundle.count > 0 ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        {bundle.mutuals.length > 0 ? <MutualAvatarStack emails={emails} /> : null}
+                        <span className="text-xs text-[#666]">
+                          {bundle.mutuals.length > 0
+                            ? mutualCaptionLine(bundle.mutuals, bundle.count)
+                            : `${bundle.count} mutual connection${bundle.count === 1 ? "" : "s"}`}
+                        </span>
+                      </div>
+                    ) : undefined;
 
-        {connections.length === 0 ? (
-          <Card>
-            <p className="text-sm text-text-secondary">
-              No connections yet.
-            </p>
-          </Card>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {connections.map((connection) => (
-              <Card
-                key={connection.id}
-                className="transition-shadow duration-150 hover:shadow-[0_0_0_1px_#0a66c2,0_2px_8px_rgba(10,102,194,.15)]"
-              >
-                <div className="h-16 rounded-card bg-gradient-to-r from-[#1d4477] to-[#1568bf]" />
-                <div className="-mt-7">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-full border-4 border-white bg-brand text-lg font-semibold text-white">
-                    {String(connection.connected_user_id).slice(0, 2)}
+                  return (
+                    <NetworkListRow
+                      key={request.id}
+                      avatar={
+                        invitation.profilePhotoUrl ? (
+                          <img
+                            src={invitation.profilePhotoUrl}
+                            alt=""
+                            className="h-14 w-14 rounded-full object-cover ring-1 ring-[#e0dfdc]"
+                          />
+                        ) : (
+                          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#dce6f1] text-sm font-semibold text-[#2b5d8d] ring-1 ring-[#e0dfdc]">
+                            {invitation.initials}
+                          </div>
+                        )
+                      }
+                      primary={<span className="truncate font-semibold">{invitation.name}</span>}
+                      secondary={<span className="line-clamp-2 text-[#666]">{subtitle}</span>}
+                      tertiary={tertiary}
+                      actions={
+                        (request.direction ?? "incoming") === "incoming" ? (
+                          <>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              className="rounded-full border border-[#666] bg-transparent px-4 py-2 text-sm font-semibold text-[#666] hover:bg-[#f3f2ef] hover:text-[#222]"
+                              onClick={() => void handleReject(request.id)}
+                            >
+                              Ignore
+                            </Button>
+                            <Button
+                              type="button"
+                              className="rounded-full border-0 bg-[#0a66c2] px-4 py-2 text-sm font-semibold text-white hover:bg-[#004182]"
+                              onClick={() => void handleAccept(request.id)}
+                            >
+                              Accept
+                            </Button>
+                          </>
+                        ) : (
+                          <span className="text-sm font-semibold text-[#666]">Pending</span>
+                        )
+                      }
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </NetworkCard>
+
+          <div ref={connectionsListRef}>
+            <NetworkCard padded={false}>
+              <div className="flex flex-col gap-3 border-b border-[#e0dfdc] px-5 py-3 md:px-6 md:flex-row md:items-center md:justify-between md:gap-4">
+                <h2 className="shrink-0 text-lg font-semibold text-[#222]">Connections ({connections.length})</h2>
+                <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+                  <div className="relative w-full min-w-0 md:max-w-[280px]">
+                    <Search
+                      className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#7a7a7a]"
+                      aria-hidden
+                    />
+                    <input
+                      type="text"
+                      value={connectionQuery}
+                      onChange={(e) => setConnectionQuery(e.target.value)}
+                      placeholder="Search connections"
+                      className="h-10 w-full rounded-[8px] border border-[#d6d6d6] bg-white pl-10 pr-3 text-sm font-normal text-[#222] placeholder:text-[#757575] focus:border-[#0a66c2] focus:outline-none"
+                      aria-label="Search connections"
+                    />
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2 text-sm">
+                    <span className="whitespace-nowrap text-[#666]">Sort by:</span>
+                    <div className="relative inline-block">
+                      <select
+                        value={sortKey}
+                        onChange={(e) => setSortKey(e.target.value as "recent" | "name")}
+                        aria-label="Sort connections"
+                        className="h-10 cursor-pointer appearance-none rounded-[8px] border border-[#d6d6d6] bg-white py-2 pl-3 pr-9 text-sm font-semibold leading-none text-[#222] focus:border-[#0a66c2] focus:outline-none"
+                      >
+                        <option value="recent">Recently added</option>
+                        <option value="name">First name</option>
+                      </select>
+                      <ChevronDown
+                        className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#666]"
+                        aria-hidden
+                      />
+                    </div>
                   </div>
                 </div>
+              </div>
+              {connections.length === 0 ? (
+                <p className="px-5 py-4 text-sm text-[#666] md:px-6">No connections yet.</p>
+              ) : filteredConnections.length === 0 ? (
+                <p className="px-5 py-4 text-sm text-[#666] md:px-6">No connections match your search.</p>
+              ) : (
+                <div className="divide-y divide-[#e0dfdc]">
+                  {filteredConnections.map((connection) => {
+                    const prof = connectionProfiles[connection.connected_user_id];
+                    const displayName = prof?.displayName?.trim() || connection.connected_email;
+                    const headline = prof?.headline?.trim() || null;
+                    const initials = connectionInitials(displayName, connection.connected_email);
+                    const showOnline = connection.connected_user_id % 7 === 0;
 
-                <p className="mt-3 font-semibold">{connection.connected_email}</p>
-                <p className="text-sm text-text-secondary">
-                  Connected {connection.connected_at}
-                </p>
-
-                <Button
-                  fullWidth
-                  variant="secondary"
-                  className="mt-4"
-                  onClick={() => navigate(`/messages?user=${connection.connected_user_id}`)}
-                >
-                  Message
-                </Button>
-              </Card>
-            ))}
+                    return (
+                      <NetworkListRow
+                        key={connection.id}
+                        avatar={
+                          <div className="relative">
+                            {prof?.profilePhotoUrl ? (
+                              <img
+                                src={prof.profilePhotoUrl}
+                                alt=""
+                                className="h-14 w-14 rounded-full object-cover ring-1 ring-[#e0dfdc]"
+                              />
+                            ) : (
+                              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#dce6f1] text-sm font-semibold text-[#2b5d8d] ring-1 ring-[#e0dfdc]">
+                                {initials}
+                              </div>
+                            )}
+                            {showOnline ? (
+                              <span
+                                className="absolute bottom-0.5 right-0.5 h-3 w-3.5 rounded-full border-2 border-white bg-[#057642]"
+                                title="Online"
+                                aria-hidden
+                              />
+                            ) : null}
+                          </div>
+                        }
+                        primary={
+                          <span className="truncate">
+                            <span className="font-semibold text-[#222]">{displayName}</span>
+                            <span className="font-semibold text-[#666]"> · 1st</span>
+                          </span>
+                        }
+                        secondary={
+                          headline ? (
+                            <span className="line-clamp-2 text-sm text-[#666]">{headline}</span>
+                          ) : (
+                            <span className="text-sm text-[#666]">Member on SkillSync</span>
+                          )
+                        }
+                        tertiary={
+                          <span className="text-[13px] text-[#666]">{formatConnectedRelative(connection.connected_at)}</span>
+                        }
+                        actions={
+                          <>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              className="rounded-full border-[1.5px] border-[#0a66c2] bg-transparent px-4 py-2 text-sm font-semibold text-[#0a66c2] hover:bg-[#eef3f8]"
+                              onClick={() => navigate(`/messages?user=${connection.connected_user_id}`)}
+                            >
+                              Message
+                            </Button>
+                            <div
+                              className="relative"
+                              ref={activeConnectionMenuId === connection.id ? activeConnectionMenuRef : null}
+                            >
+                              <button
+                                type="button"
+                                className="rounded-full p-2 text-[#666] hover:bg-[#f3f2ef]"
+                                aria-label="Connection options"
+                                onClick={() =>
+                                  setActiveConnectionMenuId((current) =>
+                                    current === connection.id ? null : connection.id
+                                  )
+                                }
+                              >
+                                <MoreHorizontal className="h-5 w-5" />
+                              </button>
+                              {activeConnectionMenuId === connection.id ? (
+                                <div className="absolute right-0 top-full z-30 mt-1 w-48 overflow-hidden rounded-lg border border-[#e0dfdc] bg-white shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
+                                  <button
+                                    type="button"
+                                    className="block w-full px-4 py-2.5 text-left text-sm text-[#222] hover:bg-[#f3f2ef]"
+                                    onClick={() => void handleViewProfile(connection.connected_user_id)}
+                                  >
+                                    View profile
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="block w-full px-4 py-2.5 text-left text-sm text-[#222] hover:bg-[#f3f2ef]"
+                                    onClick={() => void handleRemoveConnection(connection.connected_user_id)}
+                                  >
+                                    Remove connection
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          </>
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </NetworkCard>
           </div>
-        )}
+
+          <div ref={followingSectionRef} className="h-px scroll-mt-[88px] w-full" aria-hidden />
+        </div>
+
+        <div className="hidden w-0 shrink-0 xl:block" aria-hidden />
+        </div>
       </div>
     </div>
   );

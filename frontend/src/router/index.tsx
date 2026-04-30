@@ -9,6 +9,7 @@ import { LandingPage } from "../pages/marketing/LandingPage";
 import { ApplicationsPage } from "../pages/member/ApplicationsPage";
 import { ConnectionsPage } from "../pages/member/ConnectionsPage";
 import { FeedPage } from "../pages/member/FeedPage";
+import { InvitationsManagementPage } from "../pages/member/InvitationsManagementPage";
 import { JobDetailPage } from "../pages/member/JobDetailPage";
 import { JobSearchPage } from "../pages/member/JobSearchPage";
 import { SearchResultsPage } from "../pages/member/SearchResultsPage";
@@ -60,11 +61,23 @@ export const router = createBrowserRouter([
         ),
         children: [
           { path: "/connections", element: <ConnectionsPage /> },
+          { path: "/my-network/invitations", element: <InvitationsManagementPage /> },
           { path: "/messages", element: <MessagesPage /> },
           { path: "/search", element: <SearchResultsPage /> },
           { path: "/profile/:member_id", element: <ProfilePage /> },
           { path: "/in/:profile_slug", element: <PublicProfileSlugPage /> },
           { path: "/recruiters/:recruiter_id", element: <RecruiterProfilePage /> }
+        ]
+      },
+      {
+        element: (
+          <ProtectedRoute allowedRoles={["member", "recruiter"]}>
+            <AppShell />
+          </ProtectedRoute>
+        ),
+        children: [
+          { path: "/jobs", element: <JobSearchPage /> },
+          { path: "/jobs/:job_id", element: <JobDetailPage /> }
         ]
       },
       {
@@ -76,8 +89,6 @@ export const router = createBrowserRouter([
         children: [
           { path: "/feed", element: <FeedPage /> },
           { path: "/profile/:member_id/details/:section", element: <ProfileSectionDetailsPage /> },
-          { path: "/jobs", element: <JobSearchPage /> },
-          { path: "/jobs/:job_id", element: <JobDetailPage /> },
           { path: "/saved-jobs", element: <SavedJobsPage /> },
           { path: "/applications", element: <ApplicationsPage /> },
           { path: "/dashboard", element: <MemberDashboardPage /> }

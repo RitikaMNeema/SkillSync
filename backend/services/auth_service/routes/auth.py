@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from schemas.auth import RegisterRequest, LoginRequest, ValidateRequest, EmailCheckRequest, CommandStatusRequest
+from shared.middleware.auth import get_current_user
 import controllers.auth as ctrl
 
 router = APIRouter()
@@ -43,3 +44,9 @@ async def email_exists(body: EmailCheckRequest):
 async def command_status(body: CommandStatusRequest):
     data = await ctrl.get_command(body.command_id)
     return {"success": True, "data": data}
+
+
+@router.delete("/me")
+async def delete_me(current_user=Depends(get_current_user)):
+    """Delete the authenticated user's account (user id comes from the JWT only)."""
+    return {"success": True, "data": await ctrl.delete_my_account(current_user)}

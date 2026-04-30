@@ -1,4 +1,4 @@
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
 /** Avoid EPIPE / broken pipe on large multipart uploads (photo / resume). */
@@ -76,8 +76,25 @@ export default defineConfig(({ mode }) => {
     }
   };
 
+  const redirectLegacyRecruiterUrls = (): Plugin => ({
+    name: "redirect-legacy-recruiter-route",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const pathOnly = req.url?.split("?")[0] ?? "";
+        const match = pathOnly.match(/^\/recruiters\/(\d+)\/?$/);
+        if (match) {
+          res.statusCode = 302;
+          res.setHeader("Location", `/profile/${match[1]}?type=recruiter`);
+          res.end();
+          return;
+        }
+        next();
+      });
+    }
+  });
+
   return {
-    plugins: [react()],
+    plugins: [react(), redirectLegacyRecruiterUrls()],
     server: {
       port: 5173,
       proxy: gateway
