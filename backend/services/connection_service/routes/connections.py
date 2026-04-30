@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from services.connection_service.schemas.connections import (
+from schemas.connections import (
     RequestBody,
     RequestIdBody,
     UserIdBody,
@@ -8,7 +8,7 @@ from services.connection_service.schemas.connections import (
     BlockBody,
     CommandStatusRequest,
 )
-from services.connection_service.controllers import connections as ctrl
+from controllers import connections as ctrl
 from shared.middleware.auth import get_current_user
 
 router = APIRouter()
