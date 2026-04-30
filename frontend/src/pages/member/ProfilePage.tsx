@@ -33,7 +33,8 @@ import { ResumeUpload } from "../../components/profile/ResumeUpload";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import { getUnifiedProfile, updateUnifiedProfile } from "../../utils/profileAdapter";
 import { getMemberDashboard } from "../../api/analytics";
-import { listConnections, listPendingConnections, requestConnection } from "../../api/connections";
+import { listConnections, listPendingConnections, requestConnection, withdrawConnection } from "../../api/connections";
+import { deleteCoverPhoto, deleteMember } from "../../api/members";
 import {
   deleteRecruiterCoverPhoto,
   uploadRecruiterCoverPhoto,
@@ -98,6 +99,14 @@ export function ProfilePage() {
   const currentUserId = authStore((state) => state.userId);
   const currentRole = authStore((state) => state.role);
   const logout = authStore((state) => state.logout);
+  const parsedMemberId = Number(member_id);
+  const isForcedRecruiterProfile = searchParams.get("type") === "recruiter";
+  const isRecruiterViewingOwnProfile =
+    currentRole === "recruiter" &&
+    Number.isFinite(parsedMemberId) &&
+    currentUserId !== null &&
+    parsedMemberId === currentUserId;
+  const profileApiRole = isRecruiterViewingOwnProfile || isForcedRecruiterProfile ? "recruiter" : "member";
   const [member, setMember] = useState<MemberProfile | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -110,6 +119,8 @@ export function ProfilePage() {
   const [skillsListModalOpen, setSkillsListModalOpen] = useState(false);
   const [showAllLanguages, setShowAllLanguages] = useState(false);
   const [addSectionOpen, setAddSectionOpen] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [dismissedCards, setDismissedCards] = useState({
     experience: false,
     education: false,
@@ -216,6 +227,22 @@ export function ProfilePage() {
   function handleMessage() {
     if (!member || !currentUserId || member.member_id === currentUserId) return;
     navigate(`/messages?user=${member.member_id}`);
+  }
+
+  async function handleDeleteProfile() {
+    if (!member) return;
+    setDeleteLoading(true);
+    try {
+      await deleteMember(member.member_id);
+      toast.success("Your account has been deleted.");
+      logout();
+      navigate("/login", { replace: true });
+    } catch {
+      toast.error("Could not delete account. Please try again.");
+      setShowDeleteConfirm(false);
+    } finally {
+      setDeleteLoading(false);
+    }
   }
 
   async function saveExperience(experience: ExperienceEntry, editIndex?: number) {
@@ -1078,7 +1105,7 @@ export function ProfilePage() {
       ) : null}
       {showDeleteConfirm ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-[22px] bg-white p-6 shadow-modal">
+          <div className="w-full max-w-sm rounded-[22px] bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.18)]">
             <h3 className="text-lg font-bold text-[#1f1f1f]">Delete your account?</h3>
             <p className="mt-2 text-sm text-[#555555]">
               This will permanently delete your profile, applications, connections, and all associated data. You cannot undo this.

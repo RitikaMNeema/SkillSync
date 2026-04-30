@@ -148,3 +148,8 @@ export async function downloadResumeFile(member_id: number): Promise<{ blob: Blo
   const fileName = parseDownloadFilename(contentDisposition) || `resume_${member_id}`;
   return { blob, fileName };
 }
+
+export async function deleteMember(member_id: number) {
+  const response = await api.post<ApiResponse<{ deleted: boolean }>>("/members/delete", { member_id });
+  return response.data.data;
+}

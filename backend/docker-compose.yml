@@ -175,7 +175,8 @@ services:
     environment:
       PORT: ${AUTH_SERVICE_PORT}
       PYTHONPATH: /app
-      <<: *docker-runtime-env
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
     ports:
       - "${AUTH_SERVICE_PORT}:${AUTH_SERVICE_PORT}"
     depends_on:
@@ -200,7 +201,8 @@ services:
     environment:
       PORT: ${PROFILE_SERVICE_PORT}
       PYTHONPATH: /app
-      <<: *docker-runtime-env
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
     ports:
       - "${PROFILE_SERVICE_PORT}:${PROFILE_SERVICE_PORT}"
     depends_on:
@@ -231,7 +233,8 @@ services:
     environment:
       PORT: ${RECRUITER_SERVICE_PORT}
       PYTHONPATH: /app
-      <<: *docker-runtime-env
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
     ports:
       - "${RECRUITER_SERVICE_PORT}:${RECRUITER_SERVICE_PORT}"
     depends_on:
@@ -254,7 +257,8 @@ services:
     environment:
       PORT: ${CONNECTION_SERVICE_PORT}
       PYTHONPATH: /app
-      <<: *docker-runtime-env
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
     ports:
       - "${CONNECTION_SERVICE_PORT}:${CONNECTION_SERVICE_PORT}"
     depends_on:
@@ -281,7 +285,8 @@ services:
     environment:
       PORT: ${JOB_SERVICE_PORT}
       PYTHONPATH: /app
-      <<: *docker-runtime-env
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
     ports:
       - "${JOB_SERVICE_PORT}:${JOB_SERVICE_PORT}"
     depends_on:
@@ -308,7 +313,8 @@ services:
     environment:
       PORT: ${APPLICATION_SERVICE_PORT}
       PYTHONPATH: /app
-      <<: *docker-runtime-env
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
     ports:
       - "${APPLICATION_SERVICE_PORT}:${APPLICATION_SERVICE_PORT}"
     depends_on:
@@ -335,7 +341,6 @@ services:
     environment:
       PORT: ${MESSAGING_SERVICE_PORT}
       PYTHONPATH: /app
-      <<: *docker-runtime-env
     ports:
       - "${MESSAGING_SERVICE_PORT}:${MESSAGING_SERVICE_PORT}"
     depends_on:
@@ -360,7 +365,8 @@ services:
     environment:
       PORT: ${ANALYTICS_SERVICE_PORT}
       PYTHONPATH: /app
-      <<: *docker-runtime-env
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
     ports:
       - "${ANALYTICS_SERVICE_PORT}:${ANALYTICS_SERVICE_PORT}"
     depends_on:
