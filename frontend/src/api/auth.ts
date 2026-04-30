@@ -47,3 +47,8 @@ export async function checkEmailExists(email: string) {
   const response = await api.post<ApiResponse<EmailExistsPayload>>("/auth/email-exists", { email });
   return response.data.data;
 }
+
+export async function deleteAccount() {
+  const response = await api.delete<ApiResponse<{ message: string }>>("/auth/me");
+  return response.data.data;
+}

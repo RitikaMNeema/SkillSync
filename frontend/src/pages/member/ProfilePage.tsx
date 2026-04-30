@@ -33,6 +33,7 @@ import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import { getUnifiedProfile, updateUnifiedProfile } from "../../utils/profileAdapter";
 import { getMemberDashboard } from "../../api/analytics";
 import { listConnections, listPendingConnections, requestConnection } from "../../api/connections";
+import { deleteCoverPhoto } from "../../api/members";
 import {
   deleteRecruiterCoverPhoto,
   uploadRecruiterCoverPhoto,
@@ -645,8 +646,12 @@ export function ProfilePage() {
             currentRole === "recruiter"
               ? async (memberId) => {
                   await deleteRecruiterCoverPhoto(memberId);
+                  await loadMemberProfile();
                 }
-              : undefined
+              : async (memberId) => {
+                  await deleteCoverPhoto(memberId);
+                  await loadMemberProfile();
+                }
           }
           onProfileUpdated={(next) => setMember(next)}
           onProfileStatusChange={async (next) => {
@@ -786,11 +791,23 @@ export function ProfilePage() {
                   : sources.length === 1
                     ? sources[0]
                     : sources.join(" · ");
-                return (
-                  <div key={skill} className="border-t border-[#edf1f4] pt-3 first:border-t-0 first:pt-0">
+                const body = (
+                  <div className="border-t border-[#edf1f4] pt-3 first:border-t-0 first:pt-0">
                     <p className="text-[1.2rem] font-semibold text-[#1f1f1f]">{skill}</p>
                     <p className="mt-1 text-sm text-[#555555]">{sourceLine}</p>
                   </div>
+                );
+                return isOwnProfile ? (
+                  <button
+                    key={skill}
+                    type="button"
+                    className="block w-full rounded-lg border border-transparent text-left outline-none hover:border-[#e5e7eb] hover:bg-[#fafafa] focus-visible:ring-2 focus-visible:ring-brand"
+                    onClick={() => setActiveModal({ type: "edit_skill", skillName: skill })}
+                  >
+                    {body}
+                  </button>
+                ) : (
+                  <div key={skill}>{body}</div>
                 );
               })}
             </div>

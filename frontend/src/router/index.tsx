@@ -69,6 +69,17 @@ export const router = createBrowserRouter([
       },
       {
         element: (
+          <ProtectedRoute allowedRoles={["member", "recruiter"]}>
+            <AppShell />
+          </ProtectedRoute>
+        ),
+        children: [
+          { path: "/jobs", element: <JobSearchPage /> },
+          { path: "/jobs/:job_id", element: <JobDetailPage /> }
+        ]
+      },
+      {
+        element: (
           <ProtectedRoute allowedRoles={["member"]}>
             <AppShell />
           </ProtectedRoute>
@@ -76,8 +87,6 @@ export const router = createBrowserRouter([
         children: [
           { path: "/feed", element: <FeedPage /> },
           { path: "/profile/:member_id/details/:section", element: <ProfileSectionDetailsPage /> },
-          { path: "/jobs", element: <JobSearchPage /> },
-          { path: "/jobs/:job_id", element: <JobDetailPage /> },
           { path: "/saved-jobs", element: <SavedJobsPage /> },
           { path: "/applications", element: <ApplicationsPage /> },
           { path: "/dashboard", element: <MemberDashboardPage /> }
