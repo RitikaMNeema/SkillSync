@@ -1,5 +1,20 @@
 import json
+from datetime import datetime, date
+from decimal import Decimal
 from shared.database.mysql import get_pool
+
+
+def _serialize_row(row: dict) -> dict:
+    """Convert non-JSON-native MySQL types to safe Python primitives."""
+    out = {}
+    for k, v in row.items():
+        if isinstance(v, (datetime, date)):
+            out[k] = v.isoformat()
+        elif isinstance(v, Decimal):
+            out[k] = float(v)
+        else:
+            out[k] = v
+    return out
 
 PAGE_SIZE = 20
 
@@ -29,9 +44,11 @@ async def get_job(job_id: int) -> dict | None:
                 (job_id,),
             )
             row = await cur.fetchone()
-            if row and isinstance(row.get("skills_required"), str):
+            if not row:
+                return None
+            if isinstance(row.get("skills_required"), str):
                 row["skills_required"] = json.loads(row["skills_required"])
-            return row
+            return _serialize_row(row)
 
 
 async def update_job(job_id: int, fields: dict) -> None:
