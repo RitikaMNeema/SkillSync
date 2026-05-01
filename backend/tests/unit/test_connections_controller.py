@@ -201,7 +201,8 @@ async def test_withdraw_success():
         result = await ctrl.withdraw(9)
 
     assert result == {"request_id": 9, "status": "withdrawn"}
-    mock_update.assert_awaited_once_with(9, "withdrawn")
+    # DB enum only has pending/accepted/rejected; withdraw is stored as "rejected" internally
+    mock_update.assert_awaited_once_with(9, "rejected")
 
 
 @pytest.mark.asyncio
