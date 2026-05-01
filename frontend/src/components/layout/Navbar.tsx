@@ -16,16 +16,37 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { logout as logoutRequest } from "../../api/auth";
 import { listPendingConnections } from "../../api/connections";
-import { getMember } from "../../api/members";
+import { getMember, searchMembers } from "../../api/members";
 import { getThreadsByUser } from "../../api/messages";
-import { getRecruiter } from "../../api/recruiters";
+import { searchJobs } from "../../api/jobs";
+import { getRecruiter, searchRecruiters } from "../../api/recruiters";
 import { authStore } from "../../context/AuthContext";
+import { useDebounce } from "../../hooks/useDebounce";
+import { cn } from "../../utils/cn";
 import { getHomePath } from "../../utils/navigation";
 import { Avatar } from "../ui/Avatar";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { DeleteAccountDialogs } from "./DeleteAccountDialogs";
 import { LinkedInWordmark } from "./LinkedInWordmark";
+
+type SearchSuggestion =
+  | {
+      id: string;
+      to: string;
+      type: "member" | "recruiter";
+      name: string;
+      headline: string;
+      avatarUrl?: string | null;
+    }
+  | {
+      id: string;
+      to: string;
+      type: "job";
+      title: string;
+      company: string;
+    }
+  | { id: "view-all"; to: string; type: "view-all" };
 
 export function Navbar() {
   const navigate = useNavigate();
@@ -34,6 +55,9 @@ export function Navbar() {
   const role = authStore((state) => state.role);
   const clearAuth = authStore((state) => state.logout);
   const [query, setQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
   const [menuOpen, setMenuOpen] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
   const [networkCount, setNetworkCount] = useState(0);
@@ -41,7 +65,9 @@ export function Navbar() {
   const [seenNetworkCount, setSeenNetworkCount] = useState(0);
   const [seenMessageCount, setSeenMessageCount] = useState(0);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const debouncedQuery = useDebounce(query, 220);
   const homePath = getHomePath(role);
   /** Same full profile shell as members (`ProfilePage`); `/recruiters/:id` only showed a minimal card. */
   const profileMeHref = userId ? `/profile/${userId}` : "/feed";
@@ -69,7 +95,14 @@ export function Navbar() {
   function handleSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const keyword = query.trim();
+    setSuggestionsOpen(false);
     navigate(keyword ? `/search?q=${encodeURIComponent(keyword)}` : "/search");
+  }
+
+  function handleSuggestionSelect(item: SearchSuggestion) {
+    setSuggestionsOpen(false);
+    setActiveSuggestionIndex(-1);
+    navigate(item.to);
   }
 
   async function handleLogout() {
@@ -88,17 +121,97 @@ export function Navbar() {
   }, [location.pathname]);
 
   useEffect(() => {
-    if (!menuOpen) return undefined;
+    if (!menuOpen && !suggestionsOpen) return undefined;
 
     function handleOutsideClick(event: MouseEvent) {
-      if (!menuRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (menuOpen && !menuRef.current?.contains(target)) {
         setMenuOpen(false);
+      }
+      if (suggestionsOpen && !searchRef.current?.contains(target)) {
+        setSuggestionsOpen(false);
+        setActiveSuggestionIndex(-1);
       }
     }
 
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
-  }, [menuOpen]);
+  }, [menuOpen, suggestionsOpen]);
+
+  useEffect(() => {
+    const keyword = debouncedQuery.trim();
+    if (keyword.length < 2) {
+      setSuggestions([]);
+      setSuggestionsOpen(false);
+      setActiveSuggestionIndex(-1);
+      return;
+    }
+
+    let cancelled = false;
+    void Promise.allSettled([
+      searchMembers({ keyword, page: 1 }),
+      searchRecruiters({ name: keyword, page: 1 }),
+      searchJobs({ keyword, page: 1 })
+    ]).then((results) => {
+      if (cancelled) return;
+      const memberItems =
+        results[0].status === "fulfilled"
+          ? results[0].value.members.slice(0, 8).map((member) => {
+              const name = `${member.first_name} ${member.last_name}`.trim();
+              return {
+                id: `member-${member.member_id}`,
+                name,
+                headline: member.headline?.trim() || "Member",
+                avatarUrl: member.profile_photo_url ?? null,
+                to: `/profile/${member.member_id}`,
+                type: "member" as const
+              };
+            })
+          : [];
+      const recruiterItems =
+        results[1].status === "fulfilled"
+          ? results[1].value.recruiters.slice(0, 4).map((recruiter) => {
+              const subtitle = [recruiter.role, recruiter.company_name].filter(Boolean).join(" · ");
+              return {
+                id: `recruiter-${recruiter.recruiter_id}`,
+                name: recruiter.name || "Recruiter",
+                headline: recruiter.headline?.trim() || subtitle || "Recruiter",
+                avatarUrl: recruiter.profile_photo_url ?? null,
+                to: `/recruiters/${recruiter.recruiter_id}`,
+                type: "recruiter" as const
+              };
+            })
+          : [];
+      const jobItems =
+        results[2].status === "fulfilled"
+          ? results[2].value.jobs.slice(0, 3).map((job) => ({
+              id: `job-${job.job_id}`,
+              title: job.title,
+              company: job.company_name || "Company",
+              to: `/jobs/${job.job_id}`,
+              type: "job" as const
+            }))
+          : [];
+
+      const items: SearchSuggestion[] = [
+        ...memberItems,
+        ...recruiterItems,
+        ...jobItems,
+        {
+          id: "view-all",
+          to: `/search?q=${encodeURIComponent(keyword)}`,
+          type: "view-all" as const
+        }
+      ];
+      setSuggestions(items);
+      setSuggestionsOpen(items.length > 0);
+      setActiveSuggestionIndex(-1);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedQuery]);
 
   useEffect(() => {
     if (!userId || !role) return;
@@ -169,14 +282,99 @@ export function Navbar() {
         <div className="mx-auto flex h-[52px] max-w-[1128px] items-center gap-3 px-4">
           <div className="flex min-w-0 items-center gap-3">
             <LinkedInWordmark to={homePath} compact />
-            <form className="relative hidden md:block" onSubmit={handleSearch}>
+            <form className="relative hidden md:block" onSubmit={handleSearch} ref={searchRef}>
               <Search className="pointer-events-none absolute left-5 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-[#1f1f1f]" strokeWidth={2.5} />
               <Input
                 className="h-[46px] w-[min(34vw,540px)] min-w-[260px] rounded-full border-[2px] border-[#b0b4b8] bg-white !pl-11 pr-6 text-[17px] placeholder:text-[#666666] focus:border-[#666666] focus:shadow-none"
                 placeholder="I'm looking for..."
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
+                onFocus={() => {
+                  if (suggestions.length) setSuggestionsOpen(true);
+                }}
+                onKeyDown={(event) => {
+                  if (!suggestionsOpen || suggestions.length === 0) return;
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    setActiveSuggestionIndex((current) => (current + 1) % suggestions.length);
+                  } else if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    setActiveSuggestionIndex((current) => (current <= 0 ? suggestions.length - 1 : current - 1));
+                  } else if (event.key === "Enter" && activeSuggestionIndex >= 0) {
+                    event.preventDefault();
+                    handleSuggestionSelect(suggestions[activeSuggestionIndex]);
+                  } else if (event.key === "Escape") {
+                    setSuggestionsOpen(false);
+                    setActiveSuggestionIndex(-1);
+                  }
+                }}
               />
+              {suggestionsOpen ? (
+                <div className="absolute left-0 right-0 top-[52px] z-50 max-h-[420px] overflow-y-auto rounded-b-xl rounded-t-sm border border-[#e0e0e0] bg-white shadow-[0_4px_12px_rgba(0,0,0,0.15)]">
+                  {suggestions.map((item, index) => {
+                    const isActive = index === activeSuggestionIndex;
+                    if (item.type === "view-all") {
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className={cn(
+                            "w-full border-t border-[#eef0f2] px-4 py-3 text-center text-sm font-semibold text-[#0a66c2] hover:bg-[#f3f2ef]",
+                            isActive && "bg-[#eef3f8]"
+                          )}
+                          onMouseEnter={() => setActiveSuggestionIndex(index)}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => handleSuggestionSelect(item)}
+                        >
+                          See all results
+                        </button>
+                      );
+                    }
+                    if (item.type === "job") {
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className={cn(
+                            "flex w-full items-center gap-3 px-4 py-2.5 text-left",
+                            isActive ? "bg-[#eef3f8]" : "bg-white hover:bg-[#f3f2ef]"
+                          )}
+                          onMouseEnter={() => setActiveSuggestionIndex(index)}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => handleSuggestionSelect(item)}
+                        >
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[#e8f3ff] text-[#0a66c2]">
+                            <BriefcaseBusiness className="h-4 w-4" />
+                          </div>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-[#000]">{item.title}</span>
+                            <span className="block truncate text-xs text-[#666]">{item.company}</span>
+                          </span>
+                        </button>
+                      );
+                    }
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={cn(
+                          "flex w-full items-center gap-3 px-4 py-2.5 text-left",
+                          isActive ? "bg-[#eef3f8]" : "bg-white hover:bg-[#f3f2ef]"
+                        )}
+                        onMouseEnter={() => setActiveSuggestionIndex(index)}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => handleSuggestionSelect(item)}
+                      >
+                        <Avatar src={item.avatarUrl} alt={item.name} name={item.name} size="md" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-semibold text-[#000]">{item.name}</span>
+                          <span className="block truncate text-xs text-[#666]">{item.headline}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
             </form>
           </div>
           <div className="ml-auto hidden items-stretch gap-1 md:flex">
