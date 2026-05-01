@@ -11,61 +11,62 @@ const proxyLong = {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   /** If set (e.g. http://localhost:3000), all `/api/*` goes to the gateway — best for uploads. */
-  const gateway = env.VITE_PROXY_GATEWAY?.trim();
+  const gateway = (process.env.VITE_PROXY_GATEWAY ?? env.VITE_PROXY_GATEWAY ?? "").trim();
+  const proxyHost = (process.env.VITE_PROXY_HOST ?? env.VITE_PROXY_HOST ?? "").trim() || "localhost";
 
   const serviceProxies: Record<string, object> = {
     "/api/auth": {
-      target: "http://localhost:3001",
+      target: `http://${proxyHost}:3001`,
       rewrite: (path: string) => path.replace(/^\/api/, ""),
       ...proxyLong
     },
     "/api/members": {
-      target: "http://localhost:3002",
+      target: `http://${proxyHost}:3002`,
       rewrite: (path: string) => path.replace(/^\/api/, ""),
       ...proxyLong
     },
     "/api/posts": {
-      target: "http://localhost:3002",
+      target: `http://${proxyHost}:3002`,
       rewrite: (path: string) => path.replace(/^\/api/, ""),
       ...proxyLong
     },
     "/api/recruiters": {
-      target: "http://localhost:3003",
+      target: `http://${proxyHost}:3003`,
       rewrite: (path: string) => path.replace(/^\/api/, ""),
       ...proxyLong
     },
     "/api/connections": {
-      target: "http://localhost:3004",
+      target: `http://${proxyHost}:3004`,
       rewrite: (path: string) => path.replace(/^\/api/, ""),
       ...proxyLong
     },
     "/api/jobs": {
-      target: "http://localhost:3005",
+      target: `http://${proxyHost}:3005`,
       rewrite: (path: string) => path.replace(/^\/api/, ""),
       ...proxyLong
     },
     "/api/applications": {
-      target: "http://localhost:3006",
+      target: `http://${proxyHost}:3006`,
       rewrite: (path: string) => path.replace(/^\/api/, ""),
       ...proxyLong
     },
     "/api/threads": {
-      target: "http://localhost:3007",
+      target: `http://${proxyHost}:3007`,
       rewrite: (path: string) => path.replace(/^\/api/, ""),
       ...proxyLong
     },
     "/api/messages": {
-      target: "http://localhost:3007",
+      target: `http://${proxyHost}:3007`,
       rewrite: (path: string) => path.replace(/^\/api/, ""),
       ...proxyLong
     },
     "/api/analytics": {
-      target: "http://localhost:3008",
+      target: `http://${proxyHost}:3008`,
       rewrite: (path: string) => path.replace(/^\/api/, ""),
       ...proxyLong
     },
     "/api/events": {
-      target: "http://localhost:3008",
+      target: `http://${proxyHost}:3008`,
       rewrite: (path: string) => path.replace(/^\/api/, ""),
       ...proxyLong
     }

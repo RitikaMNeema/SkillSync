@@ -7,9 +7,11 @@ services:
     ports:
       - "5173:5173"
     environment:
-      # If you run the backend gateway on your host (or in Docker), set this to route /api through it.
-      # Example (host): http://host.docker.internal:3000
-      VITE_PROXY_GATEWAY: ${VITE_PROXY_GATEWAY:-}
+      # Route dev /api requests through the working nginx gateway on host port 8080.
+      # This avoids per-service localhost proxy issues from inside the dev container.
+      VITE_PROXY_GATEWAY: ${VITE_PROXY_GATEWAY:-http://host.docker.internal:8080}
+      # In Dockerized Vite, localhost points to the frontend container itself.
+      VITE_PROXY_HOST: ${VITE_PROXY_HOST:-host.docker.internal}
     volumes:
       - .:/app
       - node_modules_cache:/app/node_modules
