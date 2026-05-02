@@ -1,11 +1,15 @@
 import {
   BriefcaseBusiness,
   Check,
+  ChevronDown,
   ChevronRight,
+  Clock3,
   Eye,
   Lock,
+  MapPin,
   MoreHorizontal,
   Pencil,
+  Search,
   Sparkles,
   Trash2,
   Users,
@@ -27,6 +31,7 @@ import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
 import type { Application } from "../../types/application";
 import type { Job } from "../../types/job";
+import { cn } from "../../utils/cn";
 import { formatRelativeDate } from "../../utils/formatDate";
 import { getStatusColor } from "../../utils/getStatusColor";
 
@@ -138,12 +143,17 @@ export function JobManagementPage() {
   const [employmentFilter, setEmploymentFilter] = useState("all");
   const [workModeFilter, setWorkModeFilter] = useState<"all" | "remote" | "hybrid" | "onsite">("all");
   const [datePostedFilter, setDatePostedFilter] = useState<"all" | "24h" | "7d" | "30d">("all");
+  const [activeTab, setActiveTab] = useState<"active" | "closed">("active");
+  const [sortBy, setSortBy] = useState<"relevant" | "latest" | "views" | "applicants">("relevant");
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [currentStep, setCurrentStep] = useState(1);
   const [postedSuccess, setPostedSuccess] = useState(false);
   const [visibleToSeekers, setVisibleToSeekers] = useState(true);
   const [additionalCompensation, setAdditionalCompensation] = useState<string[]>([]);
   const [benefits, setBenefits] = useState<string[]>([]);
+  const [benefitCustomDraft, setBenefitCustomDraft] = useState("");
+  const [benefitCustomOpen, setBenefitCustomOpen] = useState(false);
   const [showFullDescription, setShowFullDescription] = useState(false);
   const [openMoreForJobId, setOpenMoreForJobId] = useState<number | null>(null);
   /** Set after successful create/update so the success screen can deep-link */
@@ -234,6 +244,10 @@ export function JobManagementPage() {
     const q = searchParams.get("q") ?? "";
     setKeyword(q);
   }, [searchParams]);
+
+  useEffect(() => {
+    if (focus === "active") setActiveTab("active");
+  }, [focus]);
 
   const filteredJobs = useMemo(() => {
     if (focus === "active") return jobs.filter((job) => (job.status ?? "open") === "open");
@@ -332,6 +346,34 @@ export function JobManagementPage() {
     [displayedJobs, keyword, locationKeyword, employmentFilter, workModeFilter, datePostedFilter]
   );
 
+  const statusFilteredJobs = useMemo(
+    () => filteredDisplayedJobs.filter(({ job }) => (job.status ?? "open") === (activeTab === "active" ? "open" : "closed")),
+    [filteredDisplayedJobs, activeTab]
+  );
+
+  const sortedJobs = useMemo(() => {
+    const rows = [...statusFilteredJobs];
+    if (sortBy === "latest") {
+      rows.sort((a, b) => (new Date(b.job.posted_datetime ?? 0).getTime() || 0) - (new Date(a.job.posted_datetime ?? 0).getTime() || 0));
+    } else if (sortBy === "views") {
+      rows.sort((a, b) => (b.job.views_count ?? 0) - (a.job.views_count ?? 0));
+    } else if (sortBy === "applicants") {
+      rows.sort((a, b) => (b.job.applicants_count ?? 0) - (a.job.applicants_count ?? 0));
+    }
+    return rows;
+  }, [statusFilteredJobs, sortBy]);
+
+  const jobsPerPage = 5;
+  const totalPages = Math.max(1, Math.ceil(sortedJobs.length / jobsPerPage));
+  const paginatedJobs = useMemo(
+    () => sortedJobs.slice((currentPage - 1) * jobsPerPage, currentPage * jobsPerPage),
+    [sortedJobs, currentPage]
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, keyword, locationKeyword, employmentFilter, workModeFilter, datePostedFilter, sortBy]);
+
   const duplicateTitleMetaByJobId = useMemo(() => {
     const totals = new Map<string, number>();
     for (const { job } of displayedJobs) {
@@ -390,8 +432,22 @@ export function JobManagementPage() {
   function resetWizardExtras() {
     setAdditionalCompensation([]);
     setBenefits([]);
+    setBenefitCustomDraft("");
+    setBenefitCustomOpen(false);
     setVisibleToSeekers(true);
     setPostedJobId(null);
+  }
+
+  function addCustomBenefit() {
+    const text = benefitCustomDraft.trim();
+    if (!text || benefits.includes(text)) {
+      setBenefitCustomDraft("");
+      setBenefitCustomOpen(false);
+      return;
+    }
+    setBenefits((current) => [...current, text]);
+    setBenefitCustomDraft("");
+    setBenefitCustomOpen(false);
   }
 
   function openPostModal() {
@@ -571,100 +627,68 @@ export function JobManagementPage() {
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Jobs</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-[#1f1f1f]">Jobs</h1>
+          {focus ? (
+            <p className="mt-1 text-sm text-text-secondary">
+              {filterMeta ? filterMeta : "Showing recruiter jobs."} {focus !== "active" ? <Link to="/recruiter/jobs">Clear filter</Link> : null}
+            </p>
+          ) : null}
+        </div>
         <div className="flex items-center gap-3">
-          <Button variant="secondary" className="h-10 border-[#0A66C2] px-5 text-sm text-[#0A66C2]">
-            Manage job posts
-          </Button>
-          <Button onClick={openPostModal} className="h-10 border-[#0A66C2] bg-[#0A66C2] px-5 text-sm hover:bg-[#004182]">
+          <Button onClick={openPostModal} className="h-10 rounded-full border-[#0A66C2] bg-[#0A66C2] px-5 text-sm hover:bg-[#004182]">
             Post a job
           </Button>
         </div>
       </div>
 
-      {focus ? (
-        <p className="text-sm text-text-secondary">
-          Showing{" "}
-          {focus === "active"
-            ? "active jobs"
-            : focus === "applicants"
-              ? "jobs with applicants"
-              : focus === "new"
-                ? "jobs posted in the last 7 days"
-                : "jobs with applications in reviewing status"}
-          {filterMeta ? `: ${filterMeta}. ` : ". "}
-          {focus !== "applicants" && focus !== "active" ? <Link to="/recruiter/jobs">Clear filter</Link> : null}
-        </p>
-      ) : null}
+      <div className="rounded-2xl border border-[#dde3ea] bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+        <div className="mb-4 flex flex-wrap items-center gap-4 border-b border-[#e8edf3] pb-3">
+          <button
+            type="button"
+            className={`inline-flex items-center gap-2 border-b-2 pb-2 text-sm font-semibold ${activeTab === "active" ? "border-[#0A66C2] text-[#0A66C2]" : "border-transparent text-[#59636e]"}`}
+            onClick={() => setActiveTab("active")}
+          >
+            Active
+            <span className="rounded-full bg-[#e8f3ff] px-2 py-0.5 text-xs text-[#0A66C2]">
+              {jobs.filter((job) => (job.status ?? "open") === "open").length}
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`inline-flex items-center gap-2 border-b-2 pb-2 text-sm font-semibold ${activeTab === "closed" ? "border-[#0A66C2] text-[#0A66C2]" : "border-transparent text-[#59636e]"}`}
+            onClick={() => setActiveTab("closed")}
+          >
+            Closed
+            <span className="rounded-full bg-[#f1f3f5] px-2 py-0.5 text-xs text-[#59636e]">
+              {jobs.filter((job) => (job.status ?? "open") === "closed").length}
+            </span>
+          </button>
+        </div>
 
-      {focus === "applicants" || focus === "pending" ? (
-        <Card className="p-0">
-          <div className="grid grid-cols-[1fr_2fr_1fr_1fr_1fr] gap-4 border-b px-6 py-4 text-sm font-semibold text-text-secondary">
-            <span>Applicant</span>
-            <span>Job title</span>
-            <span>Applied</span>
-            <span>Status</span>
-            <span>Actions</span>
+        <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Input value={keyword} onChange={(event) => setKeyword(event.target.value)} className="pl-11" placeholder="Search job title, keyword, or company" />
           </div>
-          {filteredApplications.map((row) => (
-            <div
-              key={row.application.application_id}
-              className="grid min-h-14 grid-cols-[1fr_2fr_1fr_1fr_1fr] items-center gap-4 px-6 py-4 hover:bg-hover"
-            >
-              <span className="text-sm text-text-secondary">{memberNameById[row.application.member_id] ?? `Member #${row.application.member_id}`}</span>
-              <Link
-                to={`/recruiter/jobs/${row.job.job_id}/applicants`}
-                state={{ from: backToListPath, fromLabel: focus === "applicants" ? "Back to Applicants" : "Back to Pending Review" }}
-                className="font-semibold text-brand hover:underline"
-              >
-                {row.job.title}
-              </Link>
-              <span className="text-sm text-text-secondary">{formatRelativeDate(row.application.application_datetime)}</span>
-              <Badge className={getStatusColor(row.application.status)}>{row.application.status}</Badge>
-              <Link
-                to={`/recruiter/jobs/${row.job.job_id}/applicants`}
-                state={{ from: backToListPath, fromLabel: focus === "applicants" ? "Back to Applicants" : "Back to Pending Review" }}
-                className="text-sm"
-              >
-                Review application
-              </Link>
-            </div>
-          ))}
-          {!filteredApplications.length ? (
-            <div className="px-6 py-8 text-sm text-text-secondary">No applications found for this filter.</div>
-          ) : null}
-        </Card>
-      ) : (
-        <Card className="space-y-5 p-6">
-          <div className="grid gap-3 md:grid-cols-2">
-            <Input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Search job title, keyword or company" />
-            <Input value={locationKeyword} onChange={(event) => setLocationKeyword(event.target.value)} placeholder="City, state, or zip code" />
+          <div className="relative">
+            <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Input value={locationKeyword} onChange={(event) => setLocationKeyword(event.target.value)} className="pl-11" placeholder="City, state, or zip code" />
           </div>
-          <div className="grid gap-3 md:grid-cols-4">
-            <select className="linkedin-input w-full" value={employmentFilter} onChange={(event) => setEmploymentFilter(event.target.value)}>
-              <option value="all">All job types</option>
-              <option value="full-time">Full-time</option>
-              <option value="part-time">Part-time</option>
-              <option value="contract">Contract</option>
-              <option value="internship">Internship</option>
-            </select>
-            <select className="linkedin-input w-full" value={workModeFilter} onChange={(event) => setWorkModeFilter(event.target.value as "all" | "remote" | "hybrid" | "onsite")}>
-              <option value="all">All locations</option>
-              <option value="onsite">On-site</option>
-              <option value="hybrid">Hybrid</option>
-              <option value="remote">Remote</option>
-            </select>
-            <select className="linkedin-input w-full" value={datePostedFilter} onChange={(event) => setDatePostedFilter(event.target.value as "all" | "24h" | "7d" | "30d")}>
-              <option value="all">Date posted</option>
-              <option value="24h">Past 24 hours</option>
-              <option value="7d">Past 7 days</option>
-              <option value="30d">Past 30 days</option>
-            </select>
-            <Button
+          <Button type="button" className="h-10 rounded-full border-[#0A66C2] bg-[#0A66C2] px-6 text-sm hover:bg-[#004182]" onClick={() => setCurrentPage(1)}>
+            Search
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
+        <Card className="h-fit rounded-2xl border border-[#dde3ea] p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-base font-semibold text-[#1f1f1f]">Filters</h3>
+            <button
               type="button"
-              variant="ghost"
-              className="h-10"
+              className="text-sm font-semibold text-[#0A66C2]"
               onClick={() => {
                 setKeyword("");
                 setLocationKeyword("");
@@ -673,8 +697,52 @@ export function JobManagementPage() {
                 setDatePostedFilter("all");
               }}
             >
-              Clear filters
-            </Button>
+              Reset all
+            </button>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-[#39424e]">Experience level</label>
+              <select className="linkedin-input w-full" value={employmentFilter} onChange={(event) => setEmploymentFilter(event.target.value)}>
+                <option value="all">All experience levels</option>
+                <option value="full-time">Full-time</option>
+                <option value="part-time">Part-time</option>
+                <option value="contract">Contract</option>
+                <option value="internship">Internship</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-[#39424e]">Work mode</label>
+              <select className="linkedin-input w-full" value={workModeFilter} onChange={(event) => setWorkModeFilter(event.target.value as "all" | "remote" | "hybrid" | "onsite")}>
+                <option value="all">All work modes</option>
+                <option value="onsite">On-site</option>
+                <option value="hybrid">Hybrid</option>
+                <option value="remote">Remote</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-[#39424e]">Date posted</label>
+              <select className="linkedin-input w-full" value={datePostedFilter} onChange={(event) => setDatePostedFilter(event.target.value as "all" | "24h" | "7d" | "30d")}>
+                <option value="all">Any time</option>
+                <option value="24h">Past 24 hours</option>
+                <option value="7d">Past week</option>
+                <option value="30d">Past month</option>
+              </select>
+            </div>
+          </div>
+        </Card>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between px-1">
+            <p className="text-sm text-[#4b5563]">{sortedJobs.length} {activeTab} jobs</p>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-sm text-[#4b5563]"
+              onClick={() => setSortBy((current) => (current === "relevant" ? "latest" : current === "latest" ? "applicants" : current === "applicants" ? "views" : "relevant"))}
+            >
+              Sort by: {sortBy === "relevant" ? "Most relevant" : sortBy === "latest" ? "Most recent" : sortBy === "applicants" ? "Most applicants" : "Most views"}
+              <ChevronDown className="h-4 w-4" />
+            </button>
           </div>
 
           {!jobs.length ? (
@@ -688,109 +756,138 @@ export function JobManagementPage() {
                 Post your first job
               </Button>
             </div>
-          ) : filteredDisplayedJobs.length ? (
-            <div className="space-y-4">
-              {filteredDisplayedJobs.map(({ job, postingCount }) => (
-                <article key={job.job_id} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="space-y-2">
-                      <Link
-                        to={`/recruiter/jobs/${job.job_id}/applicants`}
-                        state={{ from: backToListPath, fromLabel: "Back to Jobs" }}
-                        className="text-lg font-semibold text-[#0A66C2] hover:underline"
-                      >
-                        {job.title}
-                      </Link>
-                      <p className="text-sm text-gray-600">
-                        {(job.employment_type ?? "Employment type")} · {(job.seniority_level ?? "Experience level")} · {(job.work_mode ?? "Workplace type")}
-                      </p>
-                      <p className="text-sm text-gray-600">{job.location ?? "Location not provided"}</p>
-                      <p className="text-sm text-gray-500">Posted {formatRelativeDate(job.posted_datetime)}</p>
-                      {duplicateTitleMetaByJobId[job.job_id]?.total > 1 && focus !== "new" ? (
-                        <p className="text-xs text-gray-500">Posting #{duplicateTitleMetaByJobId[job.job_id].index}</p>
-                      ) : null}
-                      {focus === "new" && postingCount > 1 ? (
-                        <p className="text-xs text-gray-500">{postingCount} postings in the last week</p>
-                      ) : null}
+          ) : paginatedJobs.length ? (
+            <div className="space-y-3">
+              {paginatedJobs.map(({ job }) => (
+                <article key={job.job_id} className="rounded-2xl border border-[#dde3ea] bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+                  <div className="flex gap-4">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-[#eef3f8] text-lg font-bold text-[#0A66C2]">
+                      {(job.company_name ?? job.title ?? "J").slice(0, 1).toUpperCase()}
                     </div>
-                    <Badge className={(job.status ?? "open") === "open" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"}>
-                      {(job.status ?? "open") === "open" ? "Active" : "Closed"}
-                    </Badge>
-                  </div>
-                  <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-600">
-                    <span className="inline-flex items-center gap-1">
-                      <Eye className="h-4 w-4" />
-                      Views {job.views_count ?? 0}
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <Users className="h-4 w-4" />
-                      Applicants {job.applicants_count ?? 0}
-                    </span>
-                  </div>
-                  <div className="mt-5 flex flex-wrap items-center gap-2">
-                    <Link
-                      to={`/recruiter/jobs/${job.job_id}/applicants`}
-                      state={{ from: backToListPath, fromLabel: "Back to Jobs" }}
-                      className="inline-flex h-9 items-center rounded-full border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                    >
-                      View applicants
-                    </Link>
-                    <Button variant="ghost" className="h-9 rounded-full border border-gray-300 px-4 text-sm text-gray-700 hover:bg-gray-50" onClick={() => handleEditJob(job)}>
-                      Edit
-                    </Button>
-                    <div className="relative">
-                      <Button
-                        variant="ghost"
-                        className="h-9 rounded-full border border-gray-300 px-4 text-sm text-gray-700 hover:bg-gray-50"
-                        onClick={() => setOpenMoreForJobId((current) => (current === job.job_id ? null : job.job_id))}
-                      >
-                        More
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                      {openMoreForJobId === job.job_id ? (
-                        <div className="absolute right-0 top-11 z-20 min-w-[150px] rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
-                          {(job.status ?? "open") === "open" ? (
-                            <button
-                              type="button"
-                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-amber-700 hover:bg-amber-50"
-                              onClick={() => {
-                                setOpenMoreForJobId(null);
-                                void handleCloseJob(job);
-                              }}
-                            >
-                              <Lock className="h-4 w-4" />
-                              Close
-                            </button>
-                          ) : null}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <Link
+                            to={`/recruiter/jobs/${job.job_id}/applicants`}
+                            state={{ from: backToListPath, fromLabel: "Back to Jobs" }}
+                            className="text-xl font-semibold text-[#1f1f1f] hover:text-[#0A66C2] hover:underline"
+                          >
+                            {job.title}
+                          </Link>
+                          <p className="text-sm text-[#4b5563]">{job.company_name ?? "Company"}</p>
+                          <p className="inline-flex items-center gap-1 text-sm text-[#6b7280]">
+                            <MapPin className="h-3.5 w-3.5" />
+                            {job.location ?? "Location not provided"} ({job.work_mode ?? "onsite"})
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${(job.status ?? "open") === "open" ? "bg-[#e7f8ef] text-[#0f8f58]" : "bg-[#f3f4f6] text-[#6b7280]"}`}>
+                            {(job.status ?? "open") === "open" ? "Active" : "Closed"}
+                          </span>
                           <button
                             type="button"
-                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-                            onClick={() => {
-                              setOpenMoreForJobId(null);
-                              void handleDeleteJob(job);
-                            }}
+                            className="rounded-full p-1 text-gray-500 hover:bg-gray-100"
+                            onClick={() => setOpenMoreForJobId((current) => (current === job.job_id ? null : job.job_id))}
                           >
-                            <Trash2 className="h-4 w-4" />
-                            Delete
+                            <MoreHorizontal className="h-5 w-5" />
                           </button>
                         </div>
-                      ) : null}
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
+                        <span className="rounded bg-[#eef3ff] px-2 py-1 text-[#225fbe]">{job.employment_type ?? "Full-time"}</span>
+                        <span className="rounded bg-[#eef3ff] px-2 py-1 text-[#225fbe]">{job.work_mode === "onsite" ? "On-site" : job.work_mode === "hybrid" ? "Hybrid" : "Remote"}</span>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-4 text-sm text-[#6b7280]">
+                          <span className="inline-flex items-center gap-1"><Eye className="h-4 w-4" />{job.views_count ?? 0} views</span>
+                          <span className="inline-flex items-center gap-1 font-semibold text-[#225fbe]"><Users className="h-4 w-4" />{job.applicants_count ?? 0} applicants</span>
+                          <span className="inline-flex items-center gap-1"><Clock3 className="h-4 w-4" />Posted {formatRelativeDate(job.posted_datetime)}</span>
+                        </div>
+                        <Link
+                          to={`/recruiter/jobs/${job.job_id}/applicants`}
+                          state={{ from: backToListPath, fromLabel: "Back to Jobs" }}
+                          className="inline-flex h-9 items-center rounded-full border border-[#0A66C2] px-4 text-sm font-semibold text-[#0A66C2] hover:bg-[#eef3f8]"
+                        >
+                          View applicants
+                        </Link>
+                      </div>
                     </div>
                   </div>
+                  {openMoreForJobId === job.job_id ? (
+                    <div className="relative mt-2">
+                      <div className="absolute right-0 top-0 z-20 min-w-[160px] rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                          onClick={() => {
+                            setOpenMoreForJobId(null);
+                            handleEditJob(job);
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" />
+                          Edit
+                        </button>
+                        {(job.status ?? "open") === "open" ? (
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-amber-700 hover:bg-amber-50"
+                            onClick={() => {
+                              setOpenMoreForJobId(null);
+                              void handleCloseJob(job);
+                            }}
+                          >
+                            <Lock className="h-4 w-4" />
+                            Close
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                          onClick={() => {
+                            setOpenMoreForJobId(null);
+                            void handleDeleteJob(job);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </article>
               ))}
             </div>
           ) : (
             <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
-              No job posts match your current filters.
+              No {activeTab} job posts match your filters.
             </div>
           )}
-        </Card>
-      )}
+
+          <div className="flex items-center justify-center gap-2 pt-1">
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+              <button
+                key={pageNum}
+                type="button"
+                className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold ${pageNum === currentPage ? "bg-[#0A66C2] text-white" : "text-[#4b5563] hover:bg-[#edf2f7]"}`}
+                onClick={() => setCurrentPage(pageNum)}
+              >
+                {pageNum}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {open ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-overlay px-4 py-6">
-          <div className="w-full max-w-[680px] rounded-3xl bg-white shadow-modal">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-md">
+          <div
+            className={cn(
+              "w-full rounded-3xl border border-gray-200 bg-white shadow-modal",
+              currentStep === 3 ? "max-w-[min(1120px,calc(100vw-2rem))]" : "max-w-[680px]"
+            )}
+          >
             <div className="flex items-center justify-between border-b px-8 py-6">
               <h2 className="text-[28px] font-semibold text-gray-900">{editingJob ? "Update job post" : "Create a job post"}</h2>
               <Button type="button" variant="icon" onClick={closeModal} aria-label="Close job post form">
@@ -846,27 +943,40 @@ export function JobManagementPage() {
                 </button>
               </div>
             ) : (
-              <form className="space-y-6 px-8 py-6" onSubmit={handleSubmit((values) => void onSubmit(values))}>
+              <form
+                className={cn("space-y-6 px-8 py-6", currentStep === 3 && "max-h-[min(88vh,920px)] overflow-y-auto")}
+                onSubmit={handleSubmit((values) => void onSubmit(values))}
+              >
                 <input type="hidden" {...register("company_id", { valueAsNumber: true })} />
                 <input type="hidden" {...register("skills_required")} />
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex items-start justify-between gap-2">
                   {["Job details", "Compensation", "Description", "Review"].map((label, index) => {
                     const step = index + 1;
                     const isActive = currentStep === step;
                     const isDone = currentStep > step;
                     return (
-                      <div key={label} className="flex flex-1 items-center gap-2">
-                        <div className="flex flex-col items-center">
+                      <div key={label} className="flex min-w-0 flex-1 items-start gap-0">
+                        <div className="flex shrink-0 flex-col items-center">
                           <div
-                            className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
+                            className={cn(
+                              "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold",
                               isDone || isActive ? "bg-[#0A66C2] text-white" : "bg-gray-200 text-gray-600"
-                            }`}
+                            )}
                           >
-                            {isDone ? <Check className="h-3.5 w-3.5" /> : step}
+                            {isDone ? <Check className="h-4 w-4" /> : step}
                           </div>
-                          <span className={`mt-2 text-xs ${isActive ? "font-semibold text-gray-900" : "text-gray-500"}`}>{label}</span>
+                          <span className={cn("mt-2 text-center text-xs leading-tight", isActive ? "font-semibold text-gray-900" : "text-gray-500")}>
+                            {label}
+                          </span>
                         </div>
-                        {step < 4 ? <div className={`h-[2px] flex-1 ${currentStep > step ? "bg-[#0A66C2]" : "bg-[#E0E0E0]"}`} /> : null}
+                        {step < 4 ? (
+                          <div
+                            className={cn(
+                              "mx-1 mt-4 h-0.5 min-w-[12px] flex-1",
+                              currentStep > step ? "bg-[#0A66C2]" : "bg-[#E0E0E0]"
+                            )}
+                          />
+                        ) : null}
                       </div>
                     );
                   })}
@@ -992,99 +1102,144 @@ export function JobManagementPage() {
                 ) : null}
 
                 {currentStep === 3 ? (
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Description</h3>
-                      <p className="text-sm text-gray-500">Fill all three sections to structure the posting clearly.</p>
+                      <h3 className="text-base font-semibold text-gray-900">Description</h3>
+                      <p className="mt-1 text-sm text-gray-500">Fill all three sections to structure the posting clearly.</p>
                     </div>
-                    <div className="grid gap-4 md:grid-cols-3">
-                      <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-700">* About the job</label>
+
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:gap-5">
+                      <div className="flex min-h-0 flex-col">
+                        <label className="mb-1.5 block text-xs font-semibold text-gray-800">* About the job</label>
                         <Textarea
-                          {...register("about_job")}
-                          className="min-h-[160px]"
+                          {...register("about_job", { maxLength: 5000 })}
+                          className="min-h-[220px] flex-1 rounded-xl border-gray-200 bg-white text-sm"
                           placeholder="Provide a clear overview of the role and what you're looking for."
                         />
-                        <p className="mt-1 text-right text-xs text-gray-400">{watchedAbout.length}/5000</p>
+                        <p className="mt-1.5 text-right text-xs text-gray-400">
+                          {Math.min(watchedAbout.length, 5000)}/5000
+                        </p>
                       </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-700">* Responsibilities</label>
+                      <div className="flex min-h-0 flex-col">
+                        <label className="mb-1.5 block text-xs font-semibold text-gray-800">* Responsibilities</label>
                         <Textarea
-                          {...register("responsibilities")}
-                          className="min-h-[160px]"
+                          {...register("responsibilities", { maxLength: 5000 })}
+                          className="min-h-[220px] flex-1 rounded-xl border-gray-200 bg-white text-sm"
                           placeholder="List day-to-day responsibilities."
                         />
-                        <p className="mt-1 text-right text-xs text-gray-400">{watchedResponsibilities.length}/5000</p>
+                        <p className="mt-1.5 text-right text-xs text-gray-400">
+                          {Math.min(watchedResponsibilities.length, 5000)}/5000
+                        </p>
                       </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-700">* Qualifications</label>
+                      <div className="flex min-h-0 flex-col">
+                        <label className="mb-1.5 block text-xs font-semibold text-gray-800">* Qualifications</label>
                         <Textarea
-                          {...register("qualifications")}
-                          className="min-h-[160px]"
+                          {...register("qualifications", { maxLength: 5000 })}
+                          className="min-h-[220px] flex-1 rounded-xl border-gray-200 bg-white text-sm"
                           placeholder="List required skills and qualifications."
                         />
-                        <p className="mt-1 text-right text-xs text-gray-400">{watchedQualifications.length}/5000</p>
+                        <p className="mt-1.5 text-right text-xs text-gray-400">
+                          {Math.min(watchedQualifications.length, 5000)}/5000
+                        </p>
                       </div>
                     </div>
+
                     <div>
-                      <label className="mb-1 block text-xs font-semibold text-gray-700">Skills (optional)</label>
-                      <Input
-                        placeholder="Type a skill and press comma or Enter"
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === ",") {
-                            event.preventDefault();
+                      <label className="mb-1.5 block text-xs font-semibold text-gray-800">Skills (optional)</label>
+                      <div className="relative">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 z-[1] h-4 w-4 -translate-y-1/2 text-gray-400" />
+                        <Input
+                          className="rounded-xl pl-10"
+                          placeholder="Type a skill and press comma or Enter"
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === ",") {
+                              event.preventDefault();
+                              addSkillsFromInput(event.currentTarget.value);
+                              event.currentTarget.value = "";
+                            }
+                          }}
+                          onBlur={(event) => {
                             addSkillsFromInput(event.currentTarget.value);
                             event.currentTarget.value = "";
-                          }
-                        }}
-                        onBlur={(event) => {
-                          addSkillsFromInput(event.currentTarget.value);
-                          event.currentTarget.value = "";
-                        }}
-                      />
-                      <p className="mt-1 text-xs text-gray-400">Add up to 10 skills, separated by commas</p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {skillChips.map((skill) => (
-                          <button
-                            key={skill}
-                            type="button"
-                            className="rounded-full border border-gray-300 bg-gray-50 px-3 py-1 text-xs text-gray-700"
-                            onClick={() => removeSkill(skill)}
-                          >
-                            {skill} ×
-                          </button>
-                        ))}
+                          }}
+                        />
                       </div>
+                      <p className="mt-1.5 text-xs text-gray-500">Add up to 10 skills, separated by commas</p>
+                      {skillChips.length > 0 ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {skillChips.map((skill) => (
+                            <button
+                              key={skill}
+                              type="button"
+                              className="rounded-full border border-gray-300 bg-gray-50 px-3 py-1 text-xs text-gray-700 hover:bg-gray-100"
+                              onClick={() => removeSkill(skill)}
+                            >
+                              {skill} ×
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
+
                     <div>
-                      <label className="mb-1 block text-xs font-semibold text-gray-700">Benefits (optional)</label>
-                      <div className="flex flex-wrap gap-2">
+                      <label className="mb-1.5 block text-xs font-semibold text-gray-800">Benefits (optional)</label>
+                      <div className="flex flex-wrap items-center gap-2">
                         {["Medical insurance", "401(k)", "Paid time off", "Dental", "Vision", "Remote work"].map((option) => (
                           <button
                             key={option}
                             type="button"
-                            className={`rounded-full border px-3 py-1 text-xs ${
-                              benefits.includes(option) ? "border-[#0A66C2] bg-[#EAF4FF] text-[#0A66C2]" : "border-gray-300 text-gray-600"
+                            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                              benefits.includes(option)
+                                ? "border-[#0A66C2] bg-[#EAF4FF] text-[#0A66C2]"
+                                : "border-gray-300 bg-white text-gray-600 hover:border-gray-400"
                             }`}
                             onClick={() => toggleChip(option, benefits, setBenefits)}
                           >
                             {option}
                           </button>
                         ))}
+                        {benefitCustomOpen ? (
+                          <input
+                            autoFocus
+                            type="text"
+                            value={benefitCustomDraft}
+                            placeholder="Benefit name"
+                            className="linkedin-input min-w-[140px] flex-1 rounded-full px-3 py-1.5 text-xs"
+                            onChange={(event) => setBenefitCustomDraft(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                addCustomBenefit();
+                              }
+                              if (event.key === "Escape") {
+                                setBenefitCustomDraft("");
+                                setBenefitCustomOpen(false);
+                              }
+                            }}
+                            onBlur={() => {
+                              if (benefitCustomDraft.trim()) addCustomBenefit();
+                              else setBenefitCustomOpen(false);
+                            }}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            className="rounded-full border border-dashed border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-[#0A66C2] hover:border-[#0A66C2] hover:bg-[#EAF4FF]"
+                            onClick={() => setBenefitCustomOpen(true)}
+                          >
+                            + Add
+                          </button>
+                        )}
                       </div>
                     </div>
-                    <div className="flex justify-between border-t pt-4">
-                      <div className="flex items-center gap-2">
-                        <Button type="button" variant="secondary" onClick={() => setCurrentStep(2)}>
-                          Back
-                        </Button>
-                        <Button type="button" variant="ghost" onClick={closeModal}>
-                          Close
-                        </Button>
-                      </div>
+
+                    <div className="flex items-center justify-between border-t border-gray-200 pt-5">
+                      <Button type="button" variant="secondary" className="min-w-[96px]" onClick={() => setCurrentStep(2)}>
+                        Back
+                      </Button>
                       <Button
                         type="button"
-                        className="border-[#0A66C2] bg-[#0A66C2] hover:bg-[#004182]"
+                        className="min-w-[120px] border-[#0A66C2] bg-[#0A66C2] hover:bg-[#004182]"
                         onClick={() => {
                           if (validateStepThree()) setCurrentStep(4);
                         }}

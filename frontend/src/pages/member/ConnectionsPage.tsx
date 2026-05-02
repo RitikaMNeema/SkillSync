@@ -301,7 +301,7 @@ export function ConnectionsPage() {
     }
   };
 
-  const handleViewProfile = async (connectedUserId: number) => {
+  const openProfileByUserId = async (connectedUserId: number) => {
     setActiveConnectionMenuId(null);
     try {
       await getMember(connectedUserId);
@@ -446,19 +446,41 @@ export function ConnectionsPage() {
                     <NetworkListRow
                       key={request.id}
                       avatar={
-                        invitation.profilePhotoUrl ? (
-                          <img
-                            src={invitation.profilePhotoUrl}
-                            alt=""
-                            className="h-14 w-14 rounded-full object-cover ring-1 ring-[#e0dfdc]"
-                          />
-                        ) : (
-                          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#dce6f1] text-sm font-semibold text-[#2b5d8d] ring-1 ring-[#e0dfdc]">
-                            {invitation.initials}
-                          </div>
-                        )
+                        <button
+                          type="button"
+                          className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[#0a66c2]"
+                          onClick={() =>
+                            void openProfileByUserId(
+                              (request.direction ?? "incoming") === "incoming" ? request.requester_id : request.receiver_id
+                            )
+                          }
+                        >
+                          {invitation.profilePhotoUrl ? (
+                            <img
+                              src={invitation.profilePhotoUrl}
+                              alt=""
+                              className="h-14 w-14 rounded-full object-cover ring-1 ring-[#e0dfdc]"
+                            />
+                          ) : (
+                            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#dce6f1] text-sm font-semibold text-[#2b5d8d] ring-1 ring-[#e0dfdc]">
+                              {invitation.initials}
+                            </div>
+                          )}
+                        </button>
                       }
-                      primary={<span className="truncate font-semibold">{invitation.name}</span>}
+                      primary={
+                        <button
+                          type="button"
+                          className="truncate font-semibold text-left hover:underline"
+                          onClick={() =>
+                            void openProfileByUserId(
+                              (request.direction ?? "incoming") === "incoming" ? request.requester_id : request.receiver_id
+                            )
+                          }
+                        >
+                          {invitation.name}
+                        </button>
+                      }
                       secondary={<span className="line-clamp-2 text-[#666]">{subtitle}</span>}
                       tertiary={tertiary}
                       actions={
@@ -496,7 +518,7 @@ export function ConnectionsPage() {
               <div className="flex flex-col gap-3 border-b border-[#e0dfdc] px-5 py-3 md:px-6 md:flex-row md:items-center md:justify-between md:gap-4">
                 <h2 className="shrink-0 text-lg font-semibold text-[#222]">Connections ({connections.length})</h2>
                 <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-                  <div className="relative w-full min-w-0 md:max-w-[280px]">
+                  <div className="relative w-full min-w-0 sm:w-[320px] md:w-[320px]">
                     <Search
                       className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#7a7a7a]"
                       aria-hidden
@@ -547,7 +569,11 @@ export function ConnectionsPage() {
                       <NetworkListRow
                         key={connection.id}
                         avatar={
-                          <div className="relative">
+                          <button
+                            type="button"
+                            className="relative rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[#0a66c2]"
+                            onClick={() => void openProfileByUserId(connection.connected_user_id)}
+                          >
                             {prof?.profilePhotoUrl ? (
                               <img
                                 src={prof.profilePhotoUrl}
@@ -566,11 +592,17 @@ export function ConnectionsPage() {
                                 aria-hidden
                               />
                             ) : null}
-                          </div>
+                          </button>
                         }
                         primary={
                           <span className="truncate">
-                            <span className="font-semibold text-[#222]">{displayName}</span>
+                            <button
+                              type="button"
+                              className="font-semibold text-[#222] hover:underline"
+                              onClick={() => void openProfileByUserId(connection.connected_user_id)}
+                            >
+                              {displayName}
+                            </button>
                             <span className="font-semibold text-[#666]"> · 1st</span>
                           </span>
                         }
@@ -612,13 +644,6 @@ export function ConnectionsPage() {
                               </button>
                               {activeConnectionMenuId === connection.id ? (
                                 <div className="absolute right-0 top-full z-30 mt-1 w-48 overflow-hidden rounded-lg border border-[#e0dfdc] bg-white shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
-                                  <button
-                                    type="button"
-                                    className="block w-full px-4 py-2.5 text-left text-sm text-[#222] hover:bg-[#f3f2ef]"
-                                    onClick={() => void handleViewProfile(connection.connected_user_id)}
-                                  >
-                                    View profile
-                                  </button>
                                   <button
                                     type="button"
                                     className="block w-full px-4 py-2.5 text-left text-sm text-[#222] hover:bg-[#f3f2ef]"

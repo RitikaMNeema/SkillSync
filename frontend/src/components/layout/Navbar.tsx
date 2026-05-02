@@ -23,7 +23,7 @@ import { getRecruiter, searchRecruiters } from "../../api/recruiters";
 import { authStore } from "../../context/AuthContext";
 import { useDebounce } from "../../hooks/useDebounce";
 import { cn } from "../../utils/cn";
-import { getHomePath } from "../../utils/navigation";
+import { getHomePath, getJobsNavPath } from "../../utils/navigation";
 import { Avatar } from "../ui/Avatar";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
@@ -72,24 +72,26 @@ export function Navbar() {
   /** Same full profile shell as members (`ProfilePage`); `/recruiters/:id` only showed a minimal card. */
   const profileMeHref = userId ? `/profile/${userId}` : "/feed";
 
+  const jobsNavPath = getJobsNavPath(role);
+
   const navItems = useMemo(
     () =>
       role === "recruiter"
         ? [
             { to: "/feed", label: "Home", icon: Home },
             { to: "/connections", label: "My Network", icon: Users },
-            { to: "/recruiter/jobs", label: "Jobs", icon: BriefcaseBusiness },
+            { to: jobsNavPath, label: "Jobs", icon: BriefcaseBusiness },
             { to: "/messages", label: "Messaging", icon: MessageSquare },
             { to: "/dashboard", label: "Analytics", icon: BarChart3 }
           ]
         : [
             { to: "/feed", label: "Home", icon: Home },
-            { to: "/jobs", label: "Jobs", icon: BriefcaseBusiness },
+            { to: jobsNavPath, label: "Jobs", icon: BriefcaseBusiness },
             { to: "/connections", label: "My Network", icon: Users },
             { to: "/messages", label: "Messaging", icon: MessageSquare },
             { to: "/dashboard", label: "Analytics", icon: BarChart3 }
           ],
-    [role]
+    [role, jobsNavPath]
   );
 
   function handleSearch(event: FormEvent<HTMLFormElement>) {
@@ -441,20 +443,12 @@ export function Navbar() {
                   ) : (
                     <>
                       <Link
-                        to="/recruiter/jobs"
+                        to="/dashboard"
                         className="flex items-center gap-3 rounded-card px-3 py-2 text-sm font-semibold text-text-primary hover:bg-hover hover:no-underline"
                         onClick={() => setMenuOpen(false)}
                       >
-                        <BriefcaseBusiness className="h-4 w-4 text-brand" />
-                        Manage job posts
-                      </Link>
-                      <Link
-                        to="/jobs"
-                        className="flex items-center gap-3 rounded-card px-3 py-2 text-sm font-semibold text-text-primary hover:bg-hover hover:no-underline"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        <Bookmark className="h-4 w-4 text-brand" />
-                        Browse jobs
+                        <BarChart3 className="h-4 w-4 text-brand" />
+                        Analytics
                       </Link>
                     </>
                   )}
