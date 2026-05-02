@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import { getApplication, getAllApplicationsByJob, updateApplicationStatus } from "../../api/applications";
 import { approveAgentWorkflow, getAgentStatus, getAICommandStatus, startAgentWorkflow } from "../../api/ai";
 import { getJob } from "../../api/jobs";
-import { getMember } from "../../api/members";
+import { downloadApplicationResumeBlob, getMember } from "../../api/members";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -68,23 +68,22 @@ async function pollAiTrace(traceId: string) {
   return latest;
 }
 
-function resolveResumeUrl(resumeUrl?: string | null): string | null {
-  if (!resumeUrl) return "/resumes/sample_resume.pdf";
-  const trimmed = resumeUrl.trim();
-  if (!trimmed) return "/resumes/sample_resume.pdf";
-  if (!trimmed.toLowerCase().endsWith(".pdf")) {
-    return "/resumes/sample_resume.pdf";
-  }
+function isApplicationResumeApiPath(path: string): boolean {
+  return path.startsWith("/members/resume/application/");
+}
+
+/** Legacy: only http(s) links stored on the application row (not GridFS). */
+function getExternalResumeUrl(resumeUrl?: string | null): string | null {
+  const raw = resumeUrl?.trim();
+  if (!raw || isApplicationResumeApiPath(raw)) return null;
   try {
-    const parsed = new URL(trimmed);
-    if (parsed.hostname === "example.com") {
-      // Seed data may carry placeholder URLs; point to a real local sample resume.
-      return "/resumes/sample_resume.pdf";
-    }
+    const u = new URL(raw);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    if (u.hostname === "example.com") return null;
+    return raw;
   } catch {
-    // Keep non-URL values untouched in case a relative path was stored.
+    return null;
   }
-  return trimmed;
 }
 
 export function ApplicantReviewPage() {
@@ -251,26 +250,104 @@ export function ApplicantReviewPage() {
       if (!keyword) return true;
       const member = memberProfilesById[application.member_id];
       const fullName = member ? `${member.first_name} ${member.last_name}`.trim().toLowerCase() : "";
+      const inResumeText = (application.resume_text ?? "").toLowerCase().includes(keyword);
       return (
         fullName.includes(keyword) ||
         `${application.member_id}`.includes(keyword) ||
-        application.status.toLowerCase().includes(keyword)
+        application.status.toLowerCase().includes(keyword) ||
+        inResumeText
       );
     });
   }, [applications, memberProfilesById, search, statusFilter]);
 
   const statusOptions = selected ? selectableApplicationStatuses(selected.status) : [];
-  const openResumeUrl = resolveResumeUrl(selected?.resume_url);
+  const externalResumeUrl = getExternalResumeUrl(selected?.resume_url);
+  const resumeTextSnapshot = (selected?.resume_text ?? "").trim();
+  /** Candidate profile includes GridFS meta; `/members/get` returns this to recruiters too. */
+  const memberHasResumeFile = Boolean(profile?.resume_file_id);
+  const internalAppResumePath = Boolean(selected?.resume_url && isApplicationResumeApiPath(selected.resume_url));
+  /** Download uses application-bound route but streams the applicant's current GridFS file. */
+  const useApplicationResumeApi = Boolean(selected && !externalResumeUrl && memberHasResumeFile);
+  const staleApplicationResumeLink = Boolean(internalAppResumePath && !memberHasResumeFile && !externalResumeUrl);
+  const hasResumeTextOnly = Boolean(resumeTextSnapshot) && !externalResumeUrl && !memberHasResumeFile;
+  const showResumeActions = Boolean(externalResumeUrl || memberHasResumeFile);
+  const showResumeTextPanel = Boolean(resumeTextSnapshot);
+
+  const resumeSubtitle = externalResumeUrl
+    ? "External link"
+    : memberHasResumeFile
+      ? "Uploaded file · Preview opens in a new tab"
+      : staleApplicationResumeLink
+        ? "Application pointed at a file that is no longer on this profile — see résumé text below or ask the candidate to re-upload"
+        : hasResumeTextOnly
+          ? "Text snapshot on application (no file link)"
+          : showResumeTextPanel
+            ? "Includes pasted/profile text with application"
+            : "No resume on this application";
+
+  const handlePreviewResume = () => {
+    if (!selected) return;
+    if (externalResumeUrl) {
+      window.open(externalResumeUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (!useApplicationResumeApi) {
+      toast.error("No resume file for this applicant.");
+      return;
+    }
+    void downloadApplicationResumeBlob(selected.application_id)
+      .then(({ blob }) => {
+        const objectUrl = URL.createObjectURL(blob);
+        window.open(objectUrl, "_blank", "noopener,noreferrer");
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
+      })
+      .catch(() => {
+        toast.error("Could not open resume — file may be missing.");
+      });
+  };
+
+  const handleDownloadResume = () => {
+    if (!selected) return;
+    if (externalResumeUrl) {
+      window.open(externalResumeUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (!useApplicationResumeApi) {
+      toast.error("No resume file for this applicant.");
+      return;
+    }
+    void downloadApplicationResumeBlob(selected.application_id)
+      .then(({ blob, fileName }) => {
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = fileName;
+        anchor.rel = "noreferrer";
+        anchor.click();
+        URL.revokeObjectURL(objectUrl);
+      })
+      .catch(() => {
+        toast.error("Could not download resume.");
+      });
+  };
+
   const selectedAppliedAt = selected ? new Date(selected.application_datetime) : null;
   const selectedAppliedText =
     selectedAppliedAt && !Number.isNaN(selectedAppliedAt.getTime())
       ? selectedAppliedAt.toLocaleDateString()
       : "Unknown date";
   const selectedSkills = (profile?.skills ?? []).filter(Boolean).slice(0, 5);
-  const resumeFileName =
-    profile && openResumeUrl
-      ? `${profile.first_name.toLowerCase()}_${profile.last_name.toLowerCase()}_resume.pdf`
-      : "resume.pdf";
+  const resumeFileName = externalResumeUrl
+    ? "External résumé link"
+    : memberHasResumeFile && profile?.resume_file_name
+      ? profile.resume_file_name
+      : memberHasResumeFile && profile
+        ? `${profile.first_name.toLowerCase()}_${profile.last_name.toLowerCase()}_resume.pdf`
+        : staleApplicationResumeLink
+          ? "Résumé file removed"
+          : resumeTextSnapshot
+            ? "Résumé text only"
+            : "No résumé file attached";
 
   const activeAi = selected ? aiByApplicationId[selected.application_id] : null;
   const aiScore = activeAi?.matchScore;
@@ -481,17 +558,17 @@ export function ApplicantReviewPage() {
         {backLabel}
       </Link>
       <Card>
-        <div className="flex items-center justify-between">
-          <div>
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold">{job.title}</h1>
-            <p className="text-sm text-text-secondary">
-              {applications.length} applicant{applications.length === 1 ? "" : "s"}
-              {job.applicants_count != null && job.applicants_count !== applications.length ? (
-                <span className="ml-1 text-amber-700">(job row count: {job.applicants_count})</span>
-              ) : null}
-            </p>
+            <Badge className={getStatusColor(job.status ?? "open")}>{job.status ?? "open"}</Badge>
           </div>
-          <Badge className={getStatusColor(job.status ?? "open")}>{job.status ?? "open"}</Badge>
+          <p className="mt-1 text-sm text-text-secondary">
+            {applications.length} applicant{applications.length === 1 ? "" : "s"}
+            {job.applicants_count != null && job.applicants_count !== applications.length ? (
+              <span className="ml-1 text-amber-700">(job row count: {job.applicants_count})</span>
+            ) : null}
+          </p>
         </div>
       </Card>
       <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)_320px]">
@@ -538,14 +615,16 @@ export function ApplicantReviewPage() {
                         return `${first.slice(0, 1)}${last.slice(0, 1) || first.slice(1, 2)}`.toUpperCase();
                       })()}
                     </div>
-                    <div className="min-w-0">
-                      <p className="truncate font-semibold text-[#1f2937]">
-                        {memberProfilesById[application.member_id]
-                          ? `${memberProfilesById[application.member_id].first_name} ${memberProfilesById[application.member_id].last_name}`
-                          : `Member #${application.member_id}`}
-                      </p>
-                      <p className="text-xs capitalize text-[#4b5563]">
-                        {application.status} ·{" "}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate font-semibold text-[#1f2937]">
+                          {memberProfilesById[application.member_id]
+                            ? `${memberProfilesById[application.member_id].first_name} ${memberProfilesById[application.member_id].last_name}`
+                            : `Member #${application.member_id}`}
+                        </p>
+                        <Badge className={`shrink-0 capitalize ${getStatusColor(application.status)}`}>{application.status}</Badge>
+                      </div>
+                      <p className="text-xs text-[#4b5563]">
                         {new Date(application.application_datetime).toLocaleDateString(undefined, {
                           month: "short",
                           day: "numeric"
@@ -649,29 +728,27 @@ export function ApplicantReviewPage() {
                       </div>
                       <div>
                         <p className="font-medium text-[#1f2937]">{resumeFileName}</p>
-                        <p className="text-xs text-[#6b7280]">PDF · 245 KB</p>
+                        <p className="text-xs text-[#6b7280]">{resumeSubtitle}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {openResumeUrl ? (
+                      {showResumeActions ? (
                         <>
-                          <a
-                            href={openResumeUrl}
-                            target="_blank"
-                            rel="noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => handlePreviewResume()}
                             className="rounded-lg px-2 py-1.5 text-sm font-semibold text-[#2563eb] transition hover:bg-[#eff6ff]"
                           >
-                            Preview
-                          </a>
-                          <a
-                            href={openResumeUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            download={resumeFileName}
+                            Preview PDF
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadResume()}
                             className="rounded-lg p-1.5 text-[#374151] transition hover:bg-gray-100"
+                            aria-label="Download resume"
                           >
                             <Download className="h-4 w-4" />
-                          </a>
+                          </button>
                           <button type="button" className="rounded-lg p-1.5 text-[#374151] transition hover:bg-gray-100" aria-label="More resume actions">
                             <MoreHorizontal className="h-4 w-4" />
                           </button>
@@ -680,6 +757,12 @@ export function ApplicantReviewPage() {
                     </div>
                   </div>
                 </div>
+                {showResumeTextPanel ? (
+                  <div className="mt-3 max-h-64 overflow-y-auto rounded-lg border border-dashed border-gray-200 bg-[#fafafa] p-3 text-xs leading-relaxed text-[#374151]">
+                    <p className="mb-1 font-semibold text-[#111827]">Résumé text on application</p>
+                    <pre className="whitespace-pre-wrap font-sans">{resumeTextSnapshot}</pre>
+                  </div>
+                ) : null}
               </Card>
             </div>
           )}
@@ -725,13 +808,16 @@ function CandidateHeader({
   const initials = `${first.slice(0, 1)}${last.slice(0, 1) || first.slice(1, 2)}`.toUpperCase();
   return (
     <Card className="rounded-xl border border-gray-200 p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#dbeafe] text-lg font-semibold text-[#0a66c2]">
-            {initials}
+      <div className="flex items-start gap-3">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#dbeafe] text-lg font-semibold text-[#0a66c2]">
+          {initials}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-2xl font-semibold text-[#111827]">{fullName}</h2>
+            <Badge className={`shrink-0 capitalize ${getStatusColor(selected.status)}`}>{selected.status}</Badge>
           </div>
           <div>
-            <h2 className="text-2xl font-semibold text-[#111827]">{fullName}</h2>
             <p className="text-sm text-[#4b5563]">{profile.headline || "Professional profile"}</p>
             <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-[#6b7280]">
               <span className="inline-flex items-center gap-1">
@@ -756,7 +842,6 @@ function CandidateHeader({
             </div>
           </div>
         </div>
-        <Badge className={`${getStatusColor(selected.status)} capitalize`}>{selected.status}</Badge>
       </div>
     </Card>
   );

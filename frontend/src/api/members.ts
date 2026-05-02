@@ -137,3 +137,13 @@ export async function downloadResumeFile(member_id: number): Promise<{ blob: Blo
   const fileName = parseDownloadFilename(contentDisposition) || `resume_${member_id}`;
   return { blob, fileName };
 }
+
+/** Recruiter or applicant: resume bytes for an application (Bearer auth; use blob URL for new-tab preview). */
+export async function downloadApplicationResumeBlob(application_id: number): Promise<{ blob: Blob; fileName: string }> {
+  const response = await api.get(`/members/resume/application/${application_id}`, { responseType: "blob" });
+  const contentType = response.headers["content-type"] || "application/octet-stream";
+  const blob = new Blob([response.data], { type: contentType });
+  const contentDisposition = response.headers["content-disposition"];
+  const fileName = parseDownloadFilename(contentDisposition) || `resume_application_${application_id}`;
+  return { blob, fileName };
+}

@@ -12,6 +12,7 @@ import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
 import type { Job } from "../../types/job";
 import { formatSalary } from "../../utils/formatSalary";
+import { getListingEmployerDisplayName, stripListingEmployerPrefix } from "../../utils/listingEmployer";
 
 function daysAgoLabel(postedDatetime?: string): string {
   if (!postedDatetime) return "Recently posted";
@@ -23,8 +24,8 @@ function daysAgoLabel(postedDatetime?: string): string {
   return `Posted ${diffDays} days ago`;
 }
 
-function descriptionLines(job: Job): string[] {
-  return (job.description ?? "")
+function descriptionLinesFrom(strippedDescription: string): string[] {
+  return strippedDescription
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
@@ -135,6 +136,7 @@ function JobHeader({
   onApply: () => void;
   onSave: () => void;
 }) {
+  const employerLabel = getListingEmployerDisplayName(job);
   return (
     <Card className="rounded-[12px] border border-[#e0dfdc] bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.08)]">
       {job.status === "closed" ? (
@@ -142,12 +144,12 @@ function JobHeader({
       ) : null}
       <div className="flex items-start gap-4">
         <div className="flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-[10px] bg-[#eef3f8] text-xl font-semibold text-[#0a66c2]">
-          {logoText(job.company_name)}
+          {logoText(employerLabel)}
         </div>
         <div className="min-w-0">
           <h1 className="text-[2.05rem] font-semibold leading-tight tracking-[-0.02em] text-[#1d2226]">{job.title}</h1>
-          <Link to={`/search?q=${encodeURIComponent(job.company_name ?? "")}`} className="mt-1 inline-block text-[1.02rem] font-semibold text-[#0a66c2] hover:underline">
-            {job.company_name ?? "Unknown company"}
+          <Link to={`/search?q=${encodeURIComponent(employerLabel)}`} className="mt-1 inline-block text-[1.02rem] font-semibold text-[#0a66c2] hover:underline">
+            {employerLabel}
           </Link>
           <p className="mt-1 text-[0.95rem] text-[#59636e]">
             {job.location || "Location not listed"} ({job.work_mode}) · {daysAgoLabel(job.posted_datetime)} · {job.applicants_count ?? 0} applicants
@@ -302,8 +304,10 @@ export function JobDetailPage() {
     );
   }
 
-  const parsed = parseLabeledJobDescription(job.description);
-  const fallbackLines = descriptionLines(job);
+  const employerLabel = getListingEmployerDisplayName(job);
+  const descriptionBody = stripListingEmployerPrefix(job.description);
+  const parsed = parseLabeledJobDescription(descriptionBody);
+  const fallbackLines = descriptionLinesFrom(descriptionBody);
   const aboutText = parsed.about || fallbackLines.join("\n\n");
   const responsibilities = parsed.responsibilities.length
     ? parsed.responsibilities
@@ -368,10 +372,13 @@ export function JobDetailPage() {
               <SidebarCard title="About the company">
                 <div className="flex items-start gap-3">
                   <div className="flex h-12 w-12 items-center justify-center rounded-[8px] bg-[#eef3f8] font-semibold text-[#0a66c2]">
-                    {logoText(job.company_name)}
+                    {logoText(employerLabel)}
                   </div>
                   <div>
-                    <p className="font-semibold text-[#1d2226]">{job.company_name}</p>
+                    <p className="font-semibold text-[#1d2226]">{employerLabel}</p>
+                    {employerLabel !== (job.company_name ?? "") ? (
+                      <p className="text-xs text-[#59636e]">Listing partner: {job.company_name}</p>
+                    ) : null}
                     <p className="text-sm text-[#59636e]">{job.industry || "Technology, Information and Internet"}</p>
                     <p className="text-sm text-[#59636e]">10,001+ employees</p>
                   </div>
@@ -392,11 +399,11 @@ export function JobDetailPage() {
                     className="flex items-start gap-3 border-t border-[#ebedf0] pt-3 first:border-t-0 first:pt-0 hover:no-underline"
                   >
                     <div className="flex h-10 w-10 items-center justify-center rounded-[8px] bg-[#eef3f8] text-xs font-semibold text-[#0a66c2]">
-                      {logoText(similar.company_name)}
+                      {logoText(getListingEmployerDisplayName(similar))}
                     </div>
                     <div className="min-w-0">
                       <p className="line-clamp-1 text-sm font-semibold text-[#1d2226]">{similar.title}</p>
-                      <p className="text-xs text-[#59636e]">{similar.company_name}</p>
+                      <p className="text-xs text-[#59636e]">{getListingEmployerDisplayName(similar)}</p>
                       <p className="text-xs text-[#59636e]">
                         {similar.location || "Location not listed"} ({similar.work_mode})
                       </p>

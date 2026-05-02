@@ -292,6 +292,20 @@ services:
       PORT: ${JOB_SERVICE_PORT:-3005}
       PYTHONPATH: /app
       <<: *docker-runtime-env
+      # In-container URLs for scripts/kaggle_import.py when AUTO_KAGGLE_IMPORT runs (optional).
+      SKILLSYNC_HTTP_AUTH: http://auth-service:3001
+      SKILLSYNC_HTTP_PROFILE: http://profile-service:3002
+      SKILLSYNC_HTTP_RECRUITER: http://recruiter-service:3003
+      SKILLSYNC_HTTP_CONNECTION: http://connection-service:3004
+      SKILLSYNC_HTTP_JOB: http://localhost:3005
+      SKILLSYNC_HTTP_APPLICATION: http://application-service:3006
+      SKILLSYNC_HTTP_MESSAGING: http://messaging-service:3007
+      SKILLSYNC_HTTP_ANALYTICS: http://analytics-service:3008
+      AUTO_KAGGLE_IMPORT: ${AUTO_KAGGLE_IMPORT:-}
+      KAGGLE_JOBS_CSV: ${KAGGLE_JOBS_CSV:-}
+      KAGGLE_IMPORT_MIN_JOBS: ${KAGGLE_IMPORT_MIN_JOBS:-500}
+      KAGGLE_MAX_JOB_ROWS: ${KAGGLE_MAX_JOB_ROWS:-12000}
+      AUTO_KAGGLE_IMPORT_DELAY_SEC: ${AUTO_KAGGLE_IMPORT_DELAY_SEC:-12}
     ports:
       - "${JOB_SERVICE_PORT:-3005}:${JOB_SERVICE_PORT:-3005}"
     depends_on:

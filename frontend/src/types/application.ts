@@ -19,6 +19,8 @@ export interface Application {
   job_id: number;
   member_id: number;
   resume_url: string | null;
+  /** Optional résumé text snapshot on this application (class doc §4.4). */
+  resume_text?: string | null;
   cover_letter: string | null;
   application_datetime: string;
   status: ApplicationStatus;

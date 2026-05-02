@@ -23,7 +23,7 @@ _APP = {
     "application_id": 7, "job_id": 42, "member_id": "10",
     "job_recruiter_id": "1", "job_title": "SWE", "job_status": "open",
     "company_name": "Acme", "status": "submitted",
-    "resume_url": "s3://r.pdf", "cover_letter": "Hi", "answers": None,
+    "resume_url": "s3://r.pdf", "resume_text": None, "cover_letter": "Hi", "answers": None,
 }
 
 

@@ -19,6 +19,8 @@ export interface Job {
   views_count?: number;
   applicants_count?: number;
   company_name?: string;
+  /** Set by job search API from DB when description starts with ``[employer:…]``. */
+  listing_employer?: string | null;
   industry?: string | null;
   saved_at?: string;
 }

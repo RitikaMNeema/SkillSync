@@ -11,7 +11,19 @@ router = APIRouter()
 
 @router.post("/submit", status_code=202)
 async def submit(body: SubmitRequest, u=Depends(get_current_user)):
-    return {"success": True, "data": await ctrl.enqueue_submit(body.job_id, body.member_id, body.resume_url, body.cover_letter, body.answers, u)}
+    return {
+        "success": True,
+        "data": await ctrl.enqueue_submit(
+            body.job_id,
+            body.member_id,
+            body.resume_url,
+            body.resume_ref,
+            body.resume_text,
+            body.cover_letter,
+            body.answers,
+            u,
+        ),
+    }
 
 @router.post("/get")
 async def get(body: AppIdRequest, u=Depends(get_current_user)):

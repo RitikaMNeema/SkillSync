@@ -7,6 +7,8 @@ export async function submitApplication(payload: {
   job_id: number;
   member_id: number;
   resume_url?: string | null;
+  resume_ref?: string | null;
+  resume_text?: string | null;
   cover_letter?: string | null;
   answers?: Record<string, string>;
 }) {

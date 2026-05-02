@@ -7,6 +7,7 @@ import { authStore } from "../../context/AuthContext";
 import type { ResumeMeta } from "../../api/members";
 import type { MemberProfile } from "../../types/member";
 import type { Job } from "../../types/job";
+import { getListingEmployerDisplayName } from "../../utils/listingEmployer";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 
@@ -161,10 +162,12 @@ export function ApplyModal({
     const loading = toast.loading("Submitting application...");
     setSubmitting(true);
     try {
+      const summarySnapshot = (member?.summary ?? "").trim();
       await submitApplication({
         job_id: job.job_id,
         member_id: userId,
         resume_url: resumeUrl || null,
+        resume_text: summarySnapshot ? summarySnapshot.slice(0, 24000) : null,
         cover_letter: coverLetterFile ? `Uploaded file: ${coverLetterFile.name}` : null,
         answers: {
           phone: phone.trim(),
@@ -194,7 +197,7 @@ export function ApplyModal({
             <div className="flex items-center gap-2 text-sm leading-5">
               <span className="font-semibold text-[#1f1f1f]">{job.title}</span>
               <span className="text-text-secondary">-</span>
-              <span className="text-text-secondary">{job.company_name || "Company"}</span>
+              <span className="text-text-secondary">{getListingEmployerDisplayName(job)}</span>
             </div>
             <div className="flex flex-wrap gap-4 text-[12px] text-text-secondary">
               <span>{job.employment_type || "Employment type not specified"}</span>
@@ -411,7 +414,10 @@ export function ApplyModal({
                     if (errors.consent) setErrors((current) => ({ ...current, consent: undefined }));
                   }}
                 />
-                <span>I authorize {job.company_name || "this company"} to contact me about this application and future opportunities.</span>
+                <span>
+                  I authorize {getListingEmployerDisplayName(job)} to contact me about this application and future
+                  opportunities.
+                </span>
               </label>
               {errors.consent ? <p className="mt-1 text-xs text-[#b91c1c]">{errors.consent}</p> : null}
               <p className="mt-2 text-xs text-text-secondary">You can update your preferences anytime in your account settings.</p>

@@ -337,6 +337,55 @@ async def stream_resume_file(member_id: int, actor_id: int):
     return stream, info, meta
 
 
+async def resume_plain_text_for_application(application_id: int, actor_id: int, role: str) -> str:
+    """Return extracted plain text for recruiter/applicant preview (no PDF viewer required)."""
+    from models.resume_text_extract import extract_resume_plain_text
+
+    stream, _info, meta = await stream_resume_for_application(application_id, actor_id, role)
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in stream:
+        total += len(chunk)
+        if total > MAX_RESUME_BYTES:
+            raise HTTPException(413, "Resume too large for text extraction")
+        chunks.append(chunk)
+    data = b"".join(chunks)
+    return extract_resume_plain_text(
+        data,
+        meta.get("resume_content_type"),
+        meta.get("resume_file_name"),
+    )
+
+
+async def stream_resume_for_application(application_id: int, actor_id: int, role: str):
+    """Job poster or applicant may stream the applicant's GridFS resume for this application."""
+    from models.application_resume_mysql import get_application_resume_parties
+
+    parties = await get_application_resume_parties(application_id)
+    if not parties:
+        raise HTTPException(404, "Application not found")
+    applicant = parties["applicant_member_id"]
+    recruiter = parties["job_recruiter_id"]
+
+    if role == "recruiter":
+        if str(actor_id) != str(recruiter):
+            raise HTTPException(403, "Forbidden")
+    elif role == "member":
+        if str(actor_id) != str(applicant):
+            raise HTTPException(403, "Forbidden")
+    else:
+        raise HTTPException(403, "Forbidden")
+
+    meta = await get_member_resume_meta(applicant)
+    if not meta or not meta.get("resume_file_id"):
+        raise HTTPException(404, "No resume on file for this applicant")
+    try:
+        stream, info = await files_mongo.stream_resume(meta["resume_file_id"])
+    except FileNotFoundError:
+        raise HTTPException(404, "Resume missing in storage")
+    return stream, info, meta
+
+
 async def get_resume_meta(member_id: int) -> dict | None:
     return await get_member_resume_meta(member_id)
 

@@ -29,6 +29,7 @@ import type { Application } from "../../types/application";
 import type { Job } from "../../types/job";
 import { formatRelativeDate } from "../../utils/formatDate";
 import { getStatusColor } from "../../utils/getStatusColor";
+import { getListingEmployerDisplayName } from "../../utils/listingEmployer";
 
 interface JobFormValues {
   company_id: number;
@@ -304,6 +305,7 @@ export function JobManagementPage() {
           job.location ?? "",
           job.employment_type ?? "",
           job.company_name ?? "",
+          getListingEmployerDisplayName(job),
           Array.isArray(job.skills_required) ? job.skills_required.join(" ") : "",
           job.description ?? ""
         ]
@@ -692,8 +694,8 @@ export function JobManagementPage() {
             <div className="space-y-4">
               {filteredDisplayedJobs.map(({ job, postingCount }) => (
                 <article key={job.job_id} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="space-y-2">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Link
                         to={`/recruiter/jobs/${job.job_id}/applicants`}
                         state={{ from: backToListPath, fromLabel: "Back to Jobs" }}
@@ -701,21 +703,21 @@ export function JobManagementPage() {
                       >
                         {job.title}
                       </Link>
-                      <p className="text-sm text-gray-600">
-                        {(job.employment_type ?? "Employment type")} · {(job.seniority_level ?? "Experience level")} · {(job.work_mode ?? "Workplace type")}
-                      </p>
-                      <p className="text-sm text-gray-600">{job.location ?? "Location not provided"}</p>
-                      <p className="text-sm text-gray-500">Posted {formatRelativeDate(job.posted_datetime)}</p>
-                      {duplicateTitleMetaByJobId[job.job_id]?.total > 1 && focus !== "new" ? (
-                        <p className="text-xs text-gray-500">Posting #{duplicateTitleMetaByJobId[job.job_id].index}</p>
-                      ) : null}
-                      {focus === "new" && postingCount > 1 ? (
-                        <p className="text-xs text-gray-500">{postingCount} postings in the last week</p>
-                      ) : null}
+                      <Badge className={(job.status ?? "open") === "open" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"}>
+                        {(job.status ?? "open") === "open" ? "Active" : "Closed"}
+                      </Badge>
                     </div>
-                    <Badge className={(job.status ?? "open") === "open" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"}>
-                      {(job.status ?? "open") === "open" ? "Active" : "Closed"}
-                    </Badge>
+                    <p className="text-sm text-gray-600">
+                      {(job.employment_type ?? "Employment type")} · {(job.seniority_level ?? "Experience level")} · {(job.work_mode ?? "Workplace type")}
+                    </p>
+                    <p className="text-sm text-gray-600">{job.location ?? "Location not provided"}</p>
+                    <p className="text-sm text-gray-500">Posted {formatRelativeDate(job.posted_datetime)}</p>
+                    {duplicateTitleMetaByJobId[job.job_id]?.total > 1 && focus !== "new" ? (
+                      <p className="text-xs text-gray-500">Posting #{duplicateTitleMetaByJobId[job.job_id].index}</p>
+                    ) : null}
+                    {focus === "new" && postingCount > 1 ? (
+                      <p className="text-xs text-gray-500">{postingCount} postings in the last week</p>
+                    ) : null}
                   </div>
                   <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-600">
                     <span className="inline-flex items-center gap-1">

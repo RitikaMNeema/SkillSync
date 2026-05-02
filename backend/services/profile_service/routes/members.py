@@ -1,7 +1,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from schemas.members import (
     CreateMemberRequest,
     GetMemberRequest,
@@ -178,6 +178,26 @@ async def upload_resume_file(
         raise
     log.info("uploadResumeFile: success file_id=%s", result.get("resume_file_id"))
     return {"success": True, "data": result}
+
+
+@router.get("/resume/application/{application_id}/text")
+async def get_application_resume_plain_text(application_id: int, u=Depends(get_current_user)):
+    """Extract plain text from PDF/DOCX for in-app preview (same auth as binary download)."""
+    text = await ctrl.resume_plain_text_for_application(application_id, u["user_id"], u["role"])
+    return PlainTextResponse(text, media_type="text/plain; charset=utf-8")
+
+
+@router.get("/resume/application/{application_id}")
+async def download_resume_for_application(application_id: int, u=Depends(get_current_user)):
+    """Recruiter (job owner) or applicant may download/view resume linked to an application."""
+    stream, _info, meta = await ctrl.stream_resume_for_application(application_id, u["user_id"], u["role"])
+    content_type = meta.get("resume_content_type") or "application/octet-stream"
+    filename = meta.get("resume_file_name") or f"resume_application_{application_id}"
+    return StreamingResponse(
+        stream,
+        media_type=content_type,
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @router.get("/resume/{member_id}/file")

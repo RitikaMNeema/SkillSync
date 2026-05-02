@@ -2,6 +2,7 @@ import { Bookmark, Clock3, MapPin } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { Job } from "../../types/job";
 import { formatDate } from "../../utils/formatDate";
+import { getListingEmployerDisplayName } from "../../utils/listingEmployer";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
@@ -15,18 +16,19 @@ export function JobCard({
   saved?: boolean;
   onSave?: (job: Job) => void;
 }) {
+  const employerLabel = getListingEmployerDisplayName(job);
   return (
     <Card className="transition-shadow duration-150 hover:shadow-[0_0_0_1px_#0a66c2,0_2px_8px_rgba(10,102,194,.15)]">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded bg-brand-light font-semibold text-brand">
-            {(job.company_name ?? "Co").slice(0, 2).toUpperCase()}
+            {employerLabel.slice(0, 2).toUpperCase()}
           </div>
           <div className="space-y-1">
             <Link to={`/jobs/${job.job_id}`} className="text-base font-semibold text-text-primary hover:text-brand">
               {job.title}
             </Link>
-            <p className="text-sm text-text-secondary">{job.company_name}</p>
+            <p className="text-sm text-text-secondary">{employerLabel}</p>
             <p className="flex items-center gap-1 text-sm text-text-secondary">
               <MapPin className="h-4 w-4" />
               {job.location || "Location not listed"}

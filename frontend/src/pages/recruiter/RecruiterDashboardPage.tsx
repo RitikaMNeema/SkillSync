@@ -201,13 +201,6 @@ export function RecruiterDashboardPage() {
             <p className="text-sm text-text-secondary">Recruiter dashboard for {monthWindowLabel}</p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="rounded-md border border-[#0a66c2] px-3 py-2 text-xs font-semibold text-[#0a66c2] hover:bg-[#eef5fc]"
-              onClick={() => navigate("/ai-test/1")}
-            >
-              Open AI Hiring
-            </button>
             <input
               type="month"
               className="linkedin-input h-9 px-3 text-sm"

@@ -25,7 +25,9 @@ server {
   # - API_HOST=host-gateway (Linux with extra_hosts mapping)
   #
   # NOTE: These ports match the backend service ports in the repo docs.
-  resolver 127.0.0.11 valid=30s;
+  # Docker DNS often returns AAAA for host.docker.internal; connecting over IPv6 from
+  # this container can be "Network unreachable" on Docker Desktop. Prefer IPv4 only.
+  resolver 127.0.0.11 valid=30s ipv6=off;
   set $api_host ${API_HOST};
 
   proxy_http_version 1.1;

@@ -20,6 +20,8 @@ async def _execute(action: str, actor: dict, payload: dict) -> dict:
             _require(payload, "job_id"),
             _require(payload, "member_id"),
             payload.get("resume_url"),
+            payload.get("resume_ref"),
+            payload.get("resume_text"),
             payload.get("cover_letter"),
             payload.get("answers"),
             actor,

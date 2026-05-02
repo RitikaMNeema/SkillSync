@@ -5,6 +5,7 @@ ENV PYTHONPATH=/app
 COPY shared/ ./shared/
 COPY services/job_service/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
+COPY scripts/ ./scripts/
 COPY services/job_service/ ./services/job_service/
 
 WORKDIR /app/services/job_service

@@ -13,13 +13,15 @@ JOB_TTL    = 300
 SEARCH_TTL = 120
 
 _job_key    = lambda jid: f"job:{jid}"
-_search_key = lambda p:   f"job:search:{p}"
+# v3: search includes listing_employer SQL column; bump prefix when shape changes.
+_search_key = lambda p: f"job:search:v3:{p}"
 
 
 async def create(body: dict, actor_id=None) -> dict:
     if actor_id and str(body.get("recruiter_id")) != str(actor_id):
         raise HTTPException(403, "Not authorized to create postings for another recruiter")
     job_id = await create_job(body)
+    await cache_del_pattern("job:search:*")
     return await get_job(job_id)
 
 

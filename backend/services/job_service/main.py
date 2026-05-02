@@ -8,6 +8,7 @@ from shared.middleware.logger import LoggerMiddleware
 from shared.utils.trace_id import TraceMiddleware
 from routes.jobs import router
 from consumers.job_commands_consumer import start_job_commands_consumer
+from auto_kaggle_import import schedule_auto_kaggle_import
 
 
 @asynccontextmanager
@@ -15,6 +16,7 @@ async def lifespan(app: FastAPI):
     await get_pool()
     await get_redis()
     await start_job_commands_consumer()
+    schedule_auto_kaggle_import()
     yield
     await close_pool()
     await close_producer()

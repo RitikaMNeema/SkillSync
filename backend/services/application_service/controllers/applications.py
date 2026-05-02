@@ -10,11 +10,15 @@ from producers.application_command_producer import enqueue_application_command
 from models.command_status import get_command_status
 
 
-async def submit(job_id, member_id, resume_url, cover_letter, answers, actor: dict) -> dict:
+async def submit(
+    job_id, member_id, resume_url, resume_ref, resume_text, cover_letter, answers, actor: dict
+) -> dict:
     if actor.get("role") != "member" or str(actor["user_id"]) != str(member_id):
         raise HTTPException(403, "Members may only submit applications for themselves")
     try:
-        app_id = await submit_application_transaction(job_id, member_id, resume_url, cover_letter, answers)
+        app_id = await submit_application_transaction(
+            job_id, member_id, resume_url, resume_ref, resume_text, cover_letter, answers
+        )
     except ValueError as e:
         msg = str(e)
         if msg == "JOB_NOT_FOUND":
@@ -23,13 +27,34 @@ async def submit(job_id, member_id, resume_url, cover_letter, answers, actor: di
             raise HTTPException(400, "Cannot apply to a closed job")
         if msg == "DUPLICATE":
             raise HTTPException(409, "Already applied to this job")
+        if msg == "RESUME_REQUIRED":
+            raise HTTPException(
+                400,
+                "Provide resume_url or resume_ref, resume_text, or upload a résumé PDF on your profile (§4.4).",
+            )
         raise
     submitted_app = await get_application(app_id)
     recruiter_id = submitted_app["job_recruiter_id"] if submitted_app else None
     loc = await get_member_location(member_id)
     city = (loc or {}).get("location_city")
     state = (loc or {}).get("location_state")
-    await emit_submitted(member_id, app_id, job_id, member_id, recruiter_id, city=city, state=state)
+    ref = (submitted_app or {}).get("resume_url") or ""
+    rtxt = (submitted_app or {}).get("resume_text") or ""
+    await emit_submitted(
+        member_id,
+        app_id,
+        job_id,
+        member_id,
+        recruiter_id,
+        resume_ref=ref,
+        submission_metadata={
+            "application_id": str(app_id),
+            "has_resume_text": bool(rtxt),
+            "resume_text_length": len(rtxt),
+        },
+        city=city,
+        state=state,
+    )
     return {"application_id": app_id, "job_id": job_id, "member_id": member_id, "status": "submitted"}
 
 
@@ -131,7 +156,9 @@ async def withdraw(application_id: int, member_id) -> dict:
     return {"application_id": application_id, "old_status": old_status, "new_status": "withdrawn"}
 
 
-async def enqueue_submit(job_id, member_id, resume_url, cover_letter, answers, actor: dict) -> dict:
+async def enqueue_submit(
+    job_id, member_id, resume_url, resume_ref, resume_text, cover_letter, answers, actor: dict
+) -> dict:
     if actor.get("role") != "member" or str(actor["user_id"]) != str(member_id):
         raise HTTPException(403, "Members may only submit applications for themselves")
     return await enqueue_application_command(
@@ -141,6 +168,8 @@ async def enqueue_submit(job_id, member_id, resume_url, cover_letter, answers, a
             "job_id": job_id,
             "member_id": member_id,
             "resume_url": resume_url,
+            "resume_ref": resume_ref,
+            "resume_text": resume_text,
             "cover_letter": cover_letter,
             "answers": answers,
         },

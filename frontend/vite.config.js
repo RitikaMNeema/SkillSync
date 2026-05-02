@@ -18,23 +18,24 @@ var proxyLong = {
     proxyTimeout: 120000
 };
 export default defineConfig(function (_a) {
-    var _b;
+    var _b, _c, _d, _e;
     var mode = _a.mode;
     var env = loadEnv(mode, process.cwd(), "");
     /** If set (e.g. http://localhost:3000), all `/api/*` goes to the gateway — best for uploads. */
-    var gateway = (_b = env.VITE_PROXY_GATEWAY) === null || _b === void 0 ? void 0 : _b.trim();
+    var gateway = ((_c = (_b = process.env.VITE_PROXY_GATEWAY) !== null && _b !== void 0 ? _b : env.VITE_PROXY_GATEWAY) !== null && _c !== void 0 ? _c : "").trim();
+    var proxyHost = ((_e = (_d = process.env.VITE_PROXY_HOST) !== null && _d !== void 0 ? _d : env.VITE_PROXY_HOST) !== null && _e !== void 0 ? _e : "").trim() || "localhost";
     var serviceProxies = {
-        "/api/auth": __assign({ target: "http://localhost:3001", rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
-        "/api/members": __assign({ target: "http://localhost:3002", rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
-        "/api/posts": __assign({ target: "http://localhost:3002", rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
-        "/api/recruiters": __assign({ target: "http://localhost:3003", rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
-        "/api/connections": __assign({ target: "http://localhost:3004", rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
-        "/api/jobs": __assign({ target: "http://localhost:3005", rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
-        "/api/applications": __assign({ target: "http://localhost:3006", rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
-        "/api/threads": __assign({ target: "http://localhost:3007", rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
-        "/api/messages": __assign({ target: "http://localhost:3007", rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
-        "/api/analytics": __assign({ target: "http://localhost:3008", rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
-        "/api/events": __assign({ target: "http://localhost:3008", rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong)
+        "/api/auth": __assign({ target: "http://".concat(proxyHost, ":3001"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
+        "/api/members": __assign({ target: "http://".concat(proxyHost, ":3002"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
+        "/api/posts": __assign({ target: "http://".concat(proxyHost, ":3002"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
+        "/api/recruiters": __assign({ target: "http://".concat(proxyHost, ":3003"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
+        "/api/connections": __assign({ target: "http://".concat(proxyHost, ":3004"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
+        "/api/jobs": __assign({ target: "http://".concat(proxyHost, ":3005"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
+        "/api/applications": __assign({ target: "http://".concat(proxyHost, ":3006"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
+        "/api/threads": __assign({ target: "http://".concat(proxyHost, ":3007"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
+        "/api/messages": __assign({ target: "http://".concat(proxyHost, ":3007"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
+        "/api/analytics": __assign({ target: "http://".concat(proxyHost, ":3008"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
+        "/api/events": __assign({ target: "http://".concat(proxyHost, ":3008"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong)
     };
     var redirectLegacyRecruiterUrls = function () { return ({
         name: "redirect-legacy-recruiter-route",

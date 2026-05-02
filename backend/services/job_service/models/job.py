@@ -3,6 +3,15 @@ from shared.database.mysql import get_pool
 
 PAGE_SIZE = 20
 
+# Parsed from first line "[employer:Name]" — mirrors frontend listingEmployer.ts (MySQL 8).
+_LISTING_EMPLOYER_SQL = (
+    "CASE "
+    # %% → single % for MySQL LIKE; bare % breaks aiomysql's query % args interpolation.
+    "WHEN j.description IS NOT NULL AND LTRIM(j.description) LIKE '[employer:%%' THEN "
+    "NULLIF(TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(TRIM(SUBSTRING_INDEX(LTRIM(j.description), '\\n', 1)), ']', 1), ':', -1)), '') "
+    "ELSE NULL END AS listing_employer"
+)
+
 
 async def create_job(f: dict) -> int:
     pool = await get_pool()
@@ -95,7 +104,11 @@ async def search_jobs(keyword, location, employment_type, work_mode, industry, s
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                f"SELECT j.job_id,j.title,j.location,j.work_mode,j.employment_type,j.seniority_level,j.salary_min,j.salary_max,j.posted_datetime,j.views_count,j.applicants_count,c.name AS company_name,c.industry FROM jobs j JOIN companies c ON j.company_id=c.company_id {where} ORDER BY j.posted_datetime DESC LIMIT %s OFFSET %s",
+                f"SELECT j.job_id,j.title,j.description,j.location,j.work_mode,j.employment_type,j.seniority_level,"
+                f"j.salary_min,j.salary_max,j.posted_datetime,j.views_count,j.applicants_count,"
+                f"c.name AS company_name,c.industry,{_LISTING_EMPLOYER_SQL} "
+                f"FROM jobs j JOIN companies c ON j.company_id=c.company_id {where} "
+                f"ORDER BY j.posted_datetime DESC LIMIT %s OFFSET %s",
                 [*values, PAGE_SIZE, offset],
             )
             rows = await cur.fetchall()
@@ -141,7 +154,10 @@ async def saved_by_member(member_id: int, page: int) -> tuple[list, int]:
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "SELECT j.job_id,j.title,j.location,j.work_mode,j.employment_type,j.status,j.posted_datetime,sj.saved_at,c.name AS company_name,c.industry FROM saved_jobs sj JOIN jobs j ON sj.job_id=j.job_id JOIN companies c ON j.company_id=c.company_id WHERE sj.member_id=%s ORDER BY sj.saved_at DESC LIMIT %s OFFSET %s",
+                f"SELECT j.job_id,j.title,j.description,j.location,j.work_mode,j.employment_type,j.status,j.posted_datetime,sj.saved_at,"
+                f"c.name AS company_name,c.industry,{_LISTING_EMPLOYER_SQL} "
+                f"FROM saved_jobs sj JOIN jobs j ON sj.job_id=j.job_id JOIN companies c ON j.company_id=c.company_id "
+                f"WHERE sj.member_id=%s ORDER BY sj.saved_at DESC LIMIT %s OFFSET %s",
                 (member_id, PAGE_SIZE, offset),
             )
             rows = await cur.fetchall()

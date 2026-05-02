@@ -28,7 +28,11 @@ export function JobSearchPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState(initialFilters);
   const debounced = useDebounce(filters, 300);
+  const debouncedKey = JSON.stringify(debounced);
+  const [page, setPage] = useState(1);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [total, setTotal] = useState(0);
+  const [pageSize, setPageSize] = useState(20);
   const [savedIds, setSavedIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -50,6 +54,10 @@ export function JobSearchPage() {
     );
   }, [searchParams]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedKey]);
+
   function runSearch() {
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([key, value]) => {
@@ -61,9 +69,14 @@ export function JobSearchPage() {
   useEffect(() => {
     setLoading(true);
     setError("");
-    void searchJobs({ ...debounced, page: 1 })
+    const filters = Object.fromEntries(
+      Object.entries(debounced).filter(([, v]) => String(v ?? "").trim() !== "")
+    ) as JobFilterState;
+    void searchJobs({ ...filters, page })
       .then((data) => {
         setJobs(data.jobs);
+        setTotal(data.total);
+        setPageSize(data.page_size);
       })
       .catch(() => {
         setError("Could not load jobs.");
@@ -71,7 +84,7 @@ export function JobSearchPage() {
       .finally(() => {
         setLoading(false);
       });
-  }, [debounced]);
+  }, [debounced, page]);
 
   useEffect(() => {
     if (!userId) return;
@@ -126,11 +139,18 @@ export function JobSearchPage() {
         <JobFilters
           filters={filters}
           onChange={(field, value) => setFilters((current) => ({ ...current, [field]: value }))}
-          onReset={() => setFilters(initialFilters)}
+          onReset={() => {
+            setFilters(initialFilters);
+            setSearchParams({});
+          }}
         />
         <section className="space-y-3">
-          <div className="flex items-center justify-between text-sm text-text-secondary">
-            <span>{jobs.length} jobs</span>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-text-secondary">
+            <span>
+              {total === 0
+                ? "0 jobs"
+                : `${Math.min((page - 1) * pageSize + 1, total)}–${Math.min((page - 1) * pageSize + jobs.length, total)} of ${total} jobs`}
+            </span>
             <span>Most relevant</span>
           </div>
           {loading ? (
@@ -150,7 +170,34 @@ export function JobSearchPage() {
               onAction={() => setFilters(initialFilters)}
             />
           ) : (
-            jobs.map((job) => <JobCard key={job.job_id} job={job} saved={savedIds.includes(job.job_id)} onSave={toggleSave} />)
+            <>
+              {jobs.map((job) => (
+                <JobCard key={job.job_id} job={job} saved={savedIds.includes(job.job_id)} onSave={toggleSave} />
+              ))}
+              {total > pageSize ? (
+                <div className="flex flex-wrap justify-center gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    Previous
+                  </Button>
+                  <span className="flex items-center px-2 text-sm text-text-secondary">
+                    Page {page} of {Math.max(1, Math.ceil(total / pageSize))}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={page * pageSize >= total}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              ) : null}
+            </>
           )}
         </section>
       </div>

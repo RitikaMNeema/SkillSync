@@ -1,4 +1,4 @@
-import { MoreHorizontal, Pencil, Search, Star, Trash2, X } from "lucide-react";
+import { MoreHorizontal, Search, Shield, Star, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -13,7 +13,7 @@ import {
 } from "../../api/messages";
 import { getMember, searchMembers } from "../../api/members";
 import { getRecruiter, searchRecruiters } from "../../api/recruiters";
-import { MessageBubble } from "../../components/messages/MessageBubble";
+import { MessageThreadView } from "../../components/messages/MessageThreadView";
 import { MessageInput } from "../../components/messages/MessageInput";
 import { ThreadList } from "../../components/messages/ThreadList";
 import { Alert } from "../../components/ui/Alert";
@@ -23,15 +23,6 @@ import { Input } from "../../components/ui/Input";
 import { authStore } from "../../context/AuthContext";
 import { useWebSocket } from "../../hooks/useWebSocket";
 import type { Message, Thread } from "../../types/message";
-import { formatDate } from "../../utils/formatDate";
-
-function LinkedInMark() {
-  return (
-    <span className="inline-flex h-[14px] min-w-[14px] items-center justify-center rounded-[2px] bg-[#0a66c2] px-[3px] text-[9px] font-bold text-white">
-      in
-    </span>
-  );
-}
 
 /** Flat illustration for inbox search empty state (LinkedIn-style). */
 function SearchInboxEmptyIllustration() {
@@ -79,6 +70,7 @@ export function MessagesPage() {
     locationLine?: string | null;
     profileSlug?: string | null;
     recruiterId?: number | null;
+    skills?: string[] | null;
   };
 
   const userId = authStore((state) => state.userId);
@@ -103,6 +95,7 @@ export function MessagesPage() {
   const [inboxSearch, setInboxSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<"all" | "unread" | "muted" | "archived">("all");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [profileAboutExpanded, setProfileAboutExpanded] = useState(false);
   const [starredThreadIds, setStarredThreadIds] = useState<Record<string, boolean>>({});
   const [archivedThreadIds, setArchivedThreadIds] = useState<Record<string, boolean>>({});
   const [mutedThreadIds, setMutedThreadIds] = useState<Record<string, boolean>>({});
@@ -172,7 +165,8 @@ export function MessagesPage() {
         summary: member.summary?.trim() || null,
         locationLine: locationLine || null,
         profileSlug: member.profile_slug ?? null,
-        recruiterId: null
+        recruiterId: null,
+        skills: member.skills ?? null
       };
     } catch {
       // keep trying recruiter endpoint
@@ -213,18 +207,6 @@ export function MessagesPage() {
     activeParticipantProfile?.name ??
     (activeThread ? threadLabels[activeThread.thread_id] ?? `Thread ${activeThread.thread_id.slice(0, 8)}` : "Select a conversation");
   const activeAvatarName = activeParticipantProfile?.name?.split(" ")[0] || activeThreadLabel.split(",")[0]?.trim() || "Thread";
-
-  const threadDayBanner = useMemo(() => {
-    if (!messages.length) return "TODAY";
-    const first = new Date(messages[0].timestamp);
-    const today = new Date();
-    const sameDay =
-      first.getFullYear() === today.getFullYear() &&
-      first.getMonth() === today.getMonth() &&
-      first.getDate() === today.getDate();
-    if (sameDay) return "TODAY";
-    return formatDate(messages[0].timestamp, "EEE, MMM d").toUpperCase();
-  }, [messages]);
 
   const displayUnreadCountByThread = useMemo(
     () =>
@@ -383,6 +365,10 @@ export function MessagesPage() {
   useEffect(() => {
     setMenuOpen(false);
   }, [activeThread?.thread_id]);
+
+  useEffect(() => {
+    setProfileAboutExpanded(false);
+  }, [activeParticipantId]);
 
   useEffect(() => {
     if (!userId) return;
@@ -605,35 +591,40 @@ export function MessagesPage() {
 
   if (loading) {
     return (
-      <div className="grid min-h-[74vh] gap-0 overflow-hidden rounded-2xl border border-[#d9dee3] bg-white shadow-card md:grid-cols-[390px_minmax(0,1fr)]">
+      <div className="grid min-h-[74vh] grid-cols-1 gap-0 overflow-hidden rounded-lg border border-[#d9dee3] bg-white shadow-card lg:grid-cols-[minmax(260px,28%)_minmax(0,1fr)_minmax(260px,26%)]">
         <CardSkeleton />
         <CardSkeleton />
+        <div className="hidden lg:block">
+          <CardSkeleton />
+        </div>
       </div>
     );
   }
 
   if (error) return <Alert message={error} />;
 
+  const profileForPanel = activeParticipantProfile;
+  const aboutText = profileForPanel?.summary?.trim();
+  const aboutLong = Boolean(aboutText && aboutText.length > 180);
+
   return (
     <div className="overflow-hidden rounded-lg border border-[#d9dee3] bg-white shadow-card">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-          <h1 className="shrink-0 text-2xl font-semibold text-[#1f1f1f]">Messaging</h1>
-          <div
-            className="relative flex min-h-10 min-w-[200px] max-w-xl flex-1 items-center rounded-lg border border-transparent bg-[#eef3f8] transition-colors focus-within:border-[#0a66c2] focus-within:bg-white focus-within:shadow-[0_0_0_1px_#0a66c2]"
-          >
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e8e8e8] px-4 py-3.5">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-4">
+          <h1 className="shrink-0 text-xl font-semibold tracking-tight text-[#1f1f1f] sm:text-2xl">Messaging</h1>
+          <div className="relative flex min-h-10 min-w-[180px] max-w-2xl flex-1 items-center rounded-md border border-transparent bg-[#eef3f8] transition-colors focus-within:border-[#0a66c2] focus-within:bg-white focus-within:shadow-[0_0_0_1px_#0a66c2]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-[#666a73]" />
             <Input
               value={inboxSearch}
               onChange={(event) => setInboxSearch(event.target.value)}
-              placeholder="Search"
+              placeholder="Search messages"
               aria-label="Search inbox"
-              className={`h-10 flex-1 rounded-lg border-0 bg-transparent !pl-10 text-[15px] shadow-none placeholder:text-[#666a73] focus:ring-0 ${inboxSearch ? "!pr-10" : "!pr-3"}`}
+              className={`h-10 flex-1 rounded-md border-0 bg-transparent !pl-10 text-[15px] shadow-none placeholder:text-[#666a73] focus:ring-0 ${inboxSearch ? "!pr-10" : "!pr-3"}`}
             />
             {inboxSearch ? (
               <button
                 type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-[#666a73] transition hover:bg-black/5 hover:text-[#1f1f1f]"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-[#666a73] transition hover:bg-black/5 hover:text-[#1f1f1f]"
                 aria-label="Clear search"
                 onClick={() => setInboxSearch("")}
               >
@@ -642,48 +633,39 @@ export function MessagesPage() {
             ) : null}
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              setShowComposer(true);
-              setSearchResults([]);
-              setSearchQuery("");
-            }}
-            className="rounded-full p-2 text-text-secondary transition hover:bg-hover hover:text-brand"
-            aria-label="Start new conversation"
-          >
-            <Pencil className="h-5 w-5" />
-          </button>
-        </div>
       </div>
 
-      <div className="flex items-center gap-2 border-b px-4 py-2">
-        {[
-          { id: "all", label: "All" },
-          { id: "unread", label: "Unread" },
-          { id: "muted", label: "Muted" },
-          { id: "archived", label: "Archived" }
-        ].map((filter) => (
-          <button
-            key={filter.id}
-            type="button"
-            onClick={() => setActiveFilter(filter.id as "all" | "unread" | "muted" | "archived")}
-            className={`rounded-full border px-3 py-1 text-sm transition ${
-              activeFilter === filter.id ? "border-[#067a46] bg-[#067a46] text-white" : "border-[#cfd6de] bg-white text-text-secondary hover:bg-[#f7f9fb]"
-            }`}
-          >
-            {filter.label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center gap-2 border-b border-[#e8e8e8] px-4 py-2.5">
+        {(
+          [
+            { id: "all", label: "All" },
+            { id: "unread", label: "Unread" },
+            { id: "muted", label: "Muted" },
+            { id: "archived", label: "Archived" }
+          ] as const
+        ).map((filter) => {
+          const id = filter.id;
+          return (
+            <button
+              key={filter.id}
+              type="button"
+              onClick={() => setActiveFilter(id)}
+              className={`rounded-full border px-3 py-1 text-sm font-medium transition ${
+                activeFilter === id ? "border-[#067a46] bg-[#067a46] text-white shadow-sm" : "border-[#cfd6de] bg-white text-[#666a73] hover:border-[#b4c6d9] hover:bg-[#f7f9fb]"
+              }`}
+            >
+              {filter.label}
+            </button>
+          );
+        })}
       </div>
 
-      <div className="grid min-h-[74vh] md:grid-cols-[390px_minmax(0,1fr)]">
-        <section className="border-r bg-white">
+      <div className="grid min-h-[74vh] grid-cols-1 lg:grid-cols-[minmax(260px,27%)_minmax(0,1fr)_minmax(260px,26%)]">
+        <section className="flex min-h-0 flex-col border-b border-[#e8e8e8] bg-white lg:border-b-0 lg:border-r lg:border-[#e8e8e8]">
           {showComposer ? (
-            <div className="space-y-2 border-b p-3">
+            <div className="shrink-0 space-y-2 border-b border-[#e8e8e8] bg-[#fafafa] p-3">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold">New message</p>
+                <p className="text-sm font-semibold text-[#1f1f1f]">New message</p>
                 <button
                   type="button"
                   onClick={() => {
@@ -691,7 +673,7 @@ export function MessagesPage() {
                     setSearchQuery("");
                     setSearchResults([]);
                   }}
-                  className="rounded-full p-1 text-text-secondary hover:bg-hover"
+                  className="rounded-full p-1.5 text-[#666a73] transition hover:bg-[#e8e8e8]"
                   aria-label="Close new message composer"
                 >
                   <X className="h-4 w-4" />
@@ -701,7 +683,7 @@ export function MessagesPage() {
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Type a name or multiple names"
-                className="h-10 rounded-md border"
+                className="h-10 rounded-md border border-[#cfcfcf] bg-white text-sm shadow-sm"
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
@@ -710,26 +692,26 @@ export function MessagesPage() {
                 }}
               />
               {searchResults.length ? (
-                <div className="max-h-48 space-y-1 overflow-y-auto rounded-card border p-1">
+                <div className="max-h-48 space-y-0.5 overflow-y-auto rounded-lg border border-[#e8e8e8] bg-white p-1 shadow-sm">
                   {searchResults.map((candidate, index) => (
                     <button
                       key={`${candidate.threadId ?? candidate.id ?? candidate.label}-${index}`}
                       type="button"
-                      className="flex w-full items-start justify-between rounded-card px-3 py-2 text-left hover:bg-hover"
+                      className="flex w-full items-start justify-between gap-2 rounded-md px-3 py-2 text-left text-sm transition hover:bg-[#f3f6f8]"
                       onClick={() => void handleSelectTarget(candidate)}
                     >
-                      <span className="font-medium">{candidate.label}</span>
-                      <span className="text-xs text-text-secondary">{candidate.subtitle}</span>
+                      <span className="font-semibold text-[#1f1f1f]">{candidate.label}</span>
+                      <span className="shrink-0 text-xs text-[#666a73]">{candidate.subtitle}</span>
                     </button>
                   ))}
                 </div>
               ) : searchQuery.trim() && !searchLoading && hasSearched ? (
-                <p className="text-sm text-text-secondary">No users found.</p>
+                <p className="text-sm text-[#666a73]">No users found.</p>
               ) : null}
             </div>
           ) : null}
 
-          <div className="max-h-[calc(74vh-64px)] overflow-y-auto p-2">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             {showInboxSearchEmptyState ? (
               <SearchInboxEmptyState />
             ) : (
@@ -752,28 +734,30 @@ export function MessagesPage() {
           </div>
         </section>
 
-        <section className="flex min-h-[74vh] flex-col bg-white">
-          <div className="border-b px-4 py-3">
-            <div className="flex items-center justify-between gap-3">
+        <section className="flex min-h-0 flex-col bg-white">
+          <div className="shrink-0 border-b border-[#e8e8e8] bg-white px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-lg font-semibold text-[#1f1f1f]">
-                  {activeThread ? (
-                    <button type="button" onClick={handleOpenActiveProfile} className="truncate text-left hover:underline">
-                      {activeThreadLabel}
-                    </button>
-                  ) : (
-                    "New message"
-                  )}
-                </p>
-                <p className="mt-0.5 truncate text-sm text-text-secondary">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="truncate text-lg font-semibold leading-tight text-[#1f1f1f]">
+                    {activeThread ? (
+                      <button type="button" onClick={handleOpenActiveProfile} className="truncate text-left hover:text-[#0a66c2] hover:underline">
+                        {activeThreadLabel}
+                      </button>
+                    ) : (
+                      "New message"
+                    )}
+                  </p>
+                </div>
+                <p className="mt-1 truncate text-sm text-[#666a73]">
                   {activeThread ? activeParticipantProfile?.subtitle || websocket.reason : "Type a name or multiple names"}
                 </p>
               </div>
               {activeThread ? (
-                <div className="flex items-center gap-0.5">
+                <div className="flex shrink-0 items-center gap-0.5">
                   <button
                     type="button"
-                    className="rounded-full p-2 text-[#d49100] transition hover:bg-hover"
+                    className="rounded-full p-2 text-[#d49100] transition hover:bg-[#f3f6f8]"
                     aria-label={starredThreadIds[activeThread.thread_id] ? "Unstar conversation" : "Star conversation"}
                     onClick={handleToggleStar}
                   >
@@ -786,24 +770,24 @@ export function MessagesPage() {
                   <div ref={menuRef} className="relative">
                     <button
                       type="button"
-                      className="rounded-full p-2 text-text-secondary transition hover:bg-hover hover:text-text-primary"
+                      className="rounded-full p-2 text-[#666a73] transition hover:bg-[#f3f6f8] hover:text-[#1f1f1f]"
                       aria-label="Conversation actions"
                       onClick={() => setMenuOpen((current) => !current)}
                     >
                       <MoreHorizontal className="h-5 w-5" />
                     </button>
                     {menuOpen ? (
-                      <div className="absolute right-0 top-11 z-20 min-w-[220px] rounded-card border bg-white p-1 shadow-modal">
+                      <div className="absolute right-0 top-11 z-20 min-w-[220px] rounded-lg border border-[#e8e8e8] bg-white p-1 shadow-lg">
                         <button
                           type="button"
-                          className="flex w-full items-center gap-2 rounded-card px-3 py-2 text-left text-sm hover:bg-hover"
+                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-[#f3f6f8]"
                           onClick={handleMarkUnread}
                         >
                           Mark unread
                         </button>
                         <button
                           type="button"
-                          className="flex w-full items-center gap-2 rounded-card px-3 py-2 text-left text-sm hover:bg-hover"
+                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-[#f3f6f8]"
                           onClick={handleToggleStar}
                         >
                           <Star className={`h-4 w-4 ${starredThreadIds[activeThread.thread_id] ? "fill-[#d49100] text-[#d49100]" : ""}`} />
@@ -811,21 +795,21 @@ export function MessagesPage() {
                         </button>
                         <button
                           type="button"
-                          className="flex w-full items-center gap-2 rounded-card px-3 py-2 text-left text-sm hover:bg-hover"
+                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-[#f3f6f8]"
                           onClick={handleToggleMute}
                         >
                           {mutedThreadIds[activeThread.thread_id] ? "Unmute" : "Mute"}
                         </button>
                         <button
                           type="button"
-                          className="flex w-full items-center gap-2 rounded-card px-3 py-2 text-left text-sm hover:bg-hover"
+                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-[#f3f6f8]"
                           onClick={handleToggleArchive}
                         >
                           {archivedThreadIds[activeThread.thread_id] ? "Unarchive" : "Archive"}
                         </button>
                         <button
                           type="button"
-                          className="flex w-full items-center gap-2 rounded-card px-3 py-2 text-left text-sm text-[#cc1016] hover:bg-red-50"
+                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-[#cc1016] hover:bg-red-50"
                           onClick={handleDeleteConversation}
                         >
                           <Trash2 className="h-4 w-4" />
@@ -839,67 +823,99 @@ export function MessagesPage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto bg-white">
-            {!activeThread ? (
-              <div className="min-h-[320px] p-4" />
-            ) : (
-              <div className="px-4 pb-4 pt-2">
-                {activeParticipantProfile ? (
-                  <div className="border-b border-[#eef3f8] pb-6 pt-2">
-                    <div className="flex gap-5">
-                      <Avatar alt={activeParticipantProfile.name} name={activeAvatarName} src={activeParticipantProfile.photoUrl} size="2xl" />
-                      <div className="min-w-0 flex-1 pt-1">
-                        <div className="flex items-center gap-1.5">
-                          <button type="button" onClick={handleOpenActiveProfile} className="text-xl font-semibold text-[#1f1f1f] hover:underline">
-                            {activeParticipantProfile.name}
-                          </button>
-                          <LinkedInMark />
-                        </div>
-                        <p className="mt-2 text-sm leading-snug text-[#1f1f1f]">{activeParticipantProfile.subtitle}</p>
-                        {activeParticipantProfile.summary ? <p className="mt-2 line-clamp-4 text-sm leading-relaxed text-text-secondary">{activeParticipantProfile.summary}</p> : null}
-                        {activeParticipantProfile.locationLine ? <p className="mt-2 text-xs text-text-tertiary">{activeParticipantProfile.locationLine}</p> : null}
-                      </div>
-                    </div>
-                    <div className="relative mt-8">
-                      <div className="border-t border-[#e0e0e0]" />
-                      <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 bg-white px-3 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
-                        {threadDayBanner}
-                      </span>
-                    </div>
-                  </div>
-                ) : null}
+          <div className="flex min-h-0 flex-1 flex-col bg-[#fafafa] lg:bg-white">
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2 lg:px-5">
+              {!activeThread ? (
+                <div className="flex min-h-[280px] items-center justify-center px-4 text-sm text-[#666a73]">Select a conversation from the list</div>
+              ) : userId ? (
+                <MessageThreadView
+                  messages={messages}
+                  userId={userId}
+                  nameByUserId={nameByUserId}
+                  profileByUserId={profileByUserId}
+                  activeParticipantId={activeParticipantId}
+                />
+              ) : null}
+            </div>
 
-                {messages.length ? (
-                  <div className="divide-y divide-[#eef3f8]">
-                    {messages.map((message) => (
-                      <MessageBubble
-                        key={message.message_id}
-                        message={message}
-                        own={message.sender_id === String(userId)}
-                        senderName={nameByUserId[message.sender_id]}
-                        senderAvatar={profileByUserId[message.sender_id]?.photoUrl}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex min-h-[200px] items-center justify-center px-4 py-8 text-sm text-text-secondary">
-                    No messages yet. Send the first message to get started.
-                  </div>
-                )}
+            {activeThread && userId ? (
+              <MessageInput onSend={(text) => void handleSend(text)} />
+            ) : (
+              <div className="shrink-0 border-t border-[#e8e8e8] bg-white px-4 py-3">
+                <div className="rounded-xl border border-dashed border-[#cfcfcf] bg-[#fafafa] px-4 py-3 text-sm text-[#666a73]">Write a message…</div>
               </div>
             )}
           </div>
+        </section>
 
-          {activeThread ? (
-            <div className="border-t bg-[#f8fafc] p-3">
-              <MessageInput onSend={(text) => void handleSend(text)} />
+        <aside className="hidden min-h-0 flex-col overflow-y-auto border-t border-[#e8e8e8] bg-white lg:flex lg:border-l lg:border-t-0 lg:border-[#e8e8e8]">
+          {!activeThread ? (
+            <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 text-center text-sm text-[#666a73]">
+              <p className="max-w-[200px] leading-relaxed">Select a conversation to see profile details</p>
+            </div>
+          ) : profileForPanel ? (
+            <div className="flex flex-col gap-0 p-5">
+              <div className="flex flex-col items-center border-b border-[#eef3f8] pb-6 text-center">
+                <Avatar alt={profileForPanel.name} name={activeAvatarName} src={profileForPanel.photoUrl} size="xl" />
+                <h2 className="mt-4 text-center text-lg font-semibold text-[#1f1f1f]">{profileForPanel.name}</h2>
+                <p className="mt-2 text-sm font-medium leading-snug text-[#1f1f1f]">{profileForPanel.subtitle}</p>
+                {profileForPanel.locationLine ? (
+                  <p className="mt-2 text-xs text-[#666a73]">{profileForPanel.locationLine}</p>
+                ) : null}
+              </div>
+
+              {aboutText ? (
+                <div className="border-b border-[#eef3f8] py-5">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-[#666a73]">About</h3>
+                  <p className={`mt-2 text-sm leading-relaxed text-[#1f1f1f] ${profileAboutExpanded ? "" : "line-clamp-4"}`}>{aboutText}</p>
+                  {aboutLong ? (
+                    <button
+                      type="button"
+                      onClick={() => setProfileAboutExpanded((v) => !v)}
+                      className="mt-2 text-sm font-semibold text-[#0a66c2] hover:underline"
+                    >
+                      {profileAboutExpanded ? "Show less" : "Show more"}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {profileForPanel.skills?.length ? (
+                <div className="border-b border-[#eef3f8] py-5">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-[#666a73]">Skills</h3>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {profileForPanel.skills.slice(0, 16).map((skill) => (
+                      <span key={skill} className="rounded-full border border-[#e8e8e8] bg-[#f3f6f8] px-2.5 py-1 text-xs font-medium text-[#1f1f1f]">
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="pt-5">
+                <button
+                  type="button"
+                  onClick={handleOpenActiveProfile}
+                  className="w-full rounded-full border-2 border-[#0a66c2] bg-white py-2.5 text-sm font-semibold text-[#0a66c2] shadow-sm transition hover:bg-[#f3f9ff] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a66c2]"
+                >
+                  View profile
+                </button>
+              </div>
+
+              <div className="mt-8 flex gap-2 border-t border-[#eef3f8] pt-5 text-xs leading-snug text-[#666a73]">
+                <Shield className="mt-0.5 h-4 w-4 shrink-0 text-[#0a66c2]" aria-hidden />
+                <span>Direct conversation on SkillSync. Only you and this contact can read these messages.</span>
+              </div>
             </div>
           ) : (
-            <div className="border-t bg-[#f8fafc] p-3">
-              <div className="rounded-2xl bg-[#e9e7e3] p-4 text-[20px] text-[#5f5f5f]">Write a message...</div>
+            <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
+              <Avatar alt={activeThreadLabel} name={activeAvatarName} size="lg" />
+              <p className="mt-4 text-sm font-semibold text-[#1f1f1f]">{activeThreadLabel}</p>
+              <p className="mt-2 text-xs text-[#666a73]">Profile details will load when available.</p>
             </div>
           )}
-        </section>
+        </aside>
       </div>
     </div>
   );

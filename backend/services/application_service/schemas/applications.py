@@ -6,6 +6,8 @@ class SubmitRequest(BaseModel):
     job_id: int
     member_id: int
     resume_url: Optional[str] = None
+    resume_ref: Optional[str] = None
+    resume_text: Optional[str] = None
     cover_letter: Optional[str] = None
     answers: Optional[Any] = None
 

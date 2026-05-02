@@ -37,6 +37,7 @@ import type { MemberProfile, MemberSearchItem } from "../../types/member";
 import type { FeedPost, PostType } from "../../types/post";
 import type { RecruiterProfile } from "../../types/recruiter";
 import { formatRelativeDate } from "../../utils/formatDate";
+import { getListingEmployerDisplayName } from "../../utils/listingEmployer";
 import { getApiErrorMessage, getHttpStatus } from "../../utils/getApiErrorMessage";
 import { getStatusColor } from "../../utils/getStatusColor";
 import type { PendingConnection } from "../../types/connection";
@@ -55,6 +56,44 @@ function pendingCounterpartyId(request: PendingConnection, userId: number): numb
     request.direction ??
     (request.requester_id === userId ? "outgoing" : "incoming");
   return direction === "incoming" ? request.requester_id : request.receiver_id;
+}
+
+/** Personalized search is often empty after resume import (narrow skill + city vs nationwide listings). */
+async function fetchRecommendedJobsForFeed(member: MemberProfile): Promise<Job[]> {
+  const keyword = member.skills?.[0] || member.headline?.split(/\s+/)[0] || undefined;
+  const location = member.location_city || undefined;
+  try {
+    let data = await searchJobs({ keyword, location, page: 1 });
+    let jobs = [...(data.jobs ?? [])];
+    if (jobs.length < 3 && keyword) {
+      const token = keyword.split(/[\s/-]+/).filter(Boolean)[0] ?? keyword;
+      const second = await searchJobs({ keyword: token, page: 1 });
+      const seen = new Set(jobs.map((j) => j.job_id));
+      for (const j of second.jobs ?? []) {
+        if (!seen.has(j.job_id)) {
+          seen.add(j.job_id);
+          jobs.push(j);
+        }
+      }
+    }
+    if (jobs.length < 3 && (keyword || location)) {
+      const broad = await searchJobs({ page: 1 });
+      const seen = new Set(jobs.map((j) => j.job_id));
+      for (const j of broad.jobs ?? []) {
+        if (!seen.has(j.job_id)) {
+          seen.add(j.job_id);
+          jobs.push(j);
+        }
+      }
+    }
+    if (jobs.length === 0) {
+      const broad = await searchJobs({ page: 1 });
+      jobs = [...(broad.jobs ?? [])];
+    }
+    return jobs.slice(0, 3);
+  } catch {
+    return [];
+  }
 }
 
 function outgoingPendingIndex(pendingRequests: PendingConnection[], userId: number): {
@@ -127,11 +166,10 @@ export function FeedPage() {
       }
       setProfile(member);
 
-      const keyword = member.skills?.[0] || member.headline?.split(" ")[0] || undefined;
       const location = member.location_city || undefined;
 
       const results = await Promise.allSettled([
-        searchJobs({ keyword, location, page: 1 }),
+        fetchRecommendedJobsForFeed(member),
         getApplicationsByMember(userId),
         getSavedJobs(userId),
         getFeedPosts(1),
@@ -143,7 +181,7 @@ export function FeedPage() {
         getTopJobs(currentMonthKey())
       ]);
 
-      const recommendedJobs = results[0].status === "fulfilled" ? results[0].value.jobs.slice(0, 3) : [];
+      const recommendedJobs = results[0].status === "fulfilled" ? results[0].value : [];
       const applicationItems = results[1].status === "fulfilled" ? results[1].value.applications.slice(0, 4) : [];
       const savedJobs = results[2].status === "fulfilled" ? results[2].value.jobs : [];
       const feedPosts = results[3].status === "fulfilled" ? results[3].value.posts.slice(0, 5) : [];
@@ -189,16 +227,23 @@ export function FeedPage() {
       setSuggestionDegrees(degreeById);
       setSuggestionMutualCounts(mutualCountById);
 
+      let trending: Job[] = [];
       if (results[9].status === "fulfilled" && results[9].value.length > 0) {
         const topJobResults = await Promise.allSettled(results[9].value.slice(0, 3).map((metric) => getJob(Number(metric.job_id))));
-        setTrendingJobs(
-          topJobResults
-            .filter((result): result is PromiseFulfilledResult<Job> => result.status === "fulfilled")
-            .map((result) => result.value)
-        );
-      } else {
-        setTrendingJobs([]);
+        trending = topJobResults
+          .filter((result): result is PromiseFulfilledResult<Job> => result.status === "fulfilled")
+          .map((result) => result.value);
       }
+      // Kaggle/imported listings rarely have Mongo analytics events — fall back to open jobs from search.
+      if (trending.length === 0) {
+        try {
+          const broad = await searchJobs({ page: 1 });
+          trending = (broad.jobs ?? []).slice(0, 3);
+        } catch {
+          trending = recommendedJobs.slice(0, 3);
+        }
+      }
+      setTrendingJobs(trending);
     } catch {
       setError("Could not load your home feed.");
     } finally {
@@ -544,7 +589,7 @@ export function FeedPage() {
                   <button type="button" className="min-w-0 flex-1 text-left" onClick={() => navigate(`/jobs/${job.job_id}`)}>
                     <p className="font-semibold">{job.title}</p>
                     <p className="text-sm text-text-secondary">
-                      {job.company_name} {job.location ? `· ${job.location}` : ""}
+                      {getListingEmployerDisplayName(job)} {job.location ? `· ${job.location}` : ""}
                     </p>
                   </button>
                   <Button variant={savedJobIds.includes(job.job_id) ? "secondary" : "ghost"} onClick={() => void handleToggleSave(job)}>
@@ -619,7 +664,7 @@ export function FeedPage() {
                       <p className="text-sm text-text-secondary">{recruiter.name}</p>
                       <p className="text-sm text-text-secondary">{recruiter.industry || "Company"}</p>
                     </div>
-                    <Button variant="secondary" onClick={() => goToJobs({ industry: recruiter.industry || "", location: profile.location_city || "" })}>
+                    <Button variant="secondary" onClick={() => goToJobs({ location: profile.location_city || "" })}>
                       View jobs
                     </Button>
                   </div>
@@ -646,7 +691,7 @@ export function FeedPage() {
                 >
                   <div>
                     <p className="font-semibold">{job.title}</p>
-                    <p className="text-text-secondary">{job.company_name}</p>
+                    <p className="text-text-secondary">{getListingEmployerDisplayName(job)}</p>
                   </div>
                   <ArrowRight className="h-4 w-4 text-brand" />
                 </button>

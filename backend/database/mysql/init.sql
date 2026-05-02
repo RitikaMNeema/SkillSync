@@ -203,6 +203,7 @@ CREATE TABLE IF NOT EXISTS applications (
   job_id               BIGINT UNSIGNED NOT NULL,
   member_id            BIGINT UNSIGNED NOT NULL,
   resume_url           VARCHAR(512),
+  resume_text          TEXT NULL,
   cover_letter         TEXT,
   application_datetime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   status               ENUM('submitted', 'reviewing', 'interview', 'offer', 'rejected', 'withdrawn') NOT NULL DEFAULT 'submitted',
