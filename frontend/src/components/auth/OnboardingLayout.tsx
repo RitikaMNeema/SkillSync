@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { ArrowLeft } from "lucide-react";
+import { APP_SHELL_MAIN_COLUMN_CLASS } from "../../constants/appShellLayout";
+import { cn } from "../../utils/cn";
 import { LinkedInWordmark } from "../layout/LinkedInWordmark";
 
 type OnboardingLayoutProps = {
@@ -29,8 +31,8 @@ export function OnboardingLayout({
   const pct = Math.min(100, Math.max(0, Math.round(progress * 100)));
 
   return (
-    <main className="min-h-screen bg-[#f3f2ef] px-4 py-6 text-[#191919] sm:px-8">
-      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1128px] flex-col items-center">
+    <main className="min-h-screen bg-[#f3f2ef] py-6 text-[#191919]">
+      <div className={cn(APP_SHELL_MAIN_COLUMN_CLASS, "flex min-h-[calc(100vh-3rem)] flex-col items-center")}>
         <div className="relative flex w-full max-w-[420px] flex-1 flex-col">
           {/* Progress */}
           <div className="mb-6 h-1 w-full overflow-hidden rounded-full bg-[#e0dfdc]" aria-hidden>

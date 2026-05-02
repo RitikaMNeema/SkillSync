@@ -590,7 +590,7 @@ export function ProfilePage() {
         scrollTo(resumeRef);
         break;
       default:
-        toast("This section is coming soon", { icon: "ℹ️" });
+        break;
     }
   }
 

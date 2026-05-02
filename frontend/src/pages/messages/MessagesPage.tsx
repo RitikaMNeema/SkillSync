@@ -19,6 +19,7 @@ import { ThreadList } from "../../components/messages/ThreadList";
 import { Alert } from "../../components/ui/Alert";
 import { Avatar } from "../../components/ui/Avatar";
 import { CardSkeleton } from "../../components/ui/Skeleton";
+import { LeadingIconInput } from "../../components/ui/LeadingIconInput";
 import { Input } from "../../components/ui/Input";
 import { authStore } from "../../context/AuthContext";
 import { useWebSocket } from "../../hooks/useWebSocket";
@@ -619,28 +620,28 @@ export function MessagesPage() {
       <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
           <h1 className="shrink-0 text-2xl font-semibold text-[#1f1f1f]">Messaging</h1>
-          <div
-            className="relative flex min-h-10 min-w-[200px] max-w-xl flex-1 items-center rounded-lg border border-transparent bg-[#eef3f8] transition-colors focus-within:border-[#0a66c2] focus-within:bg-white focus-within:shadow-[0_0_0_1px_#0a66c2]"
-          >
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-[#666a73]" />
-            <Input
-              value={inboxSearch}
-              onChange={(event) => setInboxSearch(event.target.value)}
-              placeholder="Search"
-              aria-label="Search inbox"
-              className={`h-10 flex-1 rounded-lg border-0 bg-transparent !pl-10 text-[15px] shadow-none placeholder:text-[#666a73] focus:ring-0 ${inboxSearch ? "!pr-10" : "!pr-3"}`}
-            />
-            {inboxSearch ? (
-              <button
-                type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-[#666a73] transition hover:bg-black/5 hover:text-[#1f1f1f]"
-                aria-label="Clear search"
-                onClick={() => setInboxSearch("")}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            ) : null}
-          </div>
+          <LeadingIconInput
+            Icon={Search}
+            iconClassName="text-[#666a73]"
+            wrapperClassName="min-w-[200px] max-w-xl flex-1"
+            className="!h-10 min-h-[40px] text-[15px]"
+            value={inboxSearch}
+            onChange={(event) => setInboxSearch(event.target.value)}
+            aria-label="Search inbox"
+            autoComplete="off"
+            endAdornment={
+              inboxSearch ? (
+                <button
+                  type="button"
+                  className="rounded-full p-1 text-[#666a73] transition hover:bg-black/5 hover:text-[#1f1f1f]"
+                  aria-label="Clear search"
+                  onClick={() => setInboxSearch("")}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : undefined
+            }
+          />
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -700,7 +701,7 @@ export function MessagesPage() {
               <Input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Type a name or multiple names"
+                aria-label="Search recipients by name"
                 className="h-10 rounded-md border"
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {

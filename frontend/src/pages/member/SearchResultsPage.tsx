@@ -1,4 +1,4 @@
-import { BriefcaseBusiness, Users, UsersRound } from "lucide-react";
+import { BriefcaseBusiness, Search, Users, UsersRound } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -313,12 +313,17 @@ export function SearchResultsPage() {
       <div className="rounded-lg border border-[#e4e6eb] bg-white px-4 py-3">
         <div className="mb-3 flex gap-3">
           <div className="relative min-w-0 flex-1">
+            <Search
+              className="pointer-events-none absolute left-[15px] top-1/2 z-[1] h-[17px] w-[17px] -translate-y-1/2 text-[#666666]"
+              aria-hidden
+            />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleSearchKeyDown}
-              className="h-10 rounded-full border border-[#d0d7de] bg-white text-[0.95rem]"
-              placeholder="Search"
+              autoComplete="off"
+              className="h-10 rounded-full border border-solid border-[#d0d7de] bg-white !pl-[3rem] pr-4 text-[0.95rem] caret-[#1f2937] focus:border-[#666666] focus:!shadow-none focus:outline-none"
+              aria-label="Search"
             />
           </div>
           <Button type="button" onClick={handleSearch} className="h-10 shrink-0 rounded-full px-5 py-2 text-sm">
