@@ -78,7 +78,7 @@ export function Navbar() {
         ? [
             { to: "/feed", label: "Home", icon: Home },
             { to: "/connections", label: "My Network", icon: Users },
-            { to: "/jobs", label: "Jobs", icon: BriefcaseBusiness },
+            { to: "/recruiter/jobs", label: "Jobs", icon: BriefcaseBusiness },
             { to: "/messages", label: "Messaging", icon: MessageSquare },
             { to: "/dashboard", label: "Analytics", icon: BarChart3 }
           ]
