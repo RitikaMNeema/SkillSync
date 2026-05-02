@@ -12,6 +12,7 @@ import {
 } from "../../utils/getApiErrorMessage";
 import { loginFormSchema } from "../../utils/authValidation";
 import { authStore } from "../../context/AuthContext";
+import { getHomePath } from "../../utils/navigation";
 import { Alert } from "../../components/ui/Alert";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -68,7 +69,7 @@ export function LoginPage() {
       if (!data.token) throw new Error("Missing token");
       setAuth({ token: data.token, userId: data.user_id, role: data.role });
       toast.success("Signed in");
-      navigate(data.role === "recruiter" ? "/recruiter/dashboard" : "/feed");
+      navigate(getHomePath(data.role));
     } catch (submitError: unknown) {
       setFormError(mapLoginFailureToMessage(submitError));
     }

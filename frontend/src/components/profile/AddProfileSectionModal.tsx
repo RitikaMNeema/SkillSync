@@ -9,9 +9,7 @@ export type ProfileSectionKey =
   | "education"
   | "experience"
   | "skills"
-  | "resume"
-  | "services"
-  | "career_break";
+  | "resume";
 
 interface SectionLink {
   key: ProfileSectionKey;
@@ -42,13 +40,6 @@ const GROUPS: SectionGroup[] = [
   {
     title: "Recommended",
     items: [{ key: "resume", label: "Add resume" }]
-  },
-  {
-    title: "Additional",
-    items: [
-      { key: "services", label: "Add services" },
-      { key: "career_break", label: "Add career break" }
-    ]
   }
 ];
 

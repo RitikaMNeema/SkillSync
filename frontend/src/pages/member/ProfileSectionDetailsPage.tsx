@@ -321,7 +321,12 @@ export function ProfileSectionDetailsPage() {
         const deduped = existing.filter((item) => item.name.toLowerCase() !== entry.name.toLowerCase());
         nextLanguages = [entry, ...deduped];
       }
-      await updateUnifiedProfile({ member_id: member.member_id, languages: nextLanguages }, currentRole);
+      try {
+        await updateUnifiedProfile({ member_id: member.member_id, languages: nextLanguages }, currentRole);
+      } catch (err) {
+        if (currentRole !== "recruiter") throw err;
+        await updateUnifiedProfile({ member_id: member.member_id, languages: nextLanguages }, "member");
+      }
       await loadMember();
       setSheet(null);
       toast.success(editIndex !== undefined ? "Language updated" : "Language added", { id: loadingToast });
@@ -337,7 +342,12 @@ export function ProfileSectionDetailsPage() {
     try {
       const next = [...(member.unstructured?.languages ?? [])];
       next.splice(index, 1);
-      await updateUnifiedProfile({ member_id: member.member_id, languages: next }, currentRole);
+      try {
+        await updateUnifiedProfile({ member_id: member.member_id, languages: next }, currentRole);
+      } catch (err) {
+        if (currentRole !== "recruiter") throw err;
+        await updateUnifiedProfile({ member_id: member.member_id, languages: next }, "member");
+      }
       await loadMember();
       setSheet(null);
       toast.success("Language removed", { id: loadingToast });
