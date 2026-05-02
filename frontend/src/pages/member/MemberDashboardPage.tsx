@@ -109,7 +109,7 @@ export function MemberDashboardPage() {
   }
 
   return (
-    <section className="mx-auto max-w-[1128px] space-y-3 pb-4">
+    <section className="space-y-3 pb-4">
       <div className="px-1 pt-1">
         <h1 className="text-[2.05rem] font-semibold leading-tight text-[#1d2226]">Career Dashboard</h1>
       </div>

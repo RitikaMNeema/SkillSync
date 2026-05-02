@@ -1,10 +1,12 @@
-import { Bookmark, BriefcaseBusiness, ExternalLink, Eye, Share2, Users } from "lucide-react";
+import { ArrowLeft, Bookmark, CalendarDays, ExternalLink, Eye, ShieldCheck, Users, WalletCards } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { Link, useParams } from "react-router-dom";
 import { getJob, getSavedJobs, saveJob, searchJobs, unsaveJob, trackJobView } from "../../api/jobs";
 import { ApplyModal } from "../../components/jobs/ApplyModal";
+import { AppShellBreakout } from "../../components/layout/AppShellRegions";
 import { RightSidebar } from "../../components/layout/Sidebar";
+import { APP_SHELL_MAIN_COLUMN_CLASS, appShellInnerGridClass } from "../../constants/appShellLayout";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -99,7 +101,8 @@ function parseLabeledJobDescription(description: string | null | undefined): {
 }
 
 function logoText(name?: string | null): string {
-  return (name ?? "Co").slice(0, 2).toUpperCase();
+  const trimmed = (name ?? "").trim();
+  return trimmed ? trimmed.slice(0, 2).toUpperCase() : "—";
 }
 
 function SidebarCard({ title, children }: { title: string; children: ReactNode }) {
@@ -156,7 +159,11 @@ function JobHeader({
             {job.employment_type ? (
               <Badge className="rounded-full bg-[#eef3f8] px-3 py-1 text-[#1d2226]">{job.employment_type}</Badge>
             ) : null}
-            <Badge className="rounded-full bg-[#e8f3ec] px-3 py-1 text-[#137333]">Be among the first 25 applicants</Badge>
+            {(job.salary_min || job.salary_max) ? (
+              <Badge className="rounded-full bg-[#e8f3ec] px-3 py-1 text-[#137333]">
+                {formatSalary(job.salary_min, job.salary_max)} / hour
+              </Badge>
+            ) : null}
           </div>
         </div>
       </div>
@@ -169,10 +176,6 @@ function JobHeader({
         <Button variant="secondary" className="rounded-full border-[#0a66c2] px-6 text-[#0a66c2] hover:bg-[#eef3f8]" disabled={savePending} onClick={onSave}>
           <Bookmark className={`h-4 w-4 ${saved ? "fill-current" : ""}`} />
           {saved ? "Saved" : "Save"}
-        </Button>
-        <Button variant="secondary" className="rounded-full border-[#b0b7be] px-6 text-[#38434f] hover:bg-[#f5f7f9]">
-          <Share2 className="h-4 w-4" />
-          Share
         </Button>
       </div>
 
@@ -295,7 +298,7 @@ export function JobDetailPage() {
 
   if (loading || !job) {
     return (
-      <div className="mx-auto grid max-w-[1128px] gap-8 lg:grid-cols-[minmax(0,70%)_minmax(0,30%)]">
+      <div className={appShellInnerGridClass("gap-8 lg:grid-cols-[minmax(0,70%)_minmax(0,30%)]")}>
         <CardSkeleton />
         <CardSkeleton />
       </div>
@@ -305,18 +308,21 @@ export function JobDetailPage() {
   const parsed = parseLabeledJobDescription(job.description);
   const fallbackLines = descriptionLines(job);
   const aboutText = parsed.about || fallbackLines.join("\n\n");
-  const responsibilities = parsed.responsibilities.length
-    ? parsed.responsibilities
-    : ["Collaborate with cross-functional teams to deliver high-quality outcomes."];
+  const responsibilities = parsed.responsibilities.length ? parsed.responsibilities : [];
   const qualifications = parsed.qualifications.length
     ? parsed.qualifications
-    : toBullets(job.skills_required ?? [], ["Strong communication and problem-solving skills."]);
-  const benefits = parsed.benefits.length ? parsed.benefits : ["Dental", "Vision", "Medical insurance"];
+    : toBullets(job.skills_required ?? [], []);
+  const benefits = parsed.benefits.length ? parsed.benefits : [];
+  const compensationLabel = (job.salary_min || job.salary_max)
+    ? `${formatSalary(job.salary_min, job.salary_max)} / hour`
+    : "Compensation not disclosed";
 
   return (
     <>
-      <div className="mx-auto max-w-[1128px] bg-[#f3f2ef] px-4 py-4 md:px-6">
-        <Link to="/jobs" className="mb-4 inline-block text-sm font-semibold text-[#0a66c2] hover:underline">
+      <AppShellBreakout className="bg-[#f3f2ef] py-4">
+        <div className={APP_SHELL_MAIN_COLUMN_CLASS}>
+        <Link to="/jobs" className="mb-4 inline-flex items-center gap-2 text-lg font-semibold text-[#0a66c2] hover:underline">
+          <ArrowLeft className="h-5 w-5" />
           Back to search
         </Link>
         <div className="grid gap-8 lg:grid-cols-[minmax(0,70%)_minmax(0,30%)]">
@@ -340,25 +346,37 @@ export function JobDetailPage() {
                   <p className="mt-3 text-sm font-semibold text-[#1d2226]">{formatSalary(job.salary_min, job.salary_max)}</p>
                 </JobSection>
                 <JobSection title="Responsibilities">
-                  <ul className="list-disc space-y-1 pl-5">
-                    {responsibilities.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
+                  {responsibilities.length ? (
+                    <ul className="list-disc space-y-1 pl-5">
+                      {responsibilities.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[#59636e]">Not provided.</p>
+                  )}
                 </JobSection>
                 <JobSection title="Qualifications">
-                  <ul className="list-disc space-y-1 pl-5">
-                    {qualifications.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
+                  {qualifications.length ? (
+                    <ul className="list-disc space-y-1 pl-5">
+                      {qualifications.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[#59636e]">Not provided.</p>
+                  )}
                 </JobSection>
                 <JobSection title="Benefits">
-                  <ul className="list-disc space-y-1 pl-5">
-                    {benefits.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
+                  {benefits.length ? (
+                    <ul className="list-disc space-y-1 pl-5">
+                      {benefits.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[#59636e]">Not provided.</p>
+                  )}
                 </JobSection>
               </div>
             </Card>
@@ -372,16 +390,29 @@ export function JobDetailPage() {
                   </div>
                   <div>
                     <p className="font-semibold text-[#1d2226]">{job.company_name}</p>
-                    <p className="text-sm text-[#59636e]">{job.industry || "Technology, Information and Internet"}</p>
-                    <p className="text-sm text-[#59636e]">10,001+ employees</p>
+                    {job.industry ? <p className="text-sm text-[#59636e]">{job.industry}</p> : null}
                   </div>
                 </div>
-                <Button variant="secondary" className="w-full rounded-full border-[#0a66c2] text-[#0a66c2] hover:bg-[#eef3f8]">
-                  Follow
-                </Button>
-                <a href="#" className="block text-center text-sm font-semibold text-[#0a66c2] hover:underline">
-                  View company page
-                </a>
+              </SidebarCard>
+
+              <SidebarCard title="Compensation">
+                <p className="text-sm font-semibold text-[#59636e]">Estimate pay range</p>
+                <p className="text-[2rem] font-bold leading-tight text-[#057642]">{compensationLabel}</p>
+                <div className="border-t border-[#ebedf0] pt-3">
+                  <p className="mb-2 text-sm font-semibold text-[#59636e]">Benefits include</p>
+                  {benefits.length ? (
+                    <div className="flex flex-wrap gap-3 text-sm text-[#38434f]">
+                      {benefits.slice(0, 3).map((item, idx) => (
+                        <span key={item} className="inline-flex items-center gap-1">
+                          {idx === 0 ? <ShieldCheck className="h-4 w-4 text-[#6b7280]" /> : idx === 1 ? <WalletCards className="h-4 w-4 text-[#6b7280]" /> : <CalendarDays className="h-4 w-4 text-[#6b7280]" />}
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-[#59636e]">Not specified.</p>
+                  )}
+                </div>
               </SidebarCard>
 
               <SidebarCard title="Similar jobs">
@@ -400,34 +431,17 @@ export function JobDetailPage() {
                       <p className="text-xs text-[#59636e]">
                         {similar.location || "Location not listed"} ({similar.work_mode})
                       </p>
-                      <Badge className="mt-1 rounded bg-[#eef3f8] px-2 py-0.5 text-[11px] text-[#0a66c2]">Easy Apply</Badge>
                     </div>
                   </Link>
                 )) : (
                   <p className="text-sm text-[#59636e]">No similar jobs found.</p>
                 )}
               </SidebarCard>
-
-              <SidebarCard title="Job insights">
-                <div className="space-y-3">
-                  <div className="flex items-start gap-2">
-                    <BriefcaseBusiness className="mt-0.5 h-4 w-4 text-[#59636e]" />
-                    <p className="text-sm text-[#38434f]">Tailor your resume to this role’s key skills and keywords.</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <Users className="mt-0.5 h-4 w-4 text-[#59636e]" />
-                    <p className="text-sm text-[#38434f]">Highlight relevant projects and measurable impact in your experience.</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <Eye className="mt-0.5 h-4 w-4 text-[#59636e]" />
-                    <p className="text-sm text-[#38434f]">Apply early for better visibility with recruiters.</p>
-                  </div>
-                </div>
-              </SidebarCard>
             </div>
           </RightSidebar>
         </div>
-      </div>
+        </div>
+      </AppShellBreakout>
       <ApplyModal
         job={job}
         open={applyOpen}

@@ -433,12 +433,12 @@ export function FeedPage() {
               <Textarea
                 value={composerText}
                 onChange={(event) => setComposerText(event.target.value)}
-                placeholder={
+                aria-label={
                   composerType === "photo"
-                    ? "Add an optional caption…"
+                    ? "Caption for photo post"
                     : composerType === "article"
-                      ? "Share context or a takeaway…"
-                      : "Share what's on your mind…"
+                      ? "Article post text"
+                      : "Post text"
                 }
               />
               {composerType === "photo" ? (
@@ -471,11 +471,7 @@ export function FeedPage() {
                   ) : null}
                 </div>
               ) : composerType !== "post" ? (
-                <Input
-                  value={mediaUrl}
-                  onChange={(event) => setMediaUrl(event.target.value)}
-                  placeholder="Optional media URL"
-                />
+                <Input value={mediaUrl} onChange={(event) => setMediaUrl(event.target.value)} aria-label="Media URL" />
               ) : null}
               <div className="flex justify-end gap-2">
                 <Button
@@ -563,7 +559,7 @@ export function FeedPage() {
             <EmptyState
               icon={BriefcaseBusiness}
               title="No job matches yet"
-              description="Try broadening your profile details or load sample data to get recommendations."
+              description="Try broadening your profile details or adjusting your filters to discover more openings."
               actionLabel="Browse all jobs"
               onAction={() => goToJobs()}
             />

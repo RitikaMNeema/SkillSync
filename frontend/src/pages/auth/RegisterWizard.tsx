@@ -513,11 +513,6 @@ export function RegisterWizard() {
               value={data.location}
               onChange={(v) => update("location", v)}
               error={errors.location}
-              placeholder={
-                data.role === "recruiter"
-                  ? "e.g. San Jose, California, United States"
-                  : "San Jose, California, United States"
-              }
               autoComplete={data.role === "recruiter" ? "organization" : "address-level2"}
             />
             <Field
@@ -530,7 +525,6 @@ export function RegisterWizard() {
               value={data.phone}
               onChange={(v) => update("phone", v)}
               error={errors.phone}
-              placeholder="Optional"
               autoComplete="tel"
             />
           </div>
@@ -544,7 +538,6 @@ export function RegisterWizard() {
             value={data.headline}
             onChange={(v) => update("headline", v)}
             error={errors.headline}
-            placeholder="e.g. Your role and organization"
           />
         ) : null}
 
@@ -557,19 +550,16 @@ export function RegisterWizard() {
               value={data.companyName}
               onChange={(v) => update("companyName", v)}
               error={errors.companyName}
-              placeholder="Your organization"
             />
             <Field
               label="Industry"
               value={data.companyIndustry}
               onChange={(v) => update("companyIndustry", v)}
-              placeholder="e.g. Technology"
             />
             <Field
               label="Company size"
               value={data.companySize}
               onChange={(v) => update("companySize", v)}
-              placeholder="e.g. 51–200 employees"
             />
           </div>
         ) : null}
@@ -808,7 +798,6 @@ function ExperienceFields({
             value={data.jobTitle}
             onChange={(v) => update("jobTitle", v)}
             error={errors.jobTitle}
-            placeholder="Ex: Retail Sales Manager"
           />
           <Field
             label="Company or employer"
@@ -816,7 +805,6 @@ function ExperienceFields({
             value={data.company}
             onChange={(v) => update("company", v)}
             error={errors.company}
-            placeholder="Ex: Microsoft"
           />
         </div>
       ) : (
@@ -828,7 +816,6 @@ function ExperienceFields({
             value={data.school}
             onChange={(v) => update("school", v)}
             error={errors.school}
-            placeholder="Ex: Boston University"
           />
           <Field
             label="Field of study"
@@ -836,7 +823,6 @@ function ExperienceFields({
             value={data.fieldOfStudy}
             onChange={(v) => update("fieldOfStudy", v)}
             error={errors.fieldOfStudy}
-            placeholder="Ex: Business Administration"
           />
           <div>
             <label className="mb-1 block text-sm font-semibold text-[#444444]" htmlFor="start-year">
@@ -940,7 +926,6 @@ type FieldProps = {
   onChange: (v: string) => void;
   error?: string;
   type?: string;
-  placeholder?: string;
   autoComplete?: string;
   /** Focus on mount when this step becomes visible */
   autoFocus?: boolean;
@@ -954,7 +939,6 @@ function Field({
   onChange,
   error,
   type = "text",
-  placeholder,
   autoComplete,
   autoFocus
 }: FieldProps) {
@@ -972,7 +956,6 @@ function Field({
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
         autoComplete={autoComplete}
         autoFocus={autoFocus}
         aria-invalid={error ? true : undefined}

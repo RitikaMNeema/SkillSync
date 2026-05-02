@@ -1,4 +1,4 @@
-import { BriefcaseBusiness, Search } from "lucide-react";
+import { BriefcaseBusiness, MapPin, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { useSearchParams } from "react-router-dom";
@@ -12,7 +12,7 @@ import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
 import { useDebounce } from "../../hooks/useDebounce";
 import type { Job } from "../../types/job";
-import { Input } from "../../components/ui/Input";
+import { LeadingIconInput } from "../../components/ui/LeadingIconInput";
 
 const initialFilters: JobFilterState = {
   keyword: "",
@@ -32,6 +32,9 @@ export function JobSearchPage() {
   const [savedIds, setSavedIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalJobs, setTotalJobs] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     const next = {
@@ -42,6 +45,8 @@ export function JobSearchPage() {
       industry: searchParams.get("industry") ?? "",
       seniority_level: searchParams.get("seniority_level") ?? ""
     };
+    const nextPage = Number(searchParams.get("page") ?? "1");
+    setCurrentPage(Number.isFinite(nextPage) && nextPage > 0 ? nextPage : 1);
     // Only update if values actually changed to avoid an extra debounce cycle on mount
     setFilters((current: JobFilterState) =>
       Object.keys(next).every((k) => current[k as keyof JobFilterState] === next[k as keyof JobFilterState])
@@ -55,15 +60,24 @@ export function JobSearchPage() {
     Object.entries(filters).forEach(([key, value]) => {
       if (value) params.set(key, value);
     });
+    params.set("page", "1");
+    setSearchParams(params);
+  }
+
+  function setPage(page: number) {
+    const params = new URLSearchParams(searchParams);
+    params.set("page", String(page));
     setSearchParams(params);
   }
 
   useEffect(() => {
     setLoading(true);
     setError("");
-    void searchJobs({ ...debounced, page: 1 })
+    void searchJobs({ ...debounced, page: currentPage })
       .then((data) => {
         setJobs(data.jobs);
+        setTotalJobs(data.total ?? data.jobs.length);
+        setPageSize(data.page_size ?? 10);
       })
       .catch(() => {
         setError("Could not load jobs.");
@@ -71,7 +85,11 @@ export function JobSearchPage() {
       .finally(() => {
         setLoading(false);
       });
-  }, [debounced]);
+  }, [debounced, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debounced.keyword, debounced.location, debounced.employment_type, debounced.work_mode, debounced.industry, debounced.seniority_level]);
 
   useEffect(() => {
     if (!userId) return;
@@ -101,23 +119,22 @@ export function JobSearchPage() {
   return (
     <div className="space-y-4">
       <div className="sticky top-[60px] z-40 rounded-card bg-[#eef3f8] p-4">
-        <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
-            <Input
-              value={filters.keyword}
-              onChange={(event) => setFilters((current) => ({ ...current, keyword: event.target.value }))}
-              className="border-0 bg-white pl-9"
-              placeholder="Search jobs"
-            />
-          </div>
-          <Input
+        <div className="grid min-w-0 gap-3 md:grid-cols-[1fr_1fr_auto] md:items-center">
+          <LeadingIconInput
+            Icon={Search}
+            autoComplete="off"
+            value={filters.keyword}
+            onChange={(event) => setFilters((current) => ({ ...current, keyword: event.target.value }))}
+            aria-label="Search jobs by title, keyword, or company"
+          />
+          <LeadingIconInput
+            Icon={MapPin}
+            autoComplete="off"
             value={filters.location}
             onChange={(event) => setFilters((current) => ({ ...current, location: event.target.value }))}
-            className="border-0 bg-white"
-            placeholder="Location"
+            aria-label="Location"
           />
-          <Button type="button" onClick={runSearch}>
+          <Button type="button" className="!h-[46px] shrink-0 rounded-full px-6" onClick={runSearch}>
             Search
           </Button>
         </div>
@@ -130,7 +147,7 @@ export function JobSearchPage() {
         />
         <section className="space-y-3">
           <div className="flex items-center justify-between text-sm text-text-secondary">
-            <span>{jobs.length} jobs</span>
+            <span>{totalJobs} jobs</span>
             <span>Most relevant</span>
           </div>
           {loading ? (
@@ -144,13 +161,29 @@ export function JobSearchPage() {
           ) : jobs.length === 0 ? (
             <EmptyState
               icon={BriefcaseBusiness}
-              title="No jobs found yet"
-              description="Try widening your search or load sample data so the jobs feed has listings to show."
+              title="No jobs found"
+              description="Try widening your search criteria."
               actionLabel="Reset filters"
               onAction={() => setFilters(initialFilters)}
             />
           ) : (
-            jobs.map((job) => <JobCard key={job.job_id} job={job} saved={savedIds.includes(job.job_id)} onSave={toggleSave} />)
+            <>
+              {jobs.map((job) => <JobCard key={job.job_id} job={job} saved={savedIds.includes(job.job_id)} onSave={toggleSave} />)}
+              {Math.ceil(totalJobs / pageSize) > 1 ? (
+                <div className="flex items-center justify-center gap-2 pt-2">
+                  {Array.from({ length: Math.ceil(totalJobs / pageSize) }, (_, idx) => idx + 1).map((page) => (
+                    <button
+                      key={page}
+                      type="button"
+                      className={`h-8 min-w-8 rounded-full px-2 text-sm font-semibold ${page === currentPage ? "bg-[#0A66C2] text-white" : "text-text-secondary hover:bg-[#edf2f7]"}`}
+                      onClick={() => setPage(page)}
+                    >
+                      {page}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </>
           )}
         </section>
       </div>

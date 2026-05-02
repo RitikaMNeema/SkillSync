@@ -92,7 +92,7 @@ export function CommentsPanel({ postId, viewerId, onCommentAdded }: CommentsPane
         <Input
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder="Add a comment"
+          aria-label="Comment"
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();

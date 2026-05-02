@@ -33,7 +33,7 @@ export function MessageInput({ onSend }: { onSend: (text: string) => void }) {
             onChange={(event) => setValue(event.target.value)}
             onKeyDown={handleKeyDown}
             className="max-h-36 min-h-[120px] !rounded-md !border-0 bg-transparent px-3 py-2 text-[40px] leading-tight !shadow-none focus:!border-0 focus:!shadow-none"
-            placeholder="Write a message..."
+            aria-label="Message body"
           />
         </div>
       </div>

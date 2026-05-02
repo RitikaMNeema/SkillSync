@@ -106,10 +106,9 @@ export function LoginPage() {
                     {...register("email")}
                     type="email"
                     autoComplete="email"
-                    placeholder="Email or phone"
                     aria-invalid={errors.email ? true : undefined}
                     aria-describedby={errors.email ? `${emailId}-err` : undefined}
-                    className="h-[64px] rounded-[4px] border-[#888888] px-4 text-[17px] placeholder:text-[#666666] focus:shadow-none"
+                    className="h-[64px] rounded-[4px] border-[#888888] px-4 text-[17px] focus:shadow-none"
                   />
                   {errors.email?.message ? (
                     <p id={`${emailId}-err`} className="mt-1.5 flex gap-1.5 text-sm text-red-700" role="alert">
@@ -128,10 +127,9 @@ export function LoginPage() {
                       {...register("password")}
                       type={showPassword ? "text" : "password"}
                       autoComplete="current-password"
-                      placeholder="Password"
                       aria-invalid={errors.password ? true : undefined}
                       aria-describedby={errors.password ? `${passwordId}-err` : undefined}
-                      className="h-[64px] rounded-[4px] border-[#888888] px-4 pr-20 text-[17px] placeholder:text-[#666666] focus:shadow-none"
+                      className="h-[64px] rounded-[4px] border-[#888888] px-4 pr-20 text-[17px] focus:shadow-none"
                     />
                     <button
                       type="button"

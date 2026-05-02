@@ -225,8 +225,8 @@ export function EditAboutModal({
         <FieldLabel>About</FieldLabel>
         <Textarea
           {...register("about", { maxLength: 2600 })}
-          placeholder="You can write about your years of experience, industry, or skills. People also talk about their achievements or previous job experiences."
-          className="min-h-[260px] rounded-[10px] border-[#b8c0c7] px-4 py-3 text-[1rem] placeholder:text-[#8b8b8b] focus:shadow-none"
+          aria-label="About"
+          className="min-h-[260px] rounded-[10px] border-[#b8c0c7] px-4 py-3 text-[1rem] focus:shadow-none"
         />
         <p className="text-right text-sm text-[#777777]">{length}/2600</p>
       </form>
@@ -366,11 +366,11 @@ export function SkillFormModal({
           <div>
             <FieldLabel>Skill*</FieldLabel>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5f6368]" />
+              <Search className="pointer-events-none absolute left-[17px] top-1/2 h-[17px] w-[17px] -translate-y-1/2 text-[#5f6368]" />
               <Input
                 {...register("skill", { required: true })}
-                placeholder="Skill (e.g. Java, Project management)"
-                className="h-[50px] rounded-[10px] border-[#b8c0c7] !pl-12 text-[1rem] placeholder:text-[#8b8b8b] focus:shadow-none"
+                aria-label="Skill name"
+                className="h-[50px] rounded-[10px] border-[#b8c0c7] !pl-[3rem] text-[1rem] focus:shadow-none focus:!outline-none"
               />
             </div>
             {showSuggestions && suggestions.length ? (
@@ -657,8 +657,8 @@ export function EditHeadlineModal({
               maxLength: 220,
               validate: (value) => value.trim().length > 0
             })}
-            placeholder="MS Applied Data Intelligence @ SJSU | AI & Machine Learning | Data Analytics"
-            className="min-h-[116px] rounded-[10px] border-[#b8c0c7] px-4 py-3 text-[1rem] leading-7 placeholder:text-[#8b8b8b] focus:shadow-none"
+            aria-label="Headline"
+            className="min-h-[116px] rounded-[10px] border-[#b8c0c7] px-4 py-3 text-[1rem] leading-7 focus:shadow-none"
           />
           <p className="mt-2 text-sm text-[#6b7280]">Review and edit your headline before saving so it reflects your profile clearly.</p>
           <p className="text-right text-sm text-[#777777]">{length}/220</p>
@@ -845,13 +845,14 @@ export function EditContactInfoModal({
             <Input
               disabled
               value={email ?? ""}
-              placeholder="Email from your account"
+              readOnly
+              aria-label="Account email"
               className="h-[50px] rounded-[10px] border-[#d1d5db] px-4 text-[1rem] text-[#9ca3af] focus:shadow-none"
             />
           </div>
           <div>
             <FieldLabel>Phone</FieldLabel>
-            <Input {...register("phone")} placeholder="Add phone number" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
+            <Input {...register("phone")} className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
           </div>
           <div>
             <FieldLabel>Birthday</FieldLabel>
@@ -859,19 +860,19 @@ export function EditContactInfoModal({
           </div>
           <div>
             <FieldLabel>Website</FieldLabel>
-            <Input {...register("website")} placeholder="https://your-site.com" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
+            <Input {...register("website")} className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
           </div>
           <div>
             <FieldLabel>City</FieldLabel>
-            <Input {...register("location_city")} placeholder="City" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
+            <Input {...register("location_city")} className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
           </div>
           <div>
             <FieldLabel>State</FieldLabel>
-            <Input {...register("location_state")} placeholder="State" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
+            <Input {...register("location_state")} className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
           </div>
           <div className="md:col-span-2">
             <FieldLabel>Country</FieldLabel>
-            <Input {...register("location_country")} placeholder="Country" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
+            <Input {...register("location_country")} className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
           </div>
         </div>
       </form>
@@ -973,15 +974,15 @@ export function AddEducationModal({
       >
         <div>
           <FieldLabel>School*</FieldLabel>
-          <Input {...register("school", { required: true })} placeholder="Ex: Boston University" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] placeholder:text-[#8b8b8b] focus:shadow-none" />
+          <Input {...register("school", { required: true })} className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
         </div>
         <div>
           <FieldLabel>Degree</FieldLabel>
-          <Input {...register("degree")} placeholder="Ex: Bachelor of Science" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] placeholder:text-[#8b8b8b] focus:shadow-none" />
+          <Input {...register("degree")} className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
         </div>
         <div>
           <FieldLabel>Field of study</FieldLabel>
-          <Input {...register("field_of_study")} placeholder="Ex: Business" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] placeholder:text-[#8b8b8b] focus:shadow-none" />
+          <Input {...register("field_of_study")} className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
         </div>
 
         <div className="space-y-5">
@@ -1059,18 +1060,14 @@ export function AddEducationModal({
           <FieldLabel>Activities and societies</FieldLabel>
           <Textarea
             {...register("activities", { maxLength: 500 })}
-            placeholder="Ex: Alpha Phi Omega, Marching Band, Volleyball"
-            className="min-h-[120px] rounded-[10px] border-[#b8c0c7] px-4 py-3 text-[1rem] placeholder:text-[#8b8b8b] focus:shadow-none"
+            aria-label="Activities and societies"
+            className="min-h-[120px] rounded-[10px] border-[#b8c0c7] px-4 py-3 text-[1rem] focus:shadow-none"
           />
           <p className="mt-2 text-right text-sm text-[#777777]">{activitiesLength}/500</p>
         </div>
         <div>
           <FieldLabel>Linked skills</FieldLabel>
-          <Input
-            {...register("skill_ids")}
-            placeholder="Ex: HTML, CSS, Data Engineering"
-            className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] placeholder:text-[#8b8b8b] focus:shadow-none"
-          />
+          <Input {...register("skill_ids")} className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
         </div>
       </form>
     </ModalShell>
@@ -1168,7 +1165,7 @@ export function AddExperienceModal({
       >
         <div>
           <FieldLabel>Title*</FieldLabel>
-          <Input {...register("title", { required: true })} placeholder="Ex: Retail Sales Manager" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] placeholder:text-[#8b8b8b] focus:shadow-none" />
+          <Input {...register("title", { required: true })} className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
         </div>
         <div>
           <FieldLabel>Employment type</FieldLabel>
@@ -1184,7 +1181,7 @@ export function AddExperienceModal({
         </div>
         <div>
           <FieldLabel>Company or organization*</FieldLabel>
-          <Input {...register("company", { required: true })} placeholder="Ex: Microsoft" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] placeholder:text-[#8b8b8b] focus:shadow-none" />
+          <Input {...register("company", { required: true })} className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
         </div>
         <label className="flex items-center gap-3 text-[1.05rem] font-semibold text-[#454545]">
           <input type="checkbox" {...register("is_current")} className="h-6 w-6 rounded border-[#7b7b7b] accent-[#0c7c59]" />
@@ -1254,7 +1251,7 @@ export function AddExperienceModal({
 
         <div>
           <FieldLabel>Location</FieldLabel>
-          <Input {...register("location")} placeholder="Ex: London, United Kingdom" className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] placeholder:text-[#8b8b8b] focus:shadow-none" />
+          <Input {...register("location")} className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
         </div>
         <div>
           <FieldLabel>Location type</FieldLabel>
@@ -1272,11 +1269,7 @@ export function AddExperienceModal({
         </div>
         <div>
           <FieldLabel>Linked skills</FieldLabel>
-          <Input
-            {...register("skill_ids")}
-            placeholder="Ex: Spring Boot, REST APIs, Microservices"
-            className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] placeholder:text-[#8b8b8b] focus:shadow-none"
-          />
+          <Input {...register("skill_ids")} className="h-[50px] rounded-[10px] border-[#b8c0c7] px-4 text-[1rem] focus:shadow-none" />
         </div>
       </form>
     </ModalShell>
