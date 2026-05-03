@@ -19,11 +19,13 @@ def create_test_app():
 
 client = TestClient(create_test_app())
 
+# Routes use enqueue_* functions (async Kafka pattern) → all mutating endpoints return 202
+
 
 def test_request_endpoint():
     with patch(
         "services.connection_service.routes.connections.ctrl.enqueue_request",
-        new=AsyncMock(return_value={"request_id": 1, "status": "pending"})
+        new=AsyncMock(return_value={"command_id": "abc", "status": "queued"})
     ):
         response = client.post("/connections/request", json={
             "requester_id": 1,
@@ -32,40 +34,40 @@ def test_request_endpoint():
 
     assert response.status_code == 202
     assert response.json()["success"] is True
-    assert response.json()["data"]["status"] == "pending"
+    assert response.json()["data"]["command_id"] == "abc"
 
 
 def test_accept_endpoint():
     with patch(
         "services.connection_service.routes.connections.ctrl.enqueue_accept",
-        new=AsyncMock(return_value={"request_id": 1, "status": "accepted"})
+        new=AsyncMock(return_value={"command_id": "def", "status": "queued"})
     ):
         response = client.post("/connections/accept", json={"request_id": 1})
 
     assert response.status_code == 202
-    assert response.json()["data"]["status"] == "accepted"
+    assert response.json()["data"]["command_id"] == "def"
 
 
 def test_reject_endpoint():
     with patch(
         "services.connection_service.routes.connections.ctrl.enqueue_reject",
-        new=AsyncMock(return_value={"request_id": 5, "status": "rejected"})
+        new=AsyncMock(return_value={"command_id": "ghi", "status": "queued"})
     ):
         response = client.post("/connections/reject", json={"request_id": 5})
 
     assert response.status_code == 202
-    assert response.json()["data"]["status"] == "rejected"
+    assert response.json()["data"]["command_id"] == "ghi"
 
 
 def test_withdraw_endpoint():
     with patch(
         "services.connection_service.routes.connections.ctrl.enqueue_withdraw",
-        new=AsyncMock(return_value={"request_id": 9, "status": "withdrawn"})
+        new=AsyncMock(return_value={"command_id": "jkl", "status": "queued"})
     ):
         response = client.post("/connections/withdraw", json={"request_id": 9})
 
     assert response.status_code == 202
-    assert response.json()["data"]["status"] == "withdrawn"
+    assert response.json()["data"]["command_id"] == "jkl"
 
 
 def test_list_endpoint():
@@ -97,7 +99,7 @@ def test_pending_endpoint():
 def test_remove_endpoint():
     with patch(
         "services.connection_service.routes.connections.ctrl.enqueue_remove",
-        new=AsyncMock(return_value={"removed": True})
+        new=AsyncMock(return_value={"command_id": "mno", "status": "queued"})
     ):
         response = client.post("/connections/remove", json={
             "user_id_1": 1,
@@ -105,4 +107,4 @@ def test_remove_endpoint():
         })
 
     assert response.status_code == 202
-    assert response.json()["data"]["removed"] is True
+    assert response.json()["data"]["command_id"] == "mno"
