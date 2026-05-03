@@ -628,6 +628,7 @@ export function MessagesPage() {
             value={inboxSearch}
             onChange={(event) => setInboxSearch(event.target.value)}
             aria-label="Search inbox"
+            placeholder="Search messages"
             autoComplete="off"
             endAdornment={
               inboxSearch ? (
@@ -702,6 +703,7 @@ export function MessagesPage() {
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 aria-label="Search recipients by name"
+                placeholder="Type a name"
                 className="h-10 rounded-md border"
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {

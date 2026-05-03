@@ -959,6 +959,34 @@ Event counts by type for a recruiter.
 
 ---
 
+### POST /analytics/recruiter/profileDashboard
+30‑day recruiter-centric metrics (profile visibility, owned jobs, applications, outbound messages). Search appearances use `recruiter.searchAppeared` events emitted when another user runs **POST /recruiters/search** and this recruiter appears in the result set.
+
+```json
+// Request
+{ "recruiter_id": 2 }
+
+// Response 200
+{
+  "success": true,
+  "data": {
+    "profile_views_30d": 12,
+    "profile_views_daily_30d": [{ "date": "2026-05-01", "count": 1 }],
+    "search_appearances_30d": 40,
+    "job_views_30d": 90,
+    "job_saves_30d": 5,
+    "applicants_30d": 8,
+    "messages_sent_30d": 3,
+    "application_status_breakdown": [
+      { "status": "submitted", "count": 6 },
+      { "status": "interview", "count": 2 }
+    ]
+  }
+}
+```
+
+---
+
 ## Common HTTP Status Codes
 
 | Code | Meaning |

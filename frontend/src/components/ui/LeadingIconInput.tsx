@@ -15,7 +15,7 @@ const LEADING_ICON_CLASS =
  */
 export const linkedInSearchPillInputClassNames = cn(
   "!h-[46px] min-h-[46px] w-full rounded-full !border-2 border-solid border-[#b0b4b8] bg-[#ffffff]",
-  "!pl-[3rem] !pr-5 text-[17px] leading-tight text-[#1f1f1f]",
+  "!pl-[3rem] !pr-5 text-[17px] leading-tight text-[#1f1f1f] placeholder:text-[#666666]",
   "caret-[#1f2937] accent-transparent [-webkit-appearance:none] appearance-none",
   "focus:border-[#666666] focus:!shadow-none focus:!outline-none focus:ring-0",
   "focus-visible:border-[#666666] focus-visible:!shadow-none focus-visible:!outline-none focus-visible:ring-0"

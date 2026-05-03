@@ -12,7 +12,8 @@ import {
   Sparkles
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { getMemberDashboard, getTopJobs } from "../../api/analytics";
+import { useShallow } from "zustand/react/shallow";
+import { getMemberDashboard, getRecruiterProfileDashboard, getTopJobs } from "../../api/analytics";
 import { getApplicationsByMember } from "../../api/applications";
 import { getMutualConnections, listConnections, listPendingConnections, requestConnection, withdrawConnection } from "../../api/connections";
 import { getSavedJobs, getJob, saveJob, searchJobs, unsaveJob } from "../../api/jobs";
@@ -31,7 +32,7 @@ import { Alert } from "../../components/ui/Alert";
 import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
 import type { Application } from "../../types/application";
-import type { MemberDashboard } from "../../types/analytics";
+import type { MemberDashboard, RecruiterProfileDashboard } from "../../types/analytics";
 import type { Job } from "../../types/job";
 import type { MemberProfile, MemberSearchItem } from "../../types/member";
 import type { FeedPost, PostType } from "../../types/post";
@@ -58,6 +59,12 @@ function pendingCounterpartyId(request: PendingConnection, userId: number): numb
   return direction === "incoming" ? request.requester_id : request.receiver_id;
 }
 
+function isRecruiterProfileDashboard(
+  dash: MemberDashboard | RecruiterProfileDashboard | null
+): dash is RecruiterProfileDashboard {
+  return dash != null && "job_views_30d" in dash;
+}
+
 function outgoingPendingIndex(pendingRequests: PendingConnection[], userId: number): {
   ids: number[];
   requestIdsByMember: Record<number, number>;
@@ -78,8 +85,7 @@ function outgoingPendingIndex(pendingRequests: PendingConnection[], userId: numb
 
 export function FeedPage() {
   const navigate = useNavigate();
-  const userId = authStore((state) => state.userId);
-  const role = authStore((state) => state.role);
+  const { userId, role } = authStore(useShallow((state) => ({ userId: state.userId, role: state.role })));
   const [profile, setProfile] = useState<MemberProfile | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [savedJobIds, setSavedJobIds] = useState<number[]>([]);
@@ -87,7 +93,7 @@ export function FeedPage() {
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [peopleSuggestions, setPeopleSuggestions] = useState<MemberSearchItem[]>([]);
   const [recruiterSuggestions, setRecruiterSuggestions] = useState<RecruiterProfile[]>([]);
-  const [dashboard, setDashboard] = useState<MemberDashboard | null>(null);
+  const [dashboard, setDashboard] = useState<MemberDashboard | RecruiterProfileDashboard | null>(null);
   const [trendingJobs, setTrendingJobs] = useState<Job[]>([]);
   const [pendingConnectionIds, setPendingConnectionIds] = useState<number[]>([]);
   const [pendingRequestIdsByMember, setPendingRequestIdsByMember] = useState<Record<number, number>>({});
@@ -136,6 +142,9 @@ export function FeedPage() {
       const keyword = member.skills?.[0] || member.headline?.split(" ")[0] || undefined;
       const location = member.location_city || undefined;
 
+      const dashboardRequest =
+        role === "recruiter" ? getRecruiterProfileDashboard(userId) : getMemberDashboard(userId);
+
       const results = await Promise.allSettled([
         searchJobs({ keyword, location, page: 1 }),
         getApplicationsByMember(userId),
@@ -145,7 +154,7 @@ export function FeedPage() {
         searchRecruiters({ page: 1 }),
         listConnections(userId),
         listPendingConnections(userId),
-        getMemberDashboard(userId),
+        dashboardRequest,
         getTopJobs(currentMonthKey())
       ]);
 
@@ -381,7 +390,7 @@ export function FeedPage() {
               <button
                 type="button"
                 className="flex w-full items-center justify-between text-left font-semibold text-[#444] hover:text-brand"
-                onClick={() => navigate("/dashboard")}
+                onClick={() => navigate(role === "recruiter" ? "/recruiter/analytics/profile" : "/dashboard")}
               >
                 <span>Profile viewers</span>
                 <span className="font-semibold text-brand">{dashboard?.profile_views_30d ?? 0}</span>
@@ -639,7 +648,11 @@ export function FeedPage() {
             <div className="mt-3 space-y-3 text-sm">
               <div className="rounded-card bg-hover p-3">
                 <p className="font-semibold text-text-primary">{dashboard?.profile_views_30d ?? 0} profile views in the last 30 days</p>
-                <p className="mt-1 text-text-secondary">Your profile visibility is now connected to backend analytics.</p>
+                <p className="mt-1 text-text-secondary">
+                  {role === "recruiter" && isRecruiterProfileDashboard(dashboard)
+                    ? `${dashboard.job_views_30d} job views · ${dashboard.applicants_30d} applicants · ${dashboard.messages_sent_30d} messages sent`
+                    : "Your profile visibility is now connected to backend analytics."}
+                </p>
               </div>
               {trendingJobs.map((job) => (
                 <button

@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from fastapi import HTTPException
 from pymysql.err import IntegrityError
 from models import files_mongo
@@ -12,6 +14,37 @@ from models.recruiter import (
 )
 from models.command_status import get_command_status
 from producers.recruiter_command_producer import enqueue_recruiter_command
+from producers.recruiter_analytics_producer import emit_recruiter_profile_viewed, emit_recruiter_search_appeared
+
+log = logging.getLogger(__name__)
+
+
+async def _emit_recruiter_search_appearance_events(
+    actor_id: int | None,
+    rows: list,
+    name: str | None,
+    company: str | None,
+    industry: str | None,
+) -> None:
+    if actor_id is None or not rows:
+        return
+    tasks = [
+        emit_recruiter_search_appeared(
+            actor_id,
+            int(row["recruiter_id"]),
+            name=name,
+            company=company,
+            industry=industry,
+        )
+        for row in rows
+        if row.get("recruiter_id") is not None and str(row.get("recruiter_id")) != str(actor_id)
+    ]
+    if not tasks:
+        return
+    outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+    for outcome in outcomes:
+        if isinstance(outcome, Exception):
+            log.exception("emit_recruiter_search_appeared failed", exc_info=outcome)
 
 
 async def create(body: dict) -> dict:
@@ -88,10 +121,17 @@ async def create(body: dict) -> dict:
     return row
 
 
-async def get(recruiter_id: int) -> dict:
+async def get(recruiter_id: int, actor: dict | None = None) -> dict:
     r = await get_recruiter(recruiter_id)
     if not r:
         raise HTTPException(404, "Recruiter not found")
+    if actor and actor.get("user_id") is not None:
+        try:
+            viewer = int(actor["user_id"])
+            if viewer != recruiter_id:
+                await emit_recruiter_profile_viewed(viewer, recruiter_id)
+        except Exception:
+            log.exception("emit_recruiter_profile_viewed failed recruiter_id=%s", recruiter_id)
     return r
 
 
@@ -119,8 +159,9 @@ async def delete(recruiter_id: int) -> dict:
     return {"recruiter_id": recruiter_id, "deleted": True}
 
 
-async def search(name, company, industry, page) -> dict:
+async def search(name, company, industry, page, actor_id: int | None = None) -> dict:
     rows, total = await search_recruiters(name, company, industry, page)
+    await _emit_recruiter_search_appearance_events(actor_id, rows, name, company, industry)
     return {"recruiters": rows, "total": total, "page": page, "page_size": PAGE_SIZE}
 
 

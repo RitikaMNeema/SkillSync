@@ -126,6 +126,7 @@ export function JobSearchPage() {
             value={filters.keyword}
             onChange={(event) => setFilters((current) => ({ ...current, keyword: event.target.value }))}
             aria-label="Search jobs by title, keyword, or company"
+            placeholder="Search jobs"
           />
           <LeadingIconInput
             Icon={MapPin}
@@ -133,6 +134,7 @@ export function JobSearchPage() {
             value={filters.location}
             onChange={(event) => setFilters((current) => ({ ...current, location: event.target.value }))}
             aria-label="Location"
+            placeholder="Location"
           />
           <Button type="button" className="!h-[46px] shrink-0 rounded-full px-6" onClick={runSearch}>
             Search

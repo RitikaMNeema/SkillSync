@@ -4,7 +4,7 @@ from uuid import uuid4
 from pymongo.errors import DuplicateKeyError
 
 from shared.database.mongo import get_db
-from models.member_mysql import get_member_by_id
+from models.author_hydration import hydrate_author_for_user_id
 
 COMMENTS_PAGE_SIZE = 20
 
@@ -39,7 +39,7 @@ async def toggle_like(post_id: str, member_id: int) -> dict:
 # ---------- Comments ----------
 
 async def create_comment(post_id: str, member_id: int, content: str) -> dict:
-    author = await get_member_by_id(member_id)
+    author = await hydrate_author_for_user_id(int(member_id))
     now = datetime.now(timezone.utc)
     doc = {
         "comment_id": uuid4().hex,
@@ -73,7 +73,7 @@ async def list_comments(post_id: str, page: int = 1) -> dict:
 
     # Re-hydrate author info (current name/photo)
     for r in rows:
-        author = await get_member_by_id(r["member_id"])
+        author = await hydrate_author_for_user_id(int(r["member_id"]))
         if author:
             r["author"] = {
                 "first_name": author.get("first_name"),

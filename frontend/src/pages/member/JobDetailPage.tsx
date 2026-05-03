@@ -40,6 +40,16 @@ function toBullets(lines: string[], fallback: string[]): string[] {
   return cleaned;
 }
 
+/** Wizard stores benefits/visibility in the description; strip duplicate lines from section bullets when we render Benefits separately. */
+function filterDuplicateMetaBullets(items: string[]): string[] {
+  return items.filter((item) => {
+    const t = item.trim();
+    if (/^\s*Benefits\s*:/i.test(t)) return false;
+    if (/^\s*Visible to job seekers\s*:/i.test(t)) return false;
+    return true;
+  });
+}
+
 function parseLabeledJobDescription(description: string | null | undefined): {
   about: string;
   responsibilities: string[];
@@ -90,14 +100,58 @@ function parseLabeledJobDescription(description: string | null | undefined): {
   });
 
   const about = (contentByLabel["About the job"] ?? "").trim();
-  const responsibilities = toBullets((contentByLabel["Responsibilities"] ?? "").split("\n"), []);
-  const qualifications = toBullets((contentByLabel["Qualifications"] ?? "").split("\n"), []);
+  const responsibilities = filterDuplicateMetaBullets(toBullets((contentByLabel["Responsibilities"] ?? "").split("\n"), []));
+  const qualifications = filterDuplicateMetaBullets(toBullets((contentByLabel["Qualifications"] ?? "").split("\n"), []));
   const benefitsSection = (contentByLabel["Benefits"] ?? "").trim();
-  const benefits = benefitsSection
-    ? benefitsSection.split(",").map((item) => item.trim()).filter(Boolean)
-    : [];
+  let benefits = benefitsSection ? splitBenefitsTokens(benefitsSection) : [];
+
+  /** Recruiter job wizard stores `Benefits: a, b` on one line; section-header parser expects `Benefits\n`. */
+  if (!benefits.length) {
+    const inline = /\bBenefits\s*:\s*([^\n]+)/i.exec(text);
+    if (inline?.[1]) benefits = splitBenefitsTokens(inline[1]);
+  }
+
+  if (!benefits.length) {
+    const blockMatch =
+      /\bBenefits\b\s*:?\s*\n([\s\S]*?)(?=\n\s*(?:Additional compensation:|Visible to job seekers:|Responsibilities\b|Qualifications\b)\b|$)/i.exec(text);
+    if (blockMatch?.[1]?.trim()) {
+      benefits = toBullets(blockMatch[1].split("\n"), []);
+    }
+  }
 
   return { about, responsibilities, qualifications, benefits };
+}
+
+function splitBenefitsTokens(segment: string): string[] {
+  const raw = segment.trim();
+  if (!raw) return [];
+  if (/[|,]/.test(raw)) return raw.split(/[,|]/).map((item) => item.trim()).filter(Boolean);
+  const lines = raw
+    .split("\n")
+    .map((line) => line.replace(/^[-*•]\s*/, "").trim())
+    .filter(Boolean);
+  return lines.length ? lines : [raw];
+}
+
+function stripTrailingSalaryLine(about: string, salaryMin?: number | null, salaryMax?: number | null): string {
+  const slug = (salaryMin || salaryMax) && formatSalary(salaryMin, salaryMax);
+  if (!slug || slug === "Salary not listed") return about.trimEnd();
+  const t = about.trimEnd();
+  if (t === slug) return "";
+  const lines = t.split(/\n/).map((l) => l.trimEnd());
+  while (lines.length > 0) {
+    const last = lines.at(-1)?.trim() ?? "";
+    if (!last) {
+      lines.pop();
+      continue;
+    }
+    if (last.replace(/\s+/g, " ") === slug.replace(/\s+/g, " ")) {
+      lines.pop();
+      return lines.join("\n").trimEnd();
+    }
+    break;
+  }
+  return t;
 }
 
 function logoText(name?: string | null): string {
@@ -160,9 +214,7 @@ function JobHeader({
               <Badge className="rounded-full bg-[#eef3f8] px-3 py-1 text-[#1d2226]">{job.employment_type}</Badge>
             ) : null}
             {(job.salary_min || job.salary_max) ? (
-              <Badge className="rounded-full bg-[#e8f3ec] px-3 py-1 text-[#137333]">
-                {formatSalary(job.salary_min, job.salary_max)} / hour
-              </Badge>
+              <Badge className="rounded-full bg-[#e8f3ec] px-3 py-1 text-[#137333]">{formatSalary(job.salary_min, job.salary_max)}</Badge>
             ) : null}
           </div>
         </div>
@@ -307,15 +359,15 @@ export function JobDetailPage() {
 
   const parsed = parseLabeledJobDescription(job.description);
   const fallbackLines = descriptionLines(job);
-  const aboutText = parsed.about || fallbackLines.join("\n\n");
   const responsibilities = parsed.responsibilities.length ? parsed.responsibilities : [];
   const qualifications = parsed.qualifications.length
     ? parsed.qualifications
     : toBullets(job.skills_required ?? [], []);
-  const benefits = parsed.benefits.length ? parsed.benefits : [];
-  const compensationLabel = (job.salary_min || job.salary_max)
-    ? `${formatSalary(job.salary_min, job.salary_max)} / hour`
-    : "Compensation not disclosed";
+  const benefits = parsed.benefits;
+
+  let aboutTextDisplay = stripTrailingSalaryLine(parsed.about || fallbackLines.join("\n\n"), job.salary_min, job.salary_max);
+
+  const compensationLabel = job.salary_min || job.salary_max ? formatSalary(job.salary_min, job.salary_max) : "Compensation not disclosed";
 
   return (
     <>
@@ -338,12 +390,11 @@ export function JobDetailPage() {
             <Card className="rounded-[12px] border border-[#e0dfdc] bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
               <div className="space-y-8">
                 <JobSection title="About the job">
-                  {aboutText ? (
-                    <p className="whitespace-pre-wrap">{aboutText}</p>
+                  {aboutTextDisplay ? (
+                    <p className="whitespace-pre-wrap">{aboutTextDisplay}</p>
                   ) : (
                     <p>No description provided.</p>
                   )}
-                  <p className="mt-3 text-sm font-semibold text-[#1d2226]">{formatSalary(job.salary_min, job.salary_max)}</p>
                 </JobSection>
                 <JobSection title="Responsibilities">
                   {responsibilities.length ? (
