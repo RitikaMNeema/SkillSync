@@ -136,13 +136,15 @@ async def get(recruiter_id: int, actor: dict | None = None) -> dict:
 
 
 async def update(body: dict) -> dict:
-    fields_set: set = body.pop("__pydantic_fields_set__", set())
-    if not isinstance(fields_set, set):
-        fields_set = set(fields_set) if fields_set is not None else set()
+    raw_fs = body.pop("__pydantic_fields_set__", None)
+    fields_set: set = set(raw_fs) if raw_fs is not None else set()
     rid = body.pop("recruiter_id")
     existing = await get_recruiter(rid)
     if not existing:
         raise HTTPException(404, "Recruiter not found")
+    # Kafka / JSON may drop or empty fields_set; without this, recruiter_patch is {} and UI never updates.
+    if not fields_set:
+        fields_set = set(body.keys())
     company = body.pop("company", None) if "company" in fields_set else None
     recruiter_patch = {k: v for k, v in body.items() if k in fields_set}
     if recruiter_patch:

@@ -1,4 +1,5 @@
-import { MoreHorizontal, Pencil, Search, Star, Trash2, X } from "lucide-react";
+import { format, isToday, isYesterday, parseISO } from "date-fns";
+import { MoreHorizontal, Search, Star, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -13,8 +14,10 @@ import {
 } from "../../api/messages";
 import { getMember, searchMembers } from "../../api/members";
 import { getRecruiter, searchRecruiters } from "../../api/recruiters";
+import { ConversationFilters } from "../../components/messages/ConversationFilters";
 import { MessageBubble } from "../../components/messages/MessageBubble";
 import { MessageInput } from "../../components/messages/MessageInput";
+import { MessagingHeader } from "../../components/messages/MessagingHeader";
 import { ThreadList } from "../../components/messages/ThreadList";
 import { Alert } from "../../components/ui/Alert";
 import { Avatar } from "../../components/ui/Avatar";
@@ -24,15 +27,6 @@ import { Input } from "../../components/ui/Input";
 import { authStore } from "../../context/AuthContext";
 import { useWebSocket } from "../../hooks/useWebSocket";
 import type { Message, Thread } from "../../types/message";
-import { formatDate } from "../../utils/formatDate";
-
-function LinkedInMark() {
-  return (
-    <span className="inline-flex h-[14px] min-w-[14px] items-center justify-center rounded-[2px] bg-[#0a66c2] px-[3px] text-[9px] font-bold text-white">
-      in
-    </span>
-  );
-}
 
 /** Flat illustration for inbox search empty state (LinkedIn-style). */
 function SearchInboxEmptyIllustration() {
@@ -207,7 +201,7 @@ export function MessagesPage() {
     [activeThread?.thread_id]
   );
 
-  const websocket = useWebSocket(activeThread?.thread_id ?? null, handleRealtimeMessage);
+  useWebSocket(activeThread?.thread_id ?? null, handleRealtimeMessage);
   const activeParticipantId = activeThread?.participant_ids.find((id) => id !== String(userId)) ?? null;
   const activeParticipantProfile = activeParticipantId ? profileByUserId[activeParticipantId] : undefined;
   const activeThreadLabel =
@@ -215,17 +209,71 @@ export function MessagesPage() {
     (activeThread ? threadLabels[activeThread.thread_id] ?? `Thread ${activeThread.thread_id.slice(0, 8)}` : "Select a conversation");
   const activeAvatarName = activeParticipantProfile?.name?.split(" ")[0] || activeThreadLabel.split(",")[0]?.trim() || "Thread";
 
-  const threadDayBanner = useMemo(() => {
-    if (!messages.length) return "TODAY";
-    const first = new Date(messages[0].timestamp);
-    const today = new Date();
-    const sameDay =
-      first.getFullYear() === today.getFullYear() &&
-      first.getMonth() === today.getMonth() &&
-      first.getDate() === today.getDate();
-    if (sameDay) return "TODAY";
-    return formatDate(messages[0].timestamp, "EEE, MMM d").toUpperCase();
-  }, [messages]);
+  const normalizeTs = useCallback((ts: string) => (/(?:Z|[+-]\d{2}:\d{2})$/.test(ts) ? ts : `${ts}Z`), []);
+
+  const dayKey = useCallback((ts: string) => format(parseISO(normalizeTs(ts)), "yyyy-MM-dd"), [normalizeTs]);
+
+  const threadTimeline = useMemo(() => {
+    if (!userId || !messages.length) return [];
+    const uid = String(userId);
+    let lastOutgoing = -1;
+    for (let idx = messages.length - 1; idx >= 0; idx--) {
+      if (messages[idx].sender_id === uid) {
+        lastOutgoing = idx;
+        break;
+      }
+    }
+
+    type MsgRow = {
+      type: "msg";
+      key: string;
+      message: Message;
+      own: boolean;
+      showAvatar: boolean;
+      showSeenFooter: boolean;
+      seenByOther: boolean;
+      compactTop: boolean;
+      isFirstInGroup: boolean;
+    };
+    type DayRow = { type: "day"; key: string; label: string };
+    const rows: (MsgRow | DayRow)[] = [];
+    let i = 0;
+    while (i < messages.length) {
+      const dkPrev = i > 0 ? dayKey(messages[i - 1].timestamp) : "";
+      const dk = dayKey(messages[i].timestamp);
+      if (i === 0 || dk !== dkPrev) {
+        const ts = messages[i].timestamp;
+        const d = parseISO(normalizeTs(ts));
+        let label = format(d, "EEE, MMM d").toUpperCase();
+        if (isToday(d)) label = "TODAY";
+        else if (isYesterday(d)) label = "YESTERDAY";
+        rows.push({ type: "day", key: `day-${dk}-${i}`, label });
+      }
+      const sender = messages[i].sender_id;
+      let j = i;
+      while (j < messages.length && messages[j].sender_id === sender && dayKey(messages[j].timestamp) === dk) {
+        j++;
+      }
+      for (let k = i; k < j; k++) {
+        const message = messages[k];
+        const own = message.sender_id === uid;
+        const firstInRun = k === i;
+        rows.push({
+          type: "msg",
+          key: message.message_id,
+          message,
+          own,
+          showAvatar: !own && firstInRun,
+          showSeenFooter: own && k === lastOutgoing,
+          seenByOther: Boolean(activeParticipantId && message.read_by?.includes(activeParticipantId)),
+          compactTop: !firstInRun,
+          isFirstInGroup: firstInRun
+        });
+      }
+      i = j;
+    }
+    return rows;
+  }, [activeParticipantId, dayKey, messages, normalizeTs, userId]);
 
   const displayUnreadCountByThread = useMemo(
     () =>
@@ -606,303 +654,294 @@ export function MessagesPage() {
 
   if (loading) {
     return (
-      <div className="grid min-h-[74vh] gap-0 overflow-hidden rounded-2xl border border-[#d9dee3] bg-white shadow-card md:grid-cols-[390px_minmax(0,1fr)]">
-        <CardSkeleton />
-        <CardSkeleton />
+      <div className="min-h-[74vh] bg-[#f3f2ef] p-4 md:p-5">
+        <div className="mx-auto flex max-w-[1280px] min-h-[70vh] overflow-hidden rounded-lg border border-[#e8ecf1] bg-white shadow-sm">
+          <div className="grid min-h-[70vh] w-full grid-cols-1 md:grid-cols-[300px_1fr]">
+            <CardSkeleton />
+            <CardSkeleton />
+          </div>
+        </div>
       </div>
     );
   }
 
   if (error) return <Alert message={error} />;
 
+  const threadActionsMenu = activeThread ? (
+    <>
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm text-[#1f1f1f] transition hover:bg-[#f3f2ef]"
+        onClick={() => {
+          void handleMarkUnread();
+          setMenuOpen(false);
+        }}
+      >
+        Mark unread
+      </button>
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm text-[#1f1f1f] transition hover:bg-[#f3f2ef]"
+        onClick={() => {
+          void handleToggleStar();
+        }}
+      >
+        <Star className={`h-4 w-4 ${starredThreadIds[activeThread.thread_id] ? "fill-[#d49100] text-[#d49100]" : ""}`} />
+        {starredThreadIds[activeThread.thread_id] ? "Unstar" : "Star"}
+      </button>
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm text-[#1f1f1f] transition hover:bg-[#f3f2ef]"
+        onClick={() => {
+          void handleToggleMute();
+          setMenuOpen(false);
+        }}
+      >
+        {mutedThreadIds[activeThread.thread_id] ? "Unmute" : "Mute"}
+      </button>
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm text-[#1f1f1f] transition hover:bg-[#f3f2ef]"
+        onClick={() => {
+          void handleToggleArchive();
+          setMenuOpen(false);
+        }}
+      >
+        {archivedThreadIds[activeThread.thread_id] ? "Unarchive" : "Archive"}
+      </button>
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm text-[#cc1016] transition hover:bg-red-50"
+        onClick={() => {
+          void handleDeleteConversation();
+          setMenuOpen(false);
+        }}
+      >
+        <Trash2 className="h-4 w-4" />
+        Delete conversation
+      </button>
+    </>
+  ) : null;
+
   return (
-    <div className="overflow-hidden rounded-lg border border-[#d9dee3] bg-white shadow-card">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-          <h1 className="shrink-0 text-2xl font-semibold text-[#1f1f1f]">Messaging</h1>
-          <LeadingIconInput
-            Icon={Search}
-            iconClassName="text-[#666a73]"
-            wrapperClassName="min-w-[200px] max-w-xl flex-1"
-            className="!h-10 min-h-[40px] text-[15px]"
-            value={inboxSearch}
-            onChange={(event) => setInboxSearch(event.target.value)}
-            aria-label="Search inbox"
-            placeholder="Search messages"
-            autoComplete="off"
-            endAdornment={
-              inboxSearch ? (
-                <button
-                  type="button"
-                  className="rounded-full p-1 text-[#666a73] transition hover:bg-black/5 hover:text-[#1f1f1f]"
-                  aria-label="Clear search"
-                  onClick={() => setInboxSearch("")}
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              ) : undefined
-            }
-          />
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              setShowComposer(true);
-              setSearchResults([]);
-              setSearchQuery("");
-            }}
-            className="rounded-full p-2 text-text-secondary transition hover:bg-hover hover:text-brand"
-            aria-label="Start new conversation"
-          >
-            <Pencil className="h-5 w-5" />
-          </button>
-        </div>
-      </div>
+    <div className="min-h-[calc(100vh-4rem)] bg-[#f3f2ef] px-3 py-4 md:px-5 md:py-5">
+      <div className="mx-auto flex max-w-[1280px] min-h-[calc(100vh-5.5rem)] flex-col overflow-hidden rounded-lg border border-[#e8ecf1] bg-white shadow-sm">
+        <MessagingHeader
+          inboxSearch={inboxSearch}
+          onInboxSearchChange={setInboxSearch}
+          onComposeClick={() => {
+            setShowComposer(true);
+            setSearchResults([]);
+            setSearchQuery("");
+          }}
+        />
 
-      <div className="flex items-center gap-2 border-b px-4 py-2">
-        {[
-          { id: "all", label: "All" },
-          { id: "unread", label: "Unread" },
-          { id: "muted", label: "Muted" },
-          { id: "archived", label: "Archived" }
-        ].map((filter) => (
-          <button
-            key={filter.id}
-            type="button"
-            onClick={() => setActiveFilter(filter.id as "all" | "unread" | "muted" | "archived")}
-            className={`rounded-full border px-3 py-1 text-sm transition ${
-              activeFilter === filter.id ? "border-[#067a46] bg-[#067a46] text-white" : "border-[#cfd6de] bg-white text-text-secondary hover:bg-[#f7f9fb]"
-            }`}
-          >
-            {filter.label}
-          </button>
-        ))}
-      </div>
+        <div className="grid min-h-0 flex-1 grid-cols-1 divide-y divide-[#eef3f8] border-t border-[#eef3f8] md:grid-cols-[308px_1fr] md:divide-x md:divide-y-0">
+          <aside className="flex min-h-[280px] flex-col bg-white md:min-h-0 md:max-h-[calc(100vh-8.5rem)]">
+            <ConversationFilters activeFilter={activeFilter} onFilterChange={setActiveFilter} />
 
-      <div className="grid min-h-[74vh] md:grid-cols-[390px_minmax(0,1fr)]">
-        <section className="border-r bg-white">
-          {showComposer ? (
-            <div className="space-y-2 border-b p-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold">New message</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowComposer(false);
-                    setSearchQuery("");
-                    setSearchResults([]);
-                  }}
-                  className="rounded-full p-1 text-text-secondary hover:bg-hover"
-                  aria-label="Close new message composer"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <Input
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                aria-label="Search recipients by name"
-                placeholder="Type a name"
-                className="h-10 rounded-md border"
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void handleSearchUsers();
-                  }
-                }}
-              />
-              {searchResults.length ? (
-                <div className="max-h-48 space-y-1 overflow-y-auto rounded-card border p-1">
-                  {searchResults.map((candidate, index) => (
-                    <button
-                      key={`${candidate.threadId ?? candidate.id ?? candidate.label}-${index}`}
-                      type="button"
-                      className="flex w-full items-start justify-between rounded-card px-3 py-2 text-left hover:bg-hover"
-                      onClick={() => void handleSelectTarget(candidate)}
-                    >
-                      <span className="font-medium">{candidate.label}</span>
-                      <span className="text-xs text-text-secondary">{candidate.subtitle}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : searchQuery.trim() && !searchLoading && hasSearched ? (
-                <p className="text-sm text-text-secondary">No users found.</p>
-              ) : null}
-            </div>
-          ) : null}
-
-          <div className="max-h-[calc(74vh-64px)] overflow-y-auto p-2">
-            {showInboxSearchEmptyState ? (
-              <SearchInboxEmptyState />
-            ) : (
-              <ThreadList
-                threads={filteredThreads}
-                activeThreadId={activeThread?.thread_id ?? null}
-                onSelect={setActiveThread}
-                threadLabels={threadLabels}
-                unreadCountByThread={displayUnreadCountByThread}
-                starredThreadIds={starredThreadIds}
-                previewByThread={previewByThread}
-                onStartNewMessage={() => {
-                  setShowComposer(true);
-                  setSearchQuery("");
-                  setSearchResults([]);
-                  setHasSearched(false);
-                }}
-              />
-            )}
-          </div>
-        </section>
-
-        <section className="flex min-h-[74vh] flex-col bg-white">
-          <div className="border-b px-4 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-lg font-semibold text-[#1f1f1f]">
-                  {activeThread ? (
-                    <button type="button" onClick={handleOpenActiveProfile} className="truncate text-left hover:underline">
-                      {activeThreadLabel}
-                    </button>
-                  ) : (
-                    "New message"
-                  )}
-                </p>
-                <p className="mt-0.5 truncate text-sm text-text-secondary">
-                  {activeThread ? activeParticipantProfile?.subtitle || websocket.reason : "Type a name or multiple names"}
-                </p>
-              </div>
-              {activeThread ? (
-                <div className="flex items-center gap-0.5">
+            {showComposer ? (
+              <div className="space-y-2 border-b border-[#eef3f8] bg-[#fafbfc] p-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-[#1f1f1f]">New message</p>
                   <button
                     type="button"
-                    className="rounded-full p-2 text-[#d49100] transition hover:bg-hover"
-                    aria-label={starredThreadIds[activeThread.thread_id] ? "Unstar conversation" : "Star conversation"}
-                    onClick={handleToggleStar}
+                    onClick={() => {
+                      setShowComposer(false);
+                      setSearchQuery("");
+                      setSearchResults([]);
+                    }}
+                    className="rounded-full p-1.5 text-[#666a73] transition hover:bg-[#eef3f8]"
+                    aria-label="Close new message composer"
                   >
-                    <Star
-                      className={`h-5 w-5 ${
-                        starredThreadIds[activeThread.thread_id] ? "fill-[#d49100] text-[#d49100]" : "text-[#d49100]"
-                      }`}
-                    />
+                    <X className="h-4 w-4" />
                   </button>
-                  <div ref={menuRef} className="relative">
+                </div>
+                <Input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Type a name or multiple names"
+                  className="h-9 rounded-lg border border-[#d9dee3] bg-white text-[14px] shadow-sm"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleSearchUsers();
+                    }
+                  }}
+                />
+                {searchResults.length ? (
+                  <div className="max-h-44 space-y-0.5 overflow-y-auto rounded-lg border border-[#e8ecf1] bg-white p-1">
+                    {searchResults.map((candidate, index) => (
+                      <button
+                        key={`${candidate.threadId ?? candidate.id ?? candidate.label}-${index}`}
+                        type="button"
+                        className="flex w-full flex-col gap-0.5 rounded-md px-3 py-2 text-left transition hover:bg-[#eef3f8]"
+                        onClick={() => void handleSelectTarget(candidate)}
+                      >
+                        <span className="text-[14px] font-semibold text-[#1f1f1f]">{candidate.label}</span>
+                        <span className="text-xs text-[#666a73]">{candidate.subtitle}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : searchQuery.trim() && !searchLoading && hasSearched ? (
+                  <p className="text-sm text-[#666a73]">No users found.</p>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {showInboxSearchEmptyState ? (
+                <SearchInboxEmptyState />
+              ) : (
+                <ThreadList
+                  threads={filteredThreads}
+                  activeThreadId={activeThread?.thread_id ?? null}
+                  onSelect={setActiveThread}
+                  threadLabels={threadLabels}
+                  unreadCountByThread={displayUnreadCountByThread}
+                  starredThreadIds={starredThreadIds}
+                  previewByThread={previewByThread}
+                  onStartNewMessage={() => {
+                    setShowComposer(true);
+                    setSearchQuery("");
+                    setSearchResults([]);
+                    setHasSearched(false);
+                  }}
+                />
+              )}
+            </div>
+
+            <div className="shrink-0 border-t border-[#eef3f8] bg-white py-1">
+              <button
+                type="button"
+                className="w-full py-2.5 text-center text-[13px] font-semibold text-[#0a66c2] transition hover:bg-[#f7f9fb] hover:underline"
+                onClick={() => {
+                  setActiveFilter("all");
+                  setInboxSearch("");
+                  setShowComposer(false);
+                }}
+              >
+                Show all conversations
+              </button>
+            </div>
+          </aside>
+
+          <main className="flex min-h-[420px] min-w-0 flex-col bg-white md:min-h-0 md:max-h-[calc(100vh-8.5rem)]">
+            <div className="shrink-0 border-b border-[#eef3f8] bg-white px-4 py-2.5 md:px-5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                  {activeThread && activeParticipantProfile ? (
                     <button
                       type="button"
-                      className="rounded-full p-2 text-text-secondary transition hover:bg-hover hover:text-text-primary"
-                      aria-label="Conversation actions"
-                      onClick={() => setMenuOpen((current) => !current)}
+                      onClick={handleOpenActiveProfile}
+                      className="shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0a66c2]"
                     >
-                      <MoreHorizontal className="h-5 w-5" />
+                      <Avatar alt={activeParticipantProfile.name} name={activeAvatarName} src={activeParticipantProfile.photoUrl} size="sm" />
                     </button>
-                    {menuOpen ? (
-                      <div className="absolute right-0 top-11 z-20 min-w-[220px] rounded-card border bg-white p-1 shadow-modal">
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded-card px-3 py-2 text-left text-sm hover:bg-hover"
-                          onClick={handleMarkUnread}
-                        >
-                          Mark unread
+                  ) : activeThread ? (
+                    <div className="h-8 w-8 shrink-0 rounded-full bg-[#dce6f1]" aria-hidden />
+                  ) : null}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[15px] font-semibold leading-tight text-[#1f1f1f]">
+                      {activeThread ? (
+                        <button type="button" onClick={handleOpenActiveProfile} className="truncate text-left hover:text-[#0a66c2] hover:underline">
+                          {activeThreadLabel}
                         </button>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded-card px-3 py-2 text-left text-sm hover:bg-hover"
-                          onClick={handleToggleStar}
-                        >
-                          <Star className={`h-4 w-4 ${starredThreadIds[activeThread.thread_id] ? "fill-[#d49100] text-[#d49100]" : ""}`} />
-                          {starredThreadIds[activeThread.thread_id] ? "Unstar" : "Star"}
-                        </button>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded-card px-3 py-2 text-left text-sm hover:bg-hover"
-                          onClick={handleToggleMute}
-                        >
-                          {mutedThreadIds[activeThread.thread_id] ? "Unmute" : "Mute"}
-                        </button>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded-card px-3 py-2 text-left text-sm hover:bg-hover"
-                          onClick={handleToggleArchive}
-                        >
-                          {archivedThreadIds[activeThread.thread_id] ? "Unarchive" : "Archive"}
-                        </button>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded-card px-3 py-2 text-left text-sm text-[#cc1016] hover:bg-red-50"
-                          onClick={handleDeleteConversation}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Delete conversation
-                        </button>
-                      </div>
-                    ) : null}
+                      ) : (
+                        "New message"
+                      )}
+                    </p>
+                    <p className="truncate text-[12px] leading-snug text-[#666a73]">
+                      {activeThread ? activeParticipantProfile?.subtitle || "Conversation" : "Select someone from your inbox"}
+                    </p>
                   </div>
                 </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto bg-white">
-            {!activeThread ? (
-              <div className="min-h-[320px] p-4" />
-            ) : (
-              <div className="px-4 pb-4 pt-2">
-                {activeParticipantProfile ? (
-                  <div className="border-b border-[#eef3f8] pb-6 pt-2">
-                    <div className="flex gap-5">
-                      <Avatar alt={activeParticipantProfile.name} name={activeAvatarName} src={activeParticipantProfile.photoUrl} size="2xl" />
-                      <div className="min-w-0 flex-1 pt-1">
-                        <div className="flex items-center gap-1.5">
-                          <button type="button" onClick={handleOpenActiveProfile} className="text-xl font-semibold text-[#1f1f1f] hover:underline">
-                            {activeParticipantProfile.name}
-                          </button>
-                          <LinkedInMark />
+                {activeThread ? (
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <button
+                      type="button"
+                      className="rounded-full p-1.5 text-[#d49100] transition hover:bg-[#f3f2ef]"
+                      aria-label={starredThreadIds[activeThread.thread_id] ? "Unstar conversation" : "Star conversation"}
+                      onClick={handleToggleStar}
+                    >
+                      <Star
+                        className={`h-[18px] w-[18px] ${starredThreadIds[activeThread.thread_id] ? "fill-[#d49100] text-[#d49100]" : "text-[#d49100]"}`}
+                      />
+                    </button>
+                    <div ref={menuRef} className="relative">
+                      <button
+                        type="button"
+                        className="rounded-full p-1.5 text-[#666a73] transition hover:bg-[#f3f2ef] hover:text-[#1f1f1f]"
+                        aria-label="Conversation actions"
+                        onClick={() => setMenuOpen((current) => !current)}
+                      >
+                        <MoreHorizontal className="h-[18px] w-[18px]" />
+                      </button>
+                      {menuOpen ? (
+                        <div className="absolute right-0 top-10 z-30 min-w-[220px] overflow-hidden rounded-xl border border-[#e8ecf1] bg-white py-1 shadow-lg">
+                          {threadActionsMenu}
                         </div>
-                        <p className="mt-2 text-sm leading-snug text-[#1f1f1f]">{activeParticipantProfile.subtitle}</p>
-                        {activeParticipantProfile.summary ? <p className="mt-2 line-clamp-4 text-sm leading-relaxed text-text-secondary">{activeParticipantProfile.summary}</p> : null}
-                        {activeParticipantProfile.locationLine ? <p className="mt-2 text-xs text-text-tertiary">{activeParticipantProfile.locationLine}</p> : null}
-                      </div>
-                    </div>
-                    <div className="relative mt-8">
-                      <div className="border-t border-[#e0e0e0]" />
-                      <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 bg-white px-3 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
-                        {threadDayBanner}
-                      </span>
+                      ) : null}
                     </div>
                   </div>
                 ) : null}
+              </div>
+            </div>
 
-                {messages.length ? (
-                  <div className="divide-y divide-[#eef3f8]">
-                    {messages.map((message) => (
-                      <MessageBubble
-                        key={message.message_id}
-                        message={message}
-                        own={message.sender_id === String(userId)}
-                        senderName={nameByUserId[message.sender_id]}
-                        senderAvatar={profileByUserId[message.sender_id]?.photoUrl}
-                      />
-                    ))}
+            <div className="flex min-h-0 flex-1 flex-col bg-[#fafbfc]">
+              <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 md:px-5">
+                {!activeThread ? (
+                  <div className="flex min-h-[220px] flex-col items-center justify-center px-4 py-10 text-center">
+                    <div className="rounded-full bg-[#eef3f8] p-4 text-[#0a66c2]">
+                      <Search className="h-7 w-7 opacity-80" strokeWidth={1.5} />
+                    </div>
+                    <p className="mt-3 text-sm font-semibold text-[#1f1f1f]">No conversation selected</p>
+                    <p className="mt-1 max-w-xs text-[13px] leading-relaxed text-[#666a73]">Choose a thread from the list or compose a new message.</p>
+                  </div>
+                ) : !messages.length ? (
+                  <div className="flex min-h-[200px] items-center justify-center px-4 py-8 text-center text-[13px] leading-relaxed text-[#666a73]">
+                    No messages yet. Say hello below.
                   </div>
                 ) : (
-                  <div className="flex min-h-[200px] items-center justify-center px-4 py-8 text-sm text-text-secondary">
-                    No messages yet. Send the first message to get started.
+                  <div className="pb-1">
+                    {threadTimeline.map((row) =>
+                      row.type === "day" ? (
+                        <div key={row.key} className="flex items-center gap-3 py-5">
+                          <div className="h-px flex-1 bg-[#dce7f2]" />
+                          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#666a73]">{row.label}</span>
+                          <div className="h-px flex-1 bg-[#dce7f2]" />
+                        </div>
+                      ) : (
+                        <MessageBubble
+                          key={row.key}
+                          message={row.message}
+                          own={row.own}
+                          senderName={nameByUserId[row.message.sender_id]}
+                          senderAvatar={profileByUserId[row.message.sender_id]?.photoUrl}
+                          showAvatar={row.showAvatar}
+                          isFirstInGroup={row.isFirstInGroup}
+                          showSeenFooter={row.showSeenFooter}
+                          seenByOther={row.seenByOther}
+                          compactTop={row.compactTop}
+                        />
+                      )
+                    )}
                   </div>
                 )}
               </div>
-            )}
-          </div>
 
-          {activeThread ? (
-            <div className="border-t bg-[#f8fafc] p-3">
-              <MessageInput onSend={(text) => void handleSend(text)} />
+              {activeThread ? (
+                <MessageInput onSend={(text) => void handleSend(text)} />
+              ) : (
+                <div className="sticky bottom-0 z-10 shrink-0 border-t border-[#e8ecf1] bg-white px-4 py-3">
+                  <div className="rounded-xl border border-dashed border-[#cfd6de] bg-[#fafbfc] px-4 py-5 text-center text-[13px] text-[#666a73]">
+                    Select a conversation to reply
+                  </div>
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="border-t bg-[#f8fafc] p-3">
-              <div className="rounded-2xl bg-[#e9e7e3] p-4 text-[20px] text-[#5f5f5f]">Write a message...</div>
-            </div>
-          )}
-        </section>
+          </main>
+        </div>
       </div>
     </div>
   );

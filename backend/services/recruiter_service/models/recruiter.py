@@ -363,7 +363,7 @@ async def search_recruiters(name, company, industry, page) -> tuple[list, int]:
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                f"SELECT r.*,c.name AS company_name,c.industry,c.size FROM recruiters r JOIN companies c ON r.company_id=c.company_id {where} ORDER BY r.recruiter_id DESC LIMIT %s OFFSET %s",
+                f"SELECT r.*,c.name AS company_name,c.industry,c.size,c.location AS company_location FROM recruiters r JOIN companies c ON r.company_id=c.company_id {where} ORDER BY r.recruiter_id DESC LIMIT %s OFFSET %s",
                 [*values, PAGE_SIZE, offset],
             )
             rows = await cur.fetchall()

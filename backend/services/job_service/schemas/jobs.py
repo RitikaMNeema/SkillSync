@@ -12,6 +12,7 @@ class CreateJobRequest(BaseModel):
     employment_type: Optional[str] = None
     location: Optional[str] = None
     skills_required: Optional[Any] = None
+    benefits: Optional[Any] = None
     salary_min: Optional[float] = None
     salary_max: Optional[float] = None
 
@@ -29,6 +30,7 @@ class UpdateJobRequest(BaseModel):
     location: Optional[str] = None
     work_mode: Optional[str] = None
     skills_required: Optional[Any] = None
+    benefits: Optional[Any] = None
     salary_min: Optional[float] = None
     salary_max: Optional[float] = None
 
