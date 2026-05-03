@@ -88,7 +88,7 @@ export function ProfileSectionDetailsPage() {
     setLoading(true);
     setError("");
     try {
-      const data = await getUnifiedProfile(Number(member_id), currentRole);
+      const { profile: data } = await getUnifiedProfile(Number(member_id), currentRole);
       setMember(data);
     } catch {
       setError("Could not load member profile.");

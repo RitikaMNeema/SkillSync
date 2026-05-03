@@ -1,7 +1,32 @@
 import json
+
+from pymysql.err import OperationalError
+
 from shared.database.mysql import get_pool
 
 PAGE_SIZE = 20
+
+
+async def ensure_jobs_columns() -> None:
+    """Add columns missing from older DB volumes (init.sql only runs on first MySQL init)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'jobs'"""
+            )
+            rows = await cur.fetchall() or []
+            existing = {str(r.get("COLUMN_NAME") or r.get("column_name") or "").lower() for r in rows}
+            if "benefits" not in existing:
+                try:
+                    await cur.execute(
+                        "ALTER TABLE jobs ADD COLUMN benefits JSON NULL AFTER skills_required"
+                    )
+                except OperationalError as e:
+                    # 1060 = duplicate column (race with another replica)
+                    if e.args and e.args[0] != 1060:
+                        raise
 
 
 def _decode_json_fields(row: dict | None) -> None:

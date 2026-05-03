@@ -30,6 +30,7 @@ import { LeadingIconInput } from "../../components/ui/LeadingIconInput";
 import { Input, Textarea } from "../../components/ui/Input";
 import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
+import { useAuthHydrated } from "../../hooks/useAuthHydrated";
 import type { Application } from "../../types/application";
 import type { Job } from "../../types/job";
 import { cn } from "../../utils/cn";
@@ -143,6 +144,7 @@ function parseDescriptionSections(description: string | null | undefined): {
 export function JobManagementPage() {
   const navigate = useNavigate();
   const recruiterId = authStore((state) => state.userId);
+  const authHydrated = useAuthHydrated();
   const [searchParams] = useSearchParams();
   const focus = searchParams.get("focus");
   const backToListPath = `/recruiter/jobs${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
@@ -200,7 +202,7 @@ export function JobManagementPage() {
   const watchedSkills = watch("skills_required");
 
   useEffect(() => {
-    if (!recruiterId) return;
+    if (!authHydrated || !recruiterId) return;
     void (async () => {
       try {
         const recruiter = await getRecruiter(recruiterId);
@@ -213,10 +215,10 @@ export function JobManagementPage() {
         // keep fallback company id
       }
     })();
-  }, [recruiterId, setValue]);
+  }, [authHydrated, recruiterId, setValue]);
 
   useEffect(() => {
-    if (!recruiterId) return;
+    if (!authHydrated || !recruiterId) return;
     void (async () => {
       try {
         const allJobs = await getAllJobsByRecruiter(recruiterId);
@@ -256,7 +258,7 @@ export function JobManagementPage() {
         setLoading(false);
       }
     })();
-  }, [recruiterId]);
+  }, [authHydrated, recruiterId]);
 
   useEffect(() => {
     const q = searchParams.get("q") ?? "";
@@ -636,7 +638,7 @@ export function JobManagementPage() {
     }
   }
 
-  if (loading) {
+  if (loading || !authHydrated) {
     return (
       <div className="space-y-3">
         <CardSkeleton />
