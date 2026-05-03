@@ -3,9 +3,21 @@ from datetime import datetime, date
 from decimal import Decimal
 from shared.database.mysql import get_pool
 
+PAGE_SIZE = 20
+
+
+def _decode_json_fields(row: dict | None) -> None:
+    """Parse JSON string columns back into Python objects (in-place)."""
+    if not row:
+        return
+    if isinstance(row.get("skills_required"), str):
+        row["skills_required"] = json.loads(row["skills_required"])
+    if isinstance(row.get("benefits"), str):
+        row["benefits"] = json.loads(row["benefits"])
+
 
 def _serialize_row(row: dict) -> dict:
-    """Convert non-JSON-native MySQL types to safe Python primitives."""
+    """Convert non-JSON-native MySQL types (datetime, Decimal) to safe Python primitives."""
     out = {}
     for k, v in row.items():
         if isinstance(v, (datetime, date)):
@@ -16,8 +28,6 @@ def _serialize_row(row: dict) -> dict:
             out[k] = v
     return out
 
-PAGE_SIZE = 20
-
 
 async def create_job(f: dict) -> int:
     pool = await get_pool()
@@ -25,11 +35,12 @@ async def create_job(f: dict) -> int:
         async with conn.cursor() as cur:
             await cur.execute(
                 """INSERT INTO jobs (company_id,recruiter_id,title,description,seniority_level,
-                   employment_type,location,work_mode,skills_required,salary_min,salary_max,status)
-                   VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'open')""",
+                   employment_type,location,work_mode,skills_required,benefits,salary_min,salary_max,status)
+                   VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'open')""",
                 (f["company_id"], f["recruiter_id"], f["title"], f.get("description"),
                  f.get("seniority_level"), f.get("employment_type"), f.get("location"), f["work_mode"],
                  json.dumps(f["skills_required"]) if f.get("skills_required") else None,
+                 json.dumps(f["benefits"]) if f.get("benefits") else None,
                  f.get("salary_min"), f.get("salary_max")),
             )
             return cur.lastrowid
@@ -46,18 +57,18 @@ async def get_job(job_id: int) -> dict | None:
             row = await cur.fetchone()
             if not row:
                 return None
-            if isinstance(row.get("skills_required"), str):
-                row["skills_required"] = json.loads(row["skills_required"])
+            _decode_json_fields(row)
             return _serialize_row(row)
 
 
 async def update_job(job_id: int, fields: dict) -> None:
-    allowed = {"title","description","seniority_level","employment_type","location","work_mode","skills_required","salary_min","salary_max"}
+    allowed = {"title","description","seniority_level","employment_type","location","work_mode","skills_required","benefits","salary_min","salary_max"}
     clauses, values = [], []
+    json_cols = {"skills_required", "benefits"}
     for k, v in fields.items():
         if k in allowed and v is not None:
             clauses.append(f"{k}=%s")
-            values.append(json.dumps(v) if k == "skills_required" else v)
+            values.append(json.dumps(v) if k in json_cols else v)
     if not clauses:
         return
     values.append(job_id)
@@ -133,7 +144,9 @@ async def jobs_by_recruiter(recruiter_id: int, page: int) -> tuple[list, int]:
             rows = await cur.fetchall()
             await cur.execute("SELECT COUNT(*) as total FROM jobs WHERE recruiter_id=%s", (recruiter_id,))
             total = (await cur.fetchone())["total"]
-    return rows, total
+    for row in rows:
+        _decode_json_fields(row)
+    return [_serialize_row(r) for r in rows], total
 
 
 async def save_job(member_id: int, job_id: int) -> bool:
