@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  ArrowRight,
   FileText,
   Image,
   UserRoundPlus,
@@ -12,9 +11,8 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useShallow } from "zustand/react/shallow";
-import { getMemberDashboard, getRecruiterProfileDashboard, getTopJobs } from "../../api/analytics";
+import { getMemberDashboard, getRecruiterProfileDashboard } from "../../api/analytics";
 import { getMutualConnections, listConnections, listPendingConnections, requestConnection, withdrawConnection } from "../../api/connections";
-import { getJob, searchJobs } from "../../api/jobs";
 import { createMember, searchMembers } from "../../api/members";
 import { createPost, getFeedPosts, uploadPostImage } from "../../api/posts";
 import { searchRecruiters } from "../../api/recruiters";
@@ -30,7 +28,6 @@ import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
 import { useAuthHydrated } from "../../hooks/useAuthHydrated";
 import type { MemberDashboard, RecruiterProfileDashboard } from "../../types/analytics";
-import type { Job } from "../../types/job";
 import type { MemberProfile, MemberSearchItem } from "../../types/member";
 import type { FeedPost, PostType } from "../../types/post";
 import type { RecruiterProfile } from "../../types/recruiter";
@@ -42,10 +39,6 @@ const composerActions: Array<{ type: PostType; label: string; icon: typeof Image
   { type: "photo", label: "Photo", icon: Image },
   { type: "article", label: "Article", icon: FileText }
 ];
-
-function currentMonthKey() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function pendingCounterpartyId(request: PendingConnection, userId: number): number {
   const direction =
@@ -89,7 +82,6 @@ export function FeedPage() {
   const [peopleSuggestions, setPeopleSuggestions] = useState<MemberSearchItem[]>([]);
   const [recruiterSuggestions, setRecruiterSuggestions] = useState<RecruiterProfile[]>([]);
   const [dashboard, setDashboard] = useState<MemberDashboard | RecruiterProfileDashboard | null>(null);
-  const [trendingJobs, setTrendingJobs] = useState<Job[]>([]);
   const [pendingConnectionIds, setPendingConnectionIds] = useState<number[]>([]);
   const [pendingRequestIdsByMember, setPendingRequestIdsByMember] = useState<Record<number, number>>({});
   const [pendingActionMemberId, setPendingActionMemberId] = useState<number | null>(null);
@@ -149,8 +141,7 @@ export function FeedPage() {
         searchRecruiters({ page: 1 }),
         listConnections(userId),
         listPendingConnections(userId),
-        dashboardRequest,
-        getTopJobs(currentMonthKey())
+        dashboardRequest
       ]);
 
       const feedPosts = results[0].status === "fulfilled" ? results[0].value.posts.slice(0, 5) : [];
@@ -193,17 +184,6 @@ export function FeedPage() {
       }
       setSuggestionDegrees(degreeById);
       setSuggestionMutualCounts(mutualCountById);
-
-      if (results[6].status === "fulfilled" && results[6].value.length > 0) {
-        const topJobResults = await Promise.allSettled(results[6].value.slice(0, 3).map((metric) => getJob(Number(metric.job_id))));
-        setTrendingJobs(
-          topJobResults
-            .filter((result): result is PromiseFulfilledResult<Job> => result.status === "fulfilled")
-            .map((result) => result.value)
-        );
-      } else {
-        setTrendingJobs([]);
-      }
     } catch {
       setError("Could not load your home feed.");
     } finally {
@@ -550,7 +530,7 @@ export function FeedPage() {
                       <p className="text-sm text-text-secondary">{recruiter.name}</p>
                       <p className="text-sm text-text-secondary">{recruiter.industry || "Company"}</p>
                     </div>
-                    <Button variant="secondary" onClick={() => goToJobs({ industry: recruiter.industry || "", location: profile.location_city || "" })}>
+                    <Button variant="secondary" onClick={() => goToJobs({ location: profile.location_city || "" })}>
                       View jobs
                     </Button>
                   </div>
@@ -572,20 +552,6 @@ export function FeedPage() {
                     : "Your profile visibility is now connected to backend analytics."}
                 </p>
               </div>
-              {trendingJobs.map((job) => (
-                <button
-                  key={job.job_id}
-                  type="button"
-                  className="flex w-full items-center justify-between rounded-card border p-3 text-left hover:bg-hover"
-                  onClick={() => navigate(`/jobs/${job.job_id}`)}
-                >
-                  <div>
-                    <p className="font-semibold">{job.title}</p>
-                    <p className="text-text-secondary">{job.company_name}</p>
-                  </div>
-                  <ArrowRight className="h-4 w-4 text-brand" />
-                </button>
-              ))}
             </div>
           </Card>
 

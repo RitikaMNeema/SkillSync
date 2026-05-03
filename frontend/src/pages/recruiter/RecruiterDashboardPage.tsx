@@ -293,7 +293,6 @@ export function RecruiterDashboardPage() {
     [recruiterJobs]
   );
   const firstJobId = firstOpenJob?.job_id;
-  const monthPickerId = useId();
 
   useEffect(() => {
     if (!authHydrated) return;
@@ -479,22 +478,6 @@ export function RecruiterDashboardPage() {
               Run AI matching
             </button>
           </div>
-          <label
-            htmlFor={monthPickerId}
-            className="group flex w-full max-w-md cursor-pointer items-center gap-3 rounded-2xl border border-[#e5e7eb] bg-white px-4 py-3 shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition hover:border-[#d1d5db] focus-within:ring-2 focus-within:ring-[#0066ff33] focus-within:ring-offset-2 lg:ml-auto"
-          >
-            <Plus className="h-4 w-4" strokeWidth={2.5} />
-            Post a job
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate(`/ai-test/${firstJobId}`)}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] border-2 bg-white px-4 text-sm font-semibold shadow-sm transition hover:bg-[#f8fafc]"
-            style={{ borderColor: R_PRIMARY, color: R_PRIMARY }}
-          >
-            <Sparkles className="h-4 w-4" />
-            Run AI matching
-          </button>
         </div>
       </div>
 

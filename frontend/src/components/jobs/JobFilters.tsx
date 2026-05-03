@@ -6,7 +6,6 @@ export interface JobFilterState {
   location: string;
   employment_type: string;
   work_mode: string;
-  industry: string;
   seniority_level: string;
 }
 
@@ -86,20 +85,6 @@ export function JobFilters({
             </div>
           </div>
         ))}
-
-        <div className="space-y-2 border-t pt-4">
-          <div className="flex items-center justify-between text-sm font-semibold">
-            <span>Industry</span>
-            <ChevronDown className="h-4 w-4" />
-          </div>
-          <input
-            type="text"
-            value={filters.industry}
-            onChange={(e) => onChange("industry", e.target.value)}
-            aria-label="Industry filter"
-            className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
-          />
-        </div>
       </div>
     </Card>
   );
