@@ -108,12 +108,12 @@ async def get_member_dashboard(member_id: int) -> dict:
     return data
 
 
-async def get_recruiter_dashboard(recruiter_id: int) -> list:
-    ck = f"analytics:recruiter:{recruiter_id}"
+async def get_recruiter_dashboard(recruiter_id: int, month: str | None = None) -> list:
+    ck = f"analytics:recruiter:v2:{recruiter_id}:{month or 'all'}"
     hit = await cache_get(ck)
     if hit is not None:
         return hit
-    data = await recruiter_dashboard(recruiter_id)
+    data = await recruiter_dashboard(recruiter_id, month)
     result = [{"event_type": r["_id"], "count": r["count"]} for r in data]
     await cache_set(ck, result, TTL)
     return result

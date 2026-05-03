@@ -15,6 +15,7 @@ import type { Application, ApplicationStatus } from "../../types/application";
 import type { Job } from "../../types/job";
 import type { MemberProfile } from "../../types/member";
 import { selectableApplicationStatuses } from "../../utils/applicationStatus";
+import { cn } from "../../utils/cn";
 import { getStatusColor } from "../../utils/getStatusColor";
 
 const STATUS_FILTERS: Array<ApplicationStatus | "all"> = ["all", "submitted", "rejected", "withdrawn"];
@@ -260,6 +261,7 @@ export function ApplicantReviewPage() {
   }, [applications, memberProfilesById, search, statusFilter]);
 
   const statusOptions = selected ? selectableApplicationStatuses(selected.status) : [];
+  const jobIsClosed = (job?.status ?? "open") === "closed";
   const openResumeUrl = resolveResumeUrl(selected?.resume_url);
   const selectedAppliedAt = selected ? new Date(selected.application_datetime) : null;
   const selectedAppliedText =
@@ -282,13 +284,19 @@ export function ApplicantReviewPage() {
     setDraftMessage("");
     setIsEditingDraft(false);
     setAiError(null);
-    setAiLoading(!aiByApplicationId[selected.application_id]);
+    const closed = (job?.status ?? "open") === "closed";
+    setAiLoading(closed ? false : !aiByApplicationId[selected.application_id]);
     return undefined;
-  }, [selected?.application_id, profile?.member_id, job?.title]);
+  }, [selected?.application_id, profile?.member_id, job?.title, job?.status]);
 
   useEffect(() => {
     if (!selected || !profile || !job || aiByApplicationId[selected.application_id]) return;
     if (aiInFlightRef.current[selected.application_id]) return;
+    if ((job.status ?? "open") === "closed") {
+      setAiLoading(false);
+      setAiError(null);
+      return;
+    }
     if (!job.recruiter_id) {
       setAiError("Missing recruiter id; unable to request AI workflow.");
       setAiLoading(false);
@@ -390,6 +398,10 @@ export function ApplicantReviewPage() {
 
   const handleRetryAiAnalysis = () => {
     if (!selected) return;
+    if ((job?.status ?? "open") === "closed") {
+      toast.error("AI matching is not available for closed job postings.");
+      return;
+    }
     aiInFlightRef.current[selected.application_id] = false;
     setAiByApplicationId((current) => {
       const next = { ...current };
@@ -404,6 +416,10 @@ export function ApplicantReviewPage() {
   const handleApproveAndSend = () => {
     if (!selected || !activeAi) {
       toast.error("AI workflow is not ready yet.");
+      return;
+    }
+    if ((job?.status ?? "open") === "closed") {
+      toast.error("Cannot approve outreach for a closed job posting.");
       return;
     }
     if (!job?.recruiter_id) {
@@ -491,7 +507,7 @@ export function ApplicantReviewPage() {
               ) : null}
             </p>
           </div>
-          <Badge className={getStatusColor(job.status ?? "open")}>{job.status ?? "open"}</Badge>
+          <Badge className={cn(getStatusColor(job.status ?? "open"), "capitalize")}>{job.status ?? "open"}</Badge>
         </div>
       </Card>
       <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)_320px]">
@@ -584,13 +600,14 @@ export function ApplicantReviewPage() {
                 selectedSkills={selectedSkills}
               />
               <AIMatchCard
-                loading={aiLoading}
+                loading={aiLoading && !jobIsClosed}
                 score={aiScore}
                 confidence={activeAi?.confidence}
                 strongReasons={activeAi?.strongReasons ?? []}
                 topGaps={activeAi?.topGaps ?? []}
-                error={aiError}
+                error={jobIsClosed ? null : aiError}
                 onRetry={handleRetryAiAnalysis}
+                aiUnavailable={jobIsClosed ? "AI matching is not available while this job posting is closed." : null}
               />
               <Card className="rounded-xl border border-gray-200 p-5 shadow-sm">
                 <label className="text-sm font-semibold text-[#1f2937]" htmlFor="app-status">
@@ -598,10 +615,12 @@ export function ApplicantReviewPage() {
                 </label>
                 <div className="mt-4 space-y-3">
                   <div className="relative">
-                    <span className="pointer-events-none absolute left-4 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-[#7c3aed]" />
                     <select
                       id="app-status"
-                      className="linkedin-input h-12 w-full appearance-none rounded-xl border border-[#d1d5db] bg-white pl-10 pr-10 text-[20px] font-semibold capitalize leading-none text-[#1f2937] shadow-sm"
+                      className={cn(
+                        "linkedin-input h-12 w-full appearance-none rounded-xl border border-[#d1d5db] bg-white px-4 pr-10 text-[20px] font-semibold capitalize leading-none shadow-sm",
+                        selected.status === "rejected" ? "text-red-700" : "text-[#1f2937]"
+                      )}
                       value={selected.status}
                       onChange={(event) => {
                         const next = event.target.value as ApplicationStatus;
@@ -626,22 +645,40 @@ export function ApplicantReviewPage() {
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6b7280]" />
                   </div>
-                  <div className="rounded-xl border border-[#f3dfbf] bg-[#fff8ee] px-5 py-4">
-                    <p className="text-[15px] font-semibold text-[#b45309]">
-                      <Sparkles className="mr-2 inline-block h-4 w-4 align-[-2px]" />
-                      AI suggests: {activeAi?.recommendation || (aiLoading ? "Analyzing candidate profile..." : "No recommendation returned")}
-                    </p>
-                    <p className="mt-2 border-b border-[#f3dfbf] pb-3 text-[15px] leading-7 text-[#374151]">
-                      {activeAi?.reasoning || (aiLoading ? "Please wait while AI completes matching and reasoning." : "No reasoning returned by AI for this run.")}
-                    </p>
-                    {aiError ? (
-                      <div className="mt-2 flex items-center justify-between gap-3">
-                        <p className="text-xs text-[#b45309]">AI error: {aiError}</p>
-                        <button type="button" className="text-xs font-semibold text-[#0a66c2] hover:underline" onClick={handleRetryAiAnalysis}>
-                          Retry analysis
-                        </button>
-                      </div>
-                    ) : null}
+                  <div
+                    className={cn(
+                      "rounded-xl border px-5 py-4",
+                      jobIsClosed ? "border-[#e5e7eb] bg-[#f9fafb]" : "border-[#f3dfbf] bg-[#fff8ee]"
+                    )}
+                  >
+                    {jobIsClosed ? (
+                      <>
+                        <p className="text-[15px] font-semibold text-[#6b7280]">
+                          AI suggestions are unavailable for closed job postings.
+                        </p>
+                        <p className="mt-2 text-sm leading-relaxed text-[#6b7280]">
+                          Reopen the job from Jobs if you need to run AI matching again.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-[15px] font-semibold text-[#b45309]">
+                          <Sparkles className="mr-2 inline-block h-4 w-4 align-[-2px]" />
+                          AI suggests: {activeAi?.recommendation || (aiLoading ? "Analyzing candidate profile..." : "No recommendation returned")}
+                        </p>
+                        <p className="mt-2 border-b border-[#f3dfbf] pb-3 text-[15px] leading-7 text-[#374151]">
+                          {activeAi?.reasoning || (aiLoading ? "Please wait while AI completes matching and reasoning." : "No reasoning returned by AI for this run.")}
+                        </p>
+                        {aiError ? (
+                          <div className="mt-2 flex items-center justify-between gap-3">
+                            <p className="text-xs text-[#b45309]">AI error: {aiError}</p>
+                            <button type="button" className="text-xs font-semibold text-[#0a66c2] hover:underline" onClick={handleRetryAiAnalysis}>
+                              Retry analysis
+                            </button>
+                          </div>
+                        ) : null}
+                      </>
+                    )}
                   </div>
                 </div>
               </Card>
@@ -697,13 +734,18 @@ export function ApplicantReviewPage() {
               AI-powered insights to help you make better hiring decisions
             </p>
           </Card>
-          <AIWorkflowPanel loading={aiLoading} aiSteps={activeAi?.workflowSteps} workflowStatus={activeAi?.workflowStatus} />
+          <AIWorkflowPanel
+            loading={aiLoading && !jobIsClosed}
+            aiSteps={activeAi?.workflowSteps}
+            workflowStatus={activeAi?.workflowStatus}
+            unavailableMessage={jobIsClosed ? "AI hiring assistant is unavailable while this job is closed." : null}
+          />
           <OutreachDraftPanel
             subject={draftSubject}
             message={draftMessage}
             editing={isEditingDraft}
             isApproving={approvingAi}
-            canApprove={Boolean(activeAi?.traceId)}
+            canApprove={Boolean(activeAi?.traceId) && !jobIsClosed}
             onSubjectChange={setDraftSubject}
             onMessageChange={setDraftMessage}
             onToggleEdit={() => setIsEditingDraft((current) => !current)}
@@ -775,7 +817,8 @@ function AIMatchCard({
   strongReasons,
   topGaps,
   error,
-  onRetry
+  onRetry,
+  aiUnavailable
 }: {
   loading: boolean;
   score: number | null | undefined;
@@ -784,7 +827,16 @@ function AIMatchCard({
   topGaps: string[];
   error?: string | null;
   onRetry: () => void;
+  aiUnavailable?: string | null;
 }) {
+  if (aiUnavailable) {
+    return (
+      <Card className="rounded-xl border border-gray-200 p-5 shadow-sm transition hover:shadow-md">
+        <div className="mb-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[#6b7280]">AI Match Score</div>
+        <p className="text-sm leading-relaxed text-[#6b7280]">{aiUnavailable}</p>
+      </Card>
+    );
+  }
   const numericScore = typeof score === "number" && Number.isFinite(score) ? score : null;
   const isScorePending = loading && numericScore == null;
   const label =
@@ -862,11 +914,13 @@ function AIMatchCard({
 function AIWorkflowPanel({
   loading,
   aiSteps,
-  workflowStatus
+  workflowStatus,
+  unavailableMessage
 }: {
   loading: boolean;
   aiSteps?: Array<{ label: string; status: "pending" | "running" | "completed"; time?: string }>;
   workflowStatus?: string;
+  unavailableMessage?: string | null;
 }) {
   const steps = (aiSteps ?? []).map((step) => ({
     label: step.label,
@@ -880,58 +934,66 @@ function AIWorkflowPanel({
         <h3 className="text-sm font-semibold text-[#111827]">AI Hiring Assistant</h3>
         <ChevronDown className="h-4 w-4 text-gray-400" />
       </div>
-      <div className="mt-3 space-y-3">
-        {steps.length ? (
-          steps.map((step) => {
-            const done = !loading && step.status === "completed";
-            const active = !loading && step.status === "running";
-            return (
-              <div key={step.label} className="flex items-start gap-3">
-                <div className="pt-0.5">
-                  {done ? (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                  ) : active ? (
-                    <Clock3 className="h-4 w-4 text-amber-500" />
-                  ) : (
-                    <CircleDashed className="h-4 w-4 text-gray-300" />
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <p className={`text-sm ${done ? "text-[#111827]" : "text-[#6b7280]"}`}>{step.label}</p>
-                  <p className="text-xs text-[#9ca3af]">{step.time}</p>
-                </div>
-              </div>
-            );
-          })
-        ) : (
-          <p className="text-xs text-[#6b7280]">{loading ? "Loading workflow..." : "No workflow steps returned yet."}</p>
-        )}
-      </div>
-      <button
-        type="button"
-        className="mt-3 text-xs font-medium text-[#0a66c2] hover:underline"
-        onClick={() => setShowDetails((current) => !current)}
-      >
-        {showDetails ? "Hide workflow details" : "View workflow details"}
-      </button>
-      {showDetails ? (
-        <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
-          <div className="mb-2 flex items-center justify-between text-xs text-[#6b7280]">
-            <span className="font-medium text-[#374151]">Workflow status</span>
-            <span className="capitalize">{workflowStatus ?? "running"}</span>
+      {unavailableMessage ? (
+        <p className="mt-3 text-sm text-[#6b7280]">{unavailableMessage}</p>
+      ) : (
+        <>
+          <div className="mt-3 space-y-3">
+            {steps.length ? (
+              steps.map((step) => {
+                const done = !loading && step.status === "completed";
+                const active = !loading && step.status === "running";
+                return (
+                  <div key={step.label} className="flex items-start gap-3">
+                    <div className="pt-0.5">
+                      {done ? (
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      ) : active ? (
+                        <Clock3 className="h-4 w-4 text-amber-500" />
+                      ) : (
+                        <CircleDashed className="h-4 w-4 text-gray-300" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className={`text-sm ${done ? "text-[#111827]" : "text-[#6b7280]"}`}>{step.label}</p>
+                      <p className="text-xs text-[#9ca3af]">{step.time}</p>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="text-xs text-[#6b7280]">{loading ? "Loading workflow..." : "No workflow steps returned yet."}</p>
+            )}
           </div>
-          <div className="space-y-1.5">
-            {steps.map((step, index) => (
-              <div key={`${step.label}-${index}`} className="flex items-center justify-between text-xs">
-                <span className="truncate text-[#374151]">{index + 1}. {step.label}</span>
-                <span className="ml-2 shrink-0 text-[#6b7280] capitalize">
-                  {step.status} {step.time ? `· ${step.time}` : ""}
-                </span>
+          <button
+            type="button"
+            className="mt-3 text-xs font-medium text-[#0a66c2] hover:underline"
+            onClick={() => setShowDetails((current) => !current)}
+          >
+            {showDetails ? "Hide workflow details" : "View workflow details"}
+          </button>
+          {showDetails ? (
+            <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <div className="mb-2 flex items-center justify-between text-xs text-[#6b7280]">
+                <span className="font-medium text-[#374151]">Workflow status</span>
+                <span className="capitalize">{workflowStatus ?? "running"}</span>
               </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
+              <div className="space-y-1.5">
+                {steps.map((step, index) => (
+                  <div key={`${step.label}-${index}`} className="flex items-center justify-between text-xs">
+                    <span className="truncate text-[#374151]">
+                      {index + 1}. {step.label}
+                    </span>
+                    <span className="ml-2 shrink-0 text-[#6b7280] capitalize">
+                      {step.status} {step.time ? `· ${step.time}` : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
     </Card>
   );
 }

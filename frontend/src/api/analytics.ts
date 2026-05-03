@@ -46,10 +46,10 @@ export async function getMemberDashboard(member_id: number) {
   return response.data.data;
 }
 
-export async function getRecruiterDashboard(recruiter_id: number) {
-  const response = await api.post<ApiResponse<RecruiterDashboardMetric[]>>("/analytics/recruiter/dashboard", {
-    recruiter_id
-  });
+export async function getRecruiterDashboard(recruiter_id: number, month?: string) {
+  const payload: { recruiter_id: number; month?: string } = { recruiter_id };
+  if (month) payload.month = month;
+  const response = await api.post<ApiResponse<RecruiterDashboardMetric[]>>("/analytics/recruiter/dashboard", payload);
   return response.data.data;
 }
 
