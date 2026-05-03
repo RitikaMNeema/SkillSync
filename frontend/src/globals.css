@@ -76,9 +76,9 @@
     font: inherit;
   }
 
+  /** Inputs use `.linkedin-input` focus visuals (neutral border). Avoid stacking a brand ring on top. */
   button:focus-visible,
   a:focus-visible,
-  input:focus-visible,
   textarea:focus-visible,
   select:focus-visible {
     outline: none;
@@ -99,20 +99,36 @@
     width: 100%;
     border-radius: 9999px;
     border: 1px solid #8c8c8c;
-    padding: 0 12px;
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-right: 12px;
+    padding-left: 12px;
     font-size: 16px;
     color: var(--color-text-primary);
     background: #ffffff;
+    box-shadow: none;
+    outline: none;
   }
 
   .linkedin-input::placeholder {
     color: var(--color-text-tertiary);
   }
 
-  .linkedin-input:focus {
-    border-color: var(--color-brand);
-    box-shadow: 0 0 0 1px #0a66c2;
+  .linkedin-input:focus,
+  .linkedin-input:focus-visible {
+    border-color: #666666;
+    box-shadow: none;
     outline: none;
+  }
+
+  .linkedin-input:-webkit-autofill,
+  .linkedin-input:-webkit-autofill:hover,
+  .linkedin-input:-webkit-autofill:focus,
+  .linkedin-input:-webkit-autofill:focus-visible {
+    -webkit-text-fill-color: var(--color-text-primary);
+    /* Narrow inset avoids full-viewport repaint glitches behind leading icons */
+    box-shadow: 0 0 0 9999px #ffffff inset;
+    transition: background-color 5000s ease-out 0s;
   }
 
   .linkedin-textarea {
@@ -130,9 +146,10 @@
     color: var(--color-text-tertiary);
   }
 
-  .linkedin-textarea:focus {
-    border-color: var(--color-brand);
-    box-shadow: 0 0 0 1px #0a66c2;
+  .linkedin-textarea:focus,
+  .linkedin-textarea:focus-visible {
+    border-color: #666666;
+    box-shadow: none;
     outline: none;
   }
 }

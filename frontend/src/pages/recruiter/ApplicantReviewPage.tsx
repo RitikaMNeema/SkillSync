@@ -496,7 +496,13 @@ export function ApplicantReviewPage() {
       </Card>
       <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)_320px]">
         <Card className="rounded-xl border border-gray-200 p-4 shadow-sm">
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} className="border-gray-200" placeholder="Search applicants" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="border-gray-200"
+            aria-label="Search applicants"
+            placeholder="Search applicants"
+          />
           <div className="mt-3 flex flex-wrap gap-2">
             {STATUS_FILTERS.map((status) => (
               <button
@@ -958,19 +964,25 @@ function OutreachDraftPanel({
         <ChevronDown className="h-4 w-4 text-gray-400" />
       </div>
       <div className="mt-3 space-y-3">
+        <label className="block text-xs font-semibold text-[#374151]" htmlFor="outreach-subject">
+          Subject
+        </label>
         <input
+          id="outreach-subject"
           value={subject}
           onChange={(event) => onSubjectChange(event.target.value)}
           disabled={!editing}
           className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-50"
-          placeholder="Subject"
         />
+        <label className="block text-xs font-semibold text-[#374151]" htmlFor="outreach-message">
+          Message
+        </label>
         <textarea
+          id="outreach-message"
           value={message}
           onChange={(event) => onMessageChange(event.target.value)}
           disabled={!editing}
           className="min-h-[140px] w-full rounded-lg border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-50"
-          placeholder="Message"
         />
       </div>
       <div className="mt-3 flex gap-2">

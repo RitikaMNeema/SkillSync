@@ -339,7 +339,6 @@ export function ApplyModal({
                       setPhone(event.target.value);
                       if (errors.phone) setErrors((current) => ({ ...current, phone: undefined }));
                     }}
-                    placeholder="(555) 555-5555"
                     aria-invalid={Boolean(errors.phone)}
                     className={errors.phone ? "border-[#b91c1c] focus-visible:ring-[#b91c1c]" : ""}
                   />
@@ -356,7 +355,6 @@ export function ApplyModal({
                       setLocation(event.target.value);
                       if (errors.location) setErrors((current) => ({ ...current, location: undefined }));
                     }}
-                    placeholder="San Francisco, CA, United States"
                     aria-invalid={Boolean(errors.location)}
                     className={errors.location ? "border-[#b91c1c] focus-visible:ring-[#b91c1c]" : ""}
                   />
@@ -373,7 +371,6 @@ export function ApplyModal({
                       setPortfolioUrl(event.target.value);
                       if (errors.portfolio) setErrors((current) => ({ ...current, portfolio: undefined }));
                     }}
-                    placeholder="https://yourwebsite.com"
                     aria-invalid={Boolean(errors.portfolio)}
                     className={errors.portfolio ? "border-[#b91c1c] focus-visible:ring-[#b91c1c]" : ""}
                   />

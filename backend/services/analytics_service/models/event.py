@@ -1,5 +1,17 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 from shared.database.mongo import get_db
+
+
+def _recruiter_profile_view_match(recruiter_id: int) -> dict:
+    """profile.viewed events for recruiter-owned profiles (producer + legacy shapes)."""
+    rid = str(recruiter_id)
+    return {
+        "$or": [
+            {"payload.recruiter_id": {"$in": [rid, recruiter_id]}},
+            {"entity.entity_type": "recruiter", "entity.entity_id": rid},
+        ]
+    }
 
 
 def _month_window(month: str) -> tuple[datetime, datetime]:
@@ -195,6 +207,66 @@ async def recruiter_dashboard(recruiter_id) -> list:
         },
         {"$group":  {"_id": "$event_type", "count": {"$sum": 1}}},
     ]).to_list(length=10)
+
+
+async def recruiter_profile_dashboard(recruiter_id: int) -> dict:
+    """30d aggregates for a recruiter’s profile + owned jobs + outbound messages."""
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(days=30)
+    tmatch = {"timestamp": {"$gte": since}}
+    profile_m = _recruiter_profile_view_match(recruiter_id)
+    job_m = _recruiter_payload_match(recruiter_id)
+    rid_str = str(recruiter_id)
+
+    views_total, views_daily, job_views, job_saves, applicants, messages_sent, status_changed, search_appearances = (
+        await asyncio.gather(
+            db.events.count_documents({"event_type": "profile.viewed", **tmatch, **profile_m}),
+            db.events.aggregate([
+                {"$match": {"event_type": "profile.viewed", **tmatch, **profile_m}},
+                {
+                    "$group": {
+                        "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
+                        "count": {"$sum": 1},
+                    }
+                },
+            ]).to_list(length=32),
+            db.events.count_documents({"event_type": "job.viewed", **tmatch, **job_m}),
+            db.events.count_documents({"event_type": "job.saved", **tmatch, **job_m}),
+            db.events.count_documents({"event_type": "application.submitted", **tmatch, **job_m}),
+            db.events.count_documents({
+                "event_type": "message.sent",
+                **tmatch,
+                "actor_id": {"$in": [rid_str, recruiter_id]},
+            }),
+            db.events.aggregate([
+                {"$match": {"event_type": "application.statusChanged", **tmatch, **job_m}},
+                {"$group": {"_id": "$payload.new_status", "count": {"$sum": 1}}},
+            ]).to_list(length=20),
+            db.events.count_documents({"event_type": "recruiter.searchAppeared", **tmatch, **profile_m}),
+        )
+    )
+
+    daily_map = {row["_id"]: row["count"] for row in views_daily}
+    profile_views_daily = []
+    for i in range(30):
+        day = (since + timedelta(days=i + 1)).strftime("%Y-%m-%d")
+        profile_views_daily.append({"date": day, "count": daily_map.get(day, 0)})
+
+    statuses = {row["_id"]: row["count"] for row in status_changed if row.get("_id")}
+    statuses["submitted"] = statuses.get("submitted", 0) + applicants
+    breakdown = [{"_id": status, "count": count} for status, count in statuses.items() if status]
+
+    return {
+        "profile_views_30d": views_total,
+        "profile_views_daily_30d": profile_views_daily,
+        "search_appearances_30d": search_appearances,
+        "job_views_30d": job_views,
+        "job_saves_30d": job_saves,
+        "applicants_30d": applicants,
+        "messages_sent_30d": messages_sent,
+        "application_status_breakdown": breakdown,
+    }
 
 
 async def event_counts_by_type(

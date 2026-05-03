@@ -24,7 +24,7 @@ async def create(body: CreateRecruiterRequest, u=Depends(get_current_user)):
 
 @router.post("/get")
 async def get(body: GetRecruiterRequest, u=Depends(get_current_user)):
-    return {"success": True, "data": await ctrl.get(body.recruiter_id)}
+    return {"success": True, "data": await ctrl.get(body.recruiter_id, actor=u)}
 
 @router.post("/update")
 async def update(body: UpdateRecruiterRequest, u=Depends(get_current_user)):
@@ -38,7 +38,10 @@ async def delete(body: DeleteRecruiterRequest, u=Depends(get_current_user)):
 
 @router.post("/search")
 async def search(body: SearchRecruitersRequest, u=Depends(get_current_user)):
-    return {"success": True, "data": await ctrl.search(body.name, body.company, body.industry, body.page)}
+    return {
+        "success": True,
+        "data": await ctrl.search(body.name, body.company, body.industry, body.page, u["user_id"]),
+    }
 
 @router.post("/byCompany")
 async def by_company(body: ByCompanyRequest, u=Depends(get_current_user)):

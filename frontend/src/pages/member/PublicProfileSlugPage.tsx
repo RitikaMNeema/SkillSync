@@ -1,4 +1,6 @@
 import { Navigate, useParams } from "react-router-dom";
+import { APP_SHELL_MAIN_COLUMN_CLASS } from "../../constants/appShellLayout";
+import { cn } from "../../utils/cn";
 import { Card } from "../../components/ui/Card";
 
 function memberIdFromSlug(slug: string | undefined): number | null {
@@ -18,7 +20,7 @@ export function PublicProfileSlugPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[900px] p-6">
+    <div className={cn(APP_SHELL_MAIN_COLUMN_CLASS, "py-6")}>
       <Card>
         <h1 className="text-xl font-semibold">Profile not found</h1>
         <p className="mt-2 text-sm text-text-secondary">

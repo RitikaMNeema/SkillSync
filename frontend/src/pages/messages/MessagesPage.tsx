@@ -22,6 +22,7 @@ import { ThreadList } from "../../components/messages/ThreadList";
 import { Alert } from "../../components/ui/Alert";
 import { Avatar } from "../../components/ui/Avatar";
 import { CardSkeleton } from "../../components/ui/Skeleton";
+import { LeadingIconInput } from "../../components/ui/LeadingIconInput";
 import { Input } from "../../components/ui/Input";
 import { authStore } from "../../context/AuthContext";
 import { useWebSocket } from "../../hooks/useWebSocket";

@@ -26,6 +26,7 @@ import { getRecruiter } from "../../api/recruiters";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
+import { LeadingIconInput } from "../../components/ui/LeadingIconInput";
 import { Input, Textarea } from "../../components/ui/Input";
 import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
@@ -82,6 +83,23 @@ function haystackMatchesSearchTokens(searchableLower: string, phrase: string): b
   const tokens = q.split(/\s+/).filter(Boolean);
   if (!tokens.length) return true;
   return tokens.every((token) => searchableLower.includes(token));
+}
+
+function extractBenefitsFromStoredDescription(description: string | null | undefined): string[] {
+  const t = (description ?? "").trim();
+  if (!t) return [];
+  const inline = /\bBenefits\s*:\s*([^\n]+)/i.exec(t);
+  if (inline?.[1]) return inline[1].split(/[,|]/).map((s) => s.trim()).filter(Boolean);
+  const block = /\bBenefits\s*\n([^\n]+)/i.exec(t);
+  if (block?.[1]) return block[1].split(/[,|]/).map((s) => s.trim()).filter(Boolean);
+  return [];
+}
+
+function extractVisibleToSeekersFromStoredDescription(description: string | null | undefined): boolean {
+  const t = (description ?? "").trim();
+  const m = /\bVisible to job seekers\s*:\s*(yes|no)\b/i.exec(t);
+  if (m) return m[1].toLowerCase() === "yes";
+  return true;
 }
 
 function parseDescriptionSections(description: string | null | undefined): {
@@ -518,7 +536,7 @@ export function JobManagementPage() {
         `Responsibilities\n${responsibilities}`,
         `Qualifications\n${qualifications}`,
         additionalCompensation.length ? `Additional compensation: ${additionalCompensation.join(", ")}` : "",
-        benefits.length ? `Benefits: ${benefits.join(", ")}` : "",
+        benefits.length ? `Benefits\n${benefits.join(", ")}` : "",
         `Visible to job seekers: ${visibleToSeekers ? "Yes" : "No"}`
       ].filter(Boolean);
       const payload = {
@@ -587,6 +605,8 @@ export function JobManagementPage() {
       responsibilities: parsedSections.responsibilities,
       qualifications: parsedSections.qualifications
     });
+    setBenefits(extractBenefitsFromStoredDescription(job.description ?? ""));
+    setVisibleToSeekers(extractVisibleToSeekersFromStoredDescription(job.description ?? ""));
     setPostedSuccess(false);
     setCurrentStep(1);
     setOpen(true);
@@ -667,16 +687,28 @@ export function JobManagementPage() {
           </button>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <Input value={keyword} onChange={(event) => setKeyword(event.target.value)} className="pl-11" placeholder="Search job title, keyword, or company" />
-          </div>
-          <div className="relative">
-            <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <Input value={locationKeyword} onChange={(event) => setLocationKeyword(event.target.value)} className="pl-11" placeholder="City, state, or zip code" />
-          </div>
-          <Button type="button" className="h-10 rounded-full border-[#0A66C2] bg-[#0A66C2] px-6 text-sm hover:bg-[#004182]" onClick={() => setCurrentPage(1)}>
+        <div className="grid min-w-0 gap-3 md:grid-cols-[1fr_1fr_auto] md:items-center">
+          <LeadingIconInput
+            Icon={Search}
+            autoComplete="off"
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            aria-label="Search job title, keyword, or company"
+            placeholder="Search jobs"
+          />
+          <LeadingIconInput
+            Icon={MapPin}
+            autoComplete="off"
+            value={locationKeyword}
+            onChange={(event) => setLocationKeyword(event.target.value)}
+            aria-label="City, state, or zip code"
+            placeholder="Location"
+          />
+          <Button
+            type="button"
+            className="!h-[46px] shrink-0 rounded-full border-[#0A66C2] bg-[#0A66C2] px-6 text-sm hover:bg-[#004182]"
+            onClick={() => setCurrentPage(1)}
+          >
             Search
           </Button>
         </div>
@@ -991,7 +1023,7 @@ export function JobManagementPage() {
                     <div className="grid gap-4 md:grid-cols-2">
                       <div>
                         <label className="mb-1 block text-xs font-semibold text-gray-700">* Job title</label>
-                        <Input {...register("title")} placeholder="e.g. Business Analyst" />
+                        <Input {...register("title")} />
                       </div>
                       <div>
                         <label className="mb-1 block text-xs font-semibold text-gray-700">* Employment type</label>
@@ -1005,7 +1037,7 @@ export function JobManagementPage() {
                       </div>
                       <div>
                         <label className="mb-1 block text-xs font-semibold text-gray-700">* Location</label>
-                        <Input {...register("location")} placeholder="e.g. San Jose, CA" />
+                        <Input {...register("location")} />
                       </div>
                       <div>
                         <label className="mb-1 block text-xs font-semibold text-gray-700">* Experience level</label>
@@ -1059,8 +1091,16 @@ export function JobManagementPage() {
                     </div>
                     <label className="block text-xs font-semibold text-gray-700">Salary range (USD per year)</label>
                     <div className="grid gap-4 md:grid-cols-2">
-                      <Input type="number" {...register("salary_min", { valueAsNumber: true })} placeholder="Salary min" />
-                      <Input type="number" {...register("salary_max", { valueAsNumber: true })} placeholder="Salary max" />
+                      <Input
+                        type="number"
+                        {...register("salary_min", { valueAsNumber: true })}
+                        aria-label="Minimum salary (USD per year)"
+                      />
+                      <Input
+                        type="number"
+                        {...register("salary_max", { valueAsNumber: true })}
+                        aria-label="Maximum salary (USD per year)"
+                      />
                     </div>
                     <label className="inline-flex items-center gap-2 text-sm text-gray-700">
                       <input type="checkbox" checked={visibleToSeekers} onChange={(event) => setVisibleToSeekers(event.target.checked)} />
@@ -1114,7 +1154,6 @@ export function JobManagementPage() {
                         <Textarea
                           {...register("about_job", { maxLength: 5000 })}
                           className="min-h-[220px] flex-1 rounded-xl border-gray-200 bg-white text-sm"
-                          placeholder="Provide a clear overview of the role and what you're looking for."
                         />
                         <p className="mt-1.5 text-right text-xs text-gray-400">
                           {Math.min(watchedAbout.length, 5000)}/5000
@@ -1125,7 +1164,6 @@ export function JobManagementPage() {
                         <Textarea
                           {...register("responsibilities", { maxLength: 5000 })}
                           className="min-h-[220px] flex-1 rounded-xl border-gray-200 bg-white text-sm"
-                          placeholder="List day-to-day responsibilities."
                         />
                         <p className="mt-1.5 text-right text-xs text-gray-400">
                           {Math.min(watchedResponsibilities.length, 5000)}/5000
@@ -1136,7 +1174,6 @@ export function JobManagementPage() {
                         <Textarea
                           {...register("qualifications", { maxLength: 5000 })}
                           className="min-h-[220px] flex-1 rounded-xl border-gray-200 bg-white text-sm"
-                          placeholder="List required skills and qualifications."
                         />
                         <p className="mt-1.5 text-right text-xs text-gray-400">
                           {Math.min(watchedQualifications.length, 5000)}/5000
@@ -1147,10 +1184,10 @@ export function JobManagementPage() {
                     <div>
                       <label className="mb-1.5 block text-xs font-semibold text-gray-800">Skills (optional)</label>
                       <div className="relative">
-                        <Search className="pointer-events-none absolute left-3 top-1/2 z-[1] h-4 w-4 -translate-y-1/2 text-gray-400" />
+                        <Search className="pointer-events-none absolute left-[15px] top-1/2 z-[1] h-[17px] w-[17px] -translate-y-1/2 text-gray-500" />
                         <Input
-                          className="rounded-xl pl-10"
-                          placeholder="Type a skill and press comma or Enter"
+                          className="rounded-xl !pl-[3rem]"
+                          aria-label="Skill; press comma or Enter to add"
                           onKeyDown={(event) => {
                             if (event.key === "Enter" || event.key === ",") {
                               event.preventDefault();
@@ -1203,7 +1240,7 @@ export function JobManagementPage() {
                             autoFocus
                             type="text"
                             value={benefitCustomDraft}
-                            placeholder="Benefit name"
+                            aria-label="Custom benefit name"
                             className="linkedin-input min-w-[140px] flex-1 rounded-full px-3 py-1.5 text-xs"
                             onChange={(event) => setBenefitCustomDraft(event.target.value)}
                             onKeyDown={(event) => {
