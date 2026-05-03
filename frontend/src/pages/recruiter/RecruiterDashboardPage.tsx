@@ -294,7 +294,11 @@ export function RecruiterDashboardPage() {
     return { text: `↑ ${openedThisWeek} this week`, up: true };
   }, [recruiterJobs]);
 
-  const firstJobId = recruiterJobs[0]?.job_id ?? 1;
+  const firstOpenJob = useMemo(
+    () => recruiterJobs.find((j) => (j.status ?? "open") === "open") ?? recruiterJobs[0],
+    [recruiterJobs]
+  );
+  const firstJobId = firstOpenJob?.job_id;
   const monthPickerId = useId();
 
   useEffect(() => {
@@ -468,7 +472,11 @@ export function RecruiterDashboardPage() {
             </button>
             <button
               type="button"
-              onClick={() => navigate(`/ai-test/${firstJobId}`)}
+              onClick={() =>
+                firstJobId
+                  ? navigate(`/recruiter/ai-matching?job_id=${firstJobId}`)
+                  : navigate("/recruiter/ai-matching")
+              }
               className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] border-2 bg-white px-4 text-sm font-semibold shadow-sm transition hover:bg-[#f8fafc]"
               style={{ borderColor: R_PRIMARY, color: R_PRIMARY }}
             >
@@ -832,7 +840,11 @@ export function RecruiterDashboardPage() {
               <button
                 type="button"
                 className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-[#7c3aed] hover:underline"
-                onClick={() => navigate(`/ai-test/${firstJobId}`)}
+                onClick={() =>
+                  firstJobId
+                    ? navigate(`/recruiter/ai-matching?job_id=${firstJobId}`)
+                    : navigate("/recruiter/ai-matching")
+                }
               >
                 Run AI matching
                 <ChevronRight className="h-4 w-4" />
@@ -849,7 +861,10 @@ export function RecruiterDashboardPage() {
                 ✓
               </span>
               <span>
-                Matching ready for <span className="font-medium">{getJobLabel(firstJobId)}</span>
+                Matching ready for{" "}
+                <span className="font-medium">
+                  {firstJobId != null ? getJobLabel(String(firstJobId)) : "your open postings"}
+                </span>
               </span>
             </li>
             <li className="flex gap-2.5">

@@ -82,4 +82,19 @@ server {
     rewrite ^/api/(.*)$ /$1 break;
     proxy_pass http://$api_host:3008;
   }
+
+  # WebSocket (AI service) — must be before the generic /ai-service/ block.
+  location ^~ /ai-service/ai/ws/ {
+    rewrite ^/ai-service/(.*)$ /$1 break;
+    proxy_pass http://$api_host:3010;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+  }
+
+  # Agentic AI (FastAPI on host port 3010). SPA uses baseURL `/ai-service` (see api/ai.ts).
+  location ^~ /ai-service/ {
+    rewrite ^/ai-service/(.*)$ /$1 break;
+    proxy_pass http://$api_host:3010;
+  }
 }

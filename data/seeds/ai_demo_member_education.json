@@ -1,0 +1,65 @@
+[
+  {
+    "edu_id": "f5d3675c-3692-4535-b64b-71d87729a698",
+    "member_id": "289efbcb-156b-4cb5-92b1-d3bfb8cbd130",
+    "institution": "Georgia Tech",
+    "degree": "MS",
+    "field": "Business Analytics",
+    "start_year": 2016,
+    "end_year": 2019
+  },
+  {
+    "edu_id": "8b79c53d-6729-4da2-a2cf-d962913f4741",
+    "member_id": "61e7f5cd-3d06-4f3c-8955-60a5d6cf4705",
+    "institution": "Carnegie Mellon",
+    "degree": "MBA",
+    "field": "Computer Science",
+    "start_year": 2014,
+    "end_year": 2017
+  },
+  {
+    "edu_id": "c5038210-80fd-4a84-a14c-422b9426bdba",
+    "member_id": "79c9a991-835f-4310-8719-001b4c841db1",
+    "institution": "Stanford University",
+    "degree": "BS",
+    "field": "Computer Science",
+    "start_year": 2019,
+    "end_year": 2022
+  },
+  {
+    "edu_id": "9e786308-3484-4376-bafa-2caf08ea08ce",
+    "member_id": "d9642843-1fbb-4e01-8ec0-c87fe4aa67ef",
+    "institution": "Georgia Tech",
+    "degree": "BS",
+    "field": "Computer Science",
+    "start_year": 2017,
+    "end_year": 2021
+  },
+  {
+    "edu_id": "318b5be9-cd79-41ca-b742-fbcb03260371",
+    "member_id": "204e6833-3c08-40f5-897a-3da20d150f1b",
+    "institution": "Georgia Tech",
+    "degree": "MS",
+    "field": "Business Analytics",
+    "start_year": 2014,
+    "end_year": 2019
+  },
+  {
+    "edu_id": "83083d2a-276b-47d2-9968-5380ebe0e1cc",
+    "member_id": "5eb4b858-9ece-4d1a-aec4-8cf103faa460",
+    "institution": "Georgia Tech",
+    "degree": "MBA",
+    "field": "Computer Science",
+    "start_year": 2017,
+    "end_year": 2019
+  },
+  {
+    "edu_id": "9eb37d52-2464-46f0-9f20-1e9dd959fb12",
+    "member_id": "bf757ee3-1a07-4078-9acc-122ab4efbb6b",
+    "institution": "UC Berkeley",
+    "degree": "MBA",
+    "field": "Computer Science",
+    "start_year": 2018,
+    "end_year": 2022
+  }
+]

@@ -1,18 +1,39 @@
 #!/usr/bin/env python3
 """
-Populate Experience / Education / Skills / About / Summary from pasted résumé blobs for every member
-who matches the heuristic layout (dated jobs + Education + Skills sections).
+Populate Experience / Education / Skills / Languages / About / Summary / (optional) Headline from
+résumé-shaped text in each member's summary and/or unstructured.about.
 
-Mirrors scripts/backfill_recruiter_profiles.py: paginates search, logs in per member with the seed
-password when possible, calls POST /members/update.
+Uses resume_profile_text_parser.parse_resume_profile_blob (classic MM/YYYY layout and verbose
+month-name layouts such as “May 2014 to Current Company Name … Education … Skills”).
+
+With ``--include-flexible``, members whose text fails the strict gate but passes
+``looks_flexible_parseable_resume_blob`` are parsed with ``parse_resume_profile_flexible``
+(looser sections, MM/YYYY + Present/Current, relaxed job-line heuristics).
+
+Mirrors scripts/backfill_recruiter_profiles.py: paginates /members/search, logs in per member with the
+seed password when possible, calls POST /members/update.
 
 Usage (from backend/, services up):
   pip install httpx
+
+  # Preview updates (no writes):
   python scripts/backfill_member_resume_sections.py --dry-run
+
+  # Only members missing experience OR education (default):
   python scripts/backfill_member_resume_sections.py --max 20
-  python scripts/backfill_member_resume_sections.py --no-only-sparse --force   # overwrite everyone parseable
+
+  # Every member whose summary/about looks parseable — overwrite structured fields + headline:
+  python scripts/backfill_member_resume_sections.py --all-members --dry-run
+  python scripts/backfill_member_resume_sections.py --all-members
+
+  # Also attempt second-tier parsing for long non-strict résumé blobs (more coverage):
+  python scripts/backfill_member_resume_sections.py --all-members --include-flexible --dry-run
+
+  # Same as --all-members (long form):
+  python scripts/backfill_member_resume_sections.py --no-only-sparse --force --update-headline
 
 Requires each member's password to match SEED_USER_PASSWORD (SkillSync1!) unless login fails (skipped).
+Search user (--search-as) must be allowed to call /members/search and /members/get.
 """
 
 from __future__ import annotations
@@ -76,9 +97,12 @@ def _candidate_blobs(profile: dict) -> list[str]:
     return out
 
 
-def _pick_blob(profile: dict) -> str | None:
+def _pick_blob(profile: dict, *, flexible: bool) -> str | None:
     for blob in _candidate_blobs(profile):
-        if rp.looks_parseable_resume_blob(blob):
+        if flexible:
+            if rp.looks_flexible_parseable_resume_blob(blob):
+                return blob
+        elif rp.looks_parseable_resume_blob(blob):
             return blob
     return None
 
@@ -91,6 +115,11 @@ def _is_sparse(profile: dict) -> bool:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Backfill member profile tabs from résumé-shaped summary/about text")
+    ap.add_argument(
+        "--all-members",
+        action="store_true",
+        help="Parse and apply for every parseable profile: sets --no-only-sparse --force --update-headline",
+    )
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument(
         "--search-as",
@@ -114,6 +143,11 @@ def main() -> None:
         help="Also PATCH headline when parser extracts one",
     )
     ap.add_argument(
+        "--include-flexible",
+        action="store_true",
+        help="If no strict-parseable blob, try looks_flexible_parseable_resume_blob + parse_resume_profile_flexible",
+    )
+    ap.add_argument(
         "--merge-skills",
         action="store_true",
         default=True,
@@ -125,6 +159,10 @@ def main() -> None:
         help="Replace skills list with parsed skills only",
     )
     args = ap.parse_args()
+    if args.all_members:
+        args.no_only_sparse = True
+        args.force = True
+        args.update_headline = True
     only_sparse = not args.no_only_sparse
     merge_skills = False if args.no_merge_skills else args.merge_skills
 
@@ -140,6 +178,8 @@ def main() -> None:
         skipped_login = 0
         skipped_dense = 0
         skipped_not_parseable = 0
+        skipped_flex_unproductive = 0
+        flex_parses = 0
 
         page = 1
         page_size = 20
@@ -167,7 +207,11 @@ def main() -> None:
                 examined += 1
 
                 profile = post(client, "profile", "/members/get", {"member_id": mid}, token=search_tok)
-                blob = _pick_blob(profile)
+                blob = _pick_blob(profile, flexible=False)
+                used_flexible = False
+                if not blob and args.include_flexible:
+                    blob = _pick_blob(profile, flexible=True)
+                    used_flexible = bool(blob)
                 if not blob:
                     skipped_not_parseable += 1
                     continue
@@ -186,7 +230,19 @@ def main() -> None:
                     skipped_login += 1
                     continue
 
-                parsed = rp.parse_resume_profile_blob(blob)
+                parsed = (
+                    rp.parse_resume_profile_flexible(blob)
+                    if used_flexible
+                    else rp.parse_resume_profile_blob(blob)
+                )
+                if used_flexible:
+                    exp_n = len(parsed.get("experience") or [])
+                    edu_n = len(parsed.get("education") or [])
+                    sk_n = len(parsed.get("skills") or [])
+                    if exp_n == 0 and edu_n == 0 and sk_n < 3:
+                        skipped_flex_unproductive += 1
+                        continue
+                    flex_parses += 1
 
                 payload: dict = {
                     "member_id": mid,
@@ -233,6 +289,9 @@ def main() -> None:
                     "skipped_login_or_no_email": skipped_login,
                     "skipped_already_structured": skipped_dense,
                     "skipped_not_parseable": skipped_not_parseable,
+                    "flexible_parse_attempts": flex_parses,
+                    "skipped_flex_unproductive": skipped_flex_unproductive,
+                    "include_flexible": args.include_flexible,
                     "dry_run": args.dry_run,
                     "only_sparse": only_sparse,
                     "force": args.force,

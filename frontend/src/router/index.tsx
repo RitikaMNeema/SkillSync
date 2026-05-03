@@ -19,6 +19,7 @@ import { ProfileSectionDetailsPage } from "../pages/member/ProfileSectionDetails
 import { PublicProfileSlugPage } from "../pages/member/PublicProfileSlugPage";
 import { SavedJobsPage } from "../pages/member/SavedJobsPage";
 import { MessagesPage } from "../pages/messages/MessagesPage";
+import { AIMatchingFlowPage } from "../pages/recruiter/AIMatchingFlowPage";
 import { AIHiringPage } from "../pages/recruiter/AIHiringPage";
 import { ApplicantReviewPage } from "../pages/recruiter/ApplicantReviewPage";
 import { JobManagementPage } from "../pages/recruiter/JobManagementPage";
@@ -125,6 +126,7 @@ export const router = createBrowserRouter([
           { path: "/recruiter/analytics/profile", element: <RecruiterProfileAnalyticsPage /> },
           { path: "/recruiter/jobs", element: <JobManagementPage /> },
           { path: "/recruiter/jobs/:job_id/applicants", element: <ApplicantReviewPage /> },
+          { path: "/recruiter/ai-matching", element: <AIMatchingFlowPage /> },
           { path: "/recruiter/ai/:job_id", element: <AIHiringPage /> },
         ]
       }

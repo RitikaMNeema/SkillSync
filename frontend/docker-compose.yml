@@ -6,12 +6,18 @@ services:
     container_name: skillsync_frontend_dev
     ports:
       - "5173:5173"
+    # Linux: allow Vite’s proxy to reach services published on the host (same as prod frontend).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       # Route dev /api requests through the working nginx gateway on host port 8080.
       # This avoids per-service localhost proxy issues from inside the dev container.
       VITE_PROXY_GATEWAY: ${VITE_PROXY_GATEWAY:-http://host.docker.internal:8080}
-      # In Dockerized Vite, localhost points to the frontend container itself.
+      # Where Vite proxies microservice paths (applications :3006, AI :3010, …). NOT localhost inside the container.
       VITE_PROXY_HOST: ${VITE_PROXY_HOST:-host.docker.internal}
+      # Optional: full URL Vite should use for `/ai-service` (default is http://VITE_PROXY_HOST:3010).
+      # If backend runs in the same Compose project and this service joins that network, use e.g. http://ai-service:3010
+      # VITE_AI_PROXY_TARGET: http://host.docker.internal:3010
     volumes:
       - .:/app
       - node_modules_cache:/app/node_modules

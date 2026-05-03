@@ -4,11 +4,14 @@ Parse a pasted résumé blob and PATCH a member profile via POST /members/update
 
 Uses the same HTTP + async command polling helpers as scripts/seed.py.
 
-Example:
+Example (use a real numeric member id, not the characters "<ID>"):
   cd backend && pip install httpx
-  python scripts/apply_parsed_member_resume.py --member-id 1 --text-file /path/to/resume.txt
-  python scripts/apply_parsed_member_resume.py --member-id 1 --stdin < resume.txt
-  python scripts/apply_parsed_member_resume.py --member-id 1 --stdin --dry-run < resume.txt
+  python scripts/apply_parsed_member_resume.py --member-id 42 --text-file /path/to/resume.txt
+  python scripts/apply_parsed_member_resume.py --member-id 42 --stdin < resume.txt
+  python scripts/apply_parsed_member_resume.py --member-id 42 --stdin --dry-run < resume.txt
+
+The résumé input is plain UTF-8 text (.txt is optional; any file path works). The parser does not read
+PDF/DOCX — export or paste the text body. Use --stdin with shell redirection, or --text-file path.
 """
 
 from __future__ import annotations
@@ -44,8 +47,19 @@ def _read_text(args: argparse.Namespace) -> str:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Apply resume_profile_text_parser output to a member profile")
-    ap.add_argument("--member-id", type=int, required=True)
+    ap = argparse.ArgumentParser(
+        description="Apply resume_profile_text_parser output to a member profile",
+        epilog="Tip: in zsh/bash, <ID> in docs means substitute your member id (e.g. 42). "
+        "Writing literally --member-id <ID> makes the shell try to open a file named ID.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    ap.add_argument(
+        "--member-id",
+        type=int,
+        required=True,
+        metavar="N",
+        help="Target member's numeric id (from profile URL or DB), e.g. 42",
+    )
     ap.add_argument(
         "--email",
         default="alice@example.com",

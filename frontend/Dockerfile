@@ -29,9 +29,11 @@ WORKDIR /app
 # Build-time Vite envs (optional)
 ARG VITE_API_BASE_URL=/api
 ARG VITE_WS_BASE_URL=ws://localhost:3007
+ARG VITE_AI_API_BASE_URL=/ai-service
 
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ENV VITE_WS_BASE_URL=$VITE_WS_BASE_URL
+ENV VITE_AI_API_BASE_URL=$VITE_AI_API_BASE_URL
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

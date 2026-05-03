@@ -1,0 +1,28 @@
+[
+  {
+    "recruiter_id": "e7f4ecb6-8d91-4c4d-9615-6defd08252e7",
+    "company_id": "043c7f5d-bf8c-4b00-9779-0a604b476577",
+    "name": "Gina Lewis",
+    "email": "janethopkins@example.com",
+    "phone": "242-850-6544x5839",
+    "company_name": "Bradshaw, Hudson and Reed",
+    "company_industry": "Technology",
+    "company_size": "201-500",
+    "role": "recruiter",
+    "access_level": "recruiter",
+    "created_at": "2026-04-09 22:22:31"
+  },
+  {
+    "recruiter_id": "a521cd65-0bfc-4aee-9d29-a49cc37276fb",
+    "company_id": "ff9273c6-1094-40ac-9cb1-0e9baa744304",
+    "name": "Benjamin Trevino",
+    "email": "jacobssean@example.org",
+    "phone": "213-706-7375x689",
+    "company_name": "Reed, Wood and King",
+    "company_industry": "Technology",
+    "company_size": "201-500",
+    "role": "recruiter",
+    "access_level": "recruiter",
+    "created_at": "2025-05-04 10:18:35"
+  }
+]

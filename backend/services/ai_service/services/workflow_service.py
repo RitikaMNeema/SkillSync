@@ -3,7 +3,7 @@ import uuid
 from typing import Any, Dict
 
 from controllers.match_controller import compute_match
-from controllers.outreach_controller import generate_outreach
+from controllers.outreach_controller import OUTREACH_MIN_MATCH_SCORE, generate_outreach
 from controllers.parser_controller import parse_profile
 from models.ai_trace import AITrace, StepResult
 from schemas.ai import (
@@ -64,6 +64,8 @@ class WorkflowService:
             "job": req.job.model_dump(),
             "require_human_approval": req.require_human_approval,
             "idempotency_key": req.idempotency_key,
+            "candidate_display_name": req.candidate_display_name,
+            "recruiter_display_name": req.recruiter_display_name,
         }
 
         # Important: run locally inside the AI service after Kafka boundary.
@@ -170,6 +172,38 @@ class WorkflowService:
             )
             await self._push_update(trace_id, AI_EVENT_MATCH_COMPLETED, match_result)
 
+            match_score = float(match_result.get("match_score") or 0.0)
+            if match_score < OUTREACH_MIN_MATCH_SCORE:
+                skip_reason = (
+                    f"Match score {match_score:.1f}% is below the minimum "
+                    f"{OUTREACH_MIN_MATCH_SCORE:.0f}% required for recruiter outreach."
+                )
+                await self.store.add_step(
+                    trace_id,
+                    StepResult(
+                        step_name="outreach_generator",
+                        status="completed",
+                        data={"skipped": True, "reason": skip_reason},
+                    ),
+                )
+                final_result = {
+                    "parsed_profile": parsed,
+                    "match_result": match_result,
+                    "outreach_draft": None,
+                    "outreach_skipped": True,
+                    "outreach_skip_reason": skip_reason,
+                }
+                await self.store.update_trace_status(
+                    trace_id,
+                    status="completed",
+                    current_step="done",
+                    final_result=final_result,
+                    requires_human_approval=False,
+                    approval_status="not_required",
+                )
+                await self._push_update(trace_id, AI_EVENT_COMPLETED, final_result)
+                return
+
             await self.store.update_trace_status(
                 trace_id,
                 status="running",
@@ -193,6 +227,8 @@ class WorkflowService:
                 candidate=payload["candidate"],
                 job=payload["job"],
                 tone="professional",
+                candidate_display_name=payload.get("candidate_display_name"),
+                recruiter_display_name=payload.get("recruiter_display_name"),
             )
             outreach = await generate_outreach(outreach_req, match_result)
 
