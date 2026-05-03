@@ -2,6 +2,7 @@ import { Navigate, createBrowserRouter } from "react-router-dom";
 import { App } from "../App";
 import { AppShell } from "../components/layout/AppShell";
 import { authStore } from "../context/AuthContext";
+import { useAuthHydrated } from "../hooks/useAuthHydrated";
 import { ForgotPasswordPage } from "../pages/auth/ForgotPasswordPage";
 import { LoginPage } from "../pages/auth/LoginPage";
 import { RegisterPage } from "../pages/auth/RegisterPage";
@@ -29,8 +30,16 @@ import { RecruiterProfilePage } from "../pages/recruiter/RecruiterProfilePage";
 import type { UserRole } from "../types/common";
 import { getHomePath } from "../utils/navigation";
 
+/** Matches AppShell page background so persist hydration does not flash the wrong route (login vs app). */
+function AuthHydrationPlaceholder() {
+  return <div className="min-h-screen bg-surface" aria-busy="true" />;
+}
+
 function RootPage() {
-  const { token, role } = authStore.getState();
+  const authHydrated = useAuthHydrated();
+  const token = authStore((s) => s.token);
+  const role = authStore((s) => s.role);
+  if (!authHydrated) return <AuthHydrationPlaceholder />;
   if (token) {
     return <Navigate to={getHomePath(role)} replace />;
   }
@@ -38,7 +47,10 @@ function RootPage() {
 }
 
 function ProtectedRoute({ children, allowedRoles }: { children: JSX.Element; allowedRoles?: UserRole[] }) {
-  const { token, role } = authStore.getState();
+  const authHydrated = useAuthHydrated();
+  const token = authStore((s) => s.token);
+  const role = authStore((s) => s.role);
+  if (!authHydrated) return <AuthHydrationPlaceholder />;
   if (!token) return <Navigate to="/login" replace />;
   if (allowedRoles?.length && (!role || !allowedRoles.includes(role))) {
     return <Navigate to={getHomePath(role)} replace />;
@@ -47,7 +59,9 @@ function ProtectedRoute({ children, allowedRoles }: { children: JSX.Element; all
 }
 
 function DashboardRoute() {
-  const { role } = authStore.getState();
+  const authHydrated = useAuthHydrated();
+  const role = authStore((s) => s.role);
+  if (!authHydrated) return <AuthHydrationPlaceholder />;
   if (role === "recruiter") return <RecruiterDashboardPage />;
   return <MemberDashboardPage />;
 }
@@ -122,7 +136,7 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         ),
         children: [
-          { path: "/recruiter/dashboard", element: <Navigate to="/feed" replace /> },
+          { path: "/recruiter/dashboard", element: <Navigate to="/dashboard" replace /> },
           { path: "/recruiter/analytics/profile", element: <RecruiterProfileAnalyticsPage /> },
           { path: "/recruiter/jobs", element: <JobManagementPage /> },
           { path: "/recruiter/jobs/:job_id/applicants", element: <ApplicantReviewPage /> },

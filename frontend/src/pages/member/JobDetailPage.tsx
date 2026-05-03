@@ -2,6 +2,7 @@ import { ArrowLeft, Bookmark, CalendarDays, ExternalLink, Eye, ShieldCheck, User
 import { type ReactNode, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { Link, useParams } from "react-router-dom";
+import { getAllApplicationsByMember } from "../../api/applications";
 import { getJob, getSavedJobs, saveJob, searchJobs, unsaveJob, trackJobView } from "../../api/jobs";
 import { ApplyModal } from "../../components/jobs/ApplyModal";
 import { AppShellBreakout } from "../../components/layout/AppShellRegions";
@@ -286,6 +287,20 @@ export function JobDetailPage() {
         setSaved(data.jobs.some((j: Job) => j.job_id === Number(job_id)));
       })
       .catch(() => undefined);
+  }, [userId, job_id]);
+
+  useEffect(() => {
+    if (!userId || !job_id) {
+      setApplied(false);
+      return;
+    }
+    const jid = Number(job_id);
+    void getAllApplicationsByMember(userId)
+      .then((data) => {
+        const hasActive = data.applications.some((a) => a.job_id === jid && a.status !== "withdrawn");
+        setApplied(hasActive);
+      })
+      .catch(() => setApplied(false));
   }, [userId, job_id]);
 
   useEffect(() => {

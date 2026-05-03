@@ -97,18 +97,26 @@ function mapMemberPatchToRecruiterPatch(patch: MemberProfileUpdateInput) {
   };
 }
 
-export async function getUnifiedProfile(id: number, role: UserRole | null): Promise<MemberProfile> {
+export type UnifiedProfileResolution = "recruiter" | "member";
+
+export type UnifiedProfileLoadResult = {
+  profile: MemberProfile;
+  resolvedAs: UnifiedProfileResolution;
+};
+
+/** Loads recruiter row first when appropriate; reports whether this id is a recruiter or member profile. */
+export async function getUnifiedProfile(id: number, role: UserRole | null): Promise<UnifiedProfileLoadResult> {
   if (role === "recruiter") {
     const recruiter = await getRecruiter(id);
-    return mapRecruiterToMemberProfile(recruiter);
+    return { profile: mapRecruiterToMemberProfile(recruiter), resolvedAs: "recruiter" };
   }
   // Recruiters share the same numeric id as auth user_id but live under /recruiters/get, not /members/get.
-  // Without this, /profile/:recruiter_id loads an empty "member" shell for visitors and wrong-role sessions.
   try {
     const recruiter = await getRecruiter(id);
-    return mapRecruiterToMemberProfile(recruiter);
+    return { profile: mapRecruiterToMemberProfile(recruiter), resolvedAs: "recruiter" };
   } catch {
-    return getMember(id);
+    const member = await getMember(id);
+    return { profile: member, resolvedAs: "member" };
   }
 }
 

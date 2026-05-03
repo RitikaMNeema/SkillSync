@@ -6,6 +6,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { getRecruiterProfileDashboard } from "../../api/analytics";
 import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
+import { useAuthHydrated } from "../../hooks/useAuthHydrated";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import type { RecruiterProfileDashboard } from "../../types/analytics";
 
@@ -29,11 +30,13 @@ const statusLabel: Record<string, string> = {
 
 export function RecruiterProfileAnalyticsPage() {
   const userId = authStore((state) => state.userId);
+  const authHydrated = useAuthHydrated();
   const [loading, setLoading] = useState(true);
   const [dashboard, setDashboard] = useState<RecruiterProfileDashboard | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!authHydrated) return;
     if (!userId) {
       setLoading(false);
       return;
@@ -49,7 +52,7 @@ export function RecruiterProfileAnalyticsPage() {
         setDashboard(null);
       })
       .finally(() => setLoading(false));
-  }, [userId]);
+  }, [authHydrated, userId]);
 
   const areaData = useMemo(() => {
     const source = dashboard?.profile_views_daily_30d ?? [];
@@ -90,7 +93,7 @@ export function RecruiterProfileAnalyticsPage() {
     return ((recent - previous) / previous) * 100;
   }, [dashboard?.profile_views_daily_30d]);
 
-  if (loading) {
+  if (loading || !authHydrated) {
     return (
       <div className="space-y-4">
         <CardSkeleton />
