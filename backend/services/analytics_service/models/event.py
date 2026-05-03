@@ -196,16 +196,18 @@ async def member_dashboard(member_id) -> dict:
     }
 
 
-async def recruiter_dashboard(recruiter_id) -> list:
+async def recruiter_dashboard(recruiter_id, month: str | None = None) -> list:
     db = get_db()
+    match: dict = {
+        "event_type": {"$in": ["job.viewed", "application.submitted", "application.statusChanged"]},
+        **_recruiter_payload_match(recruiter_id),
+    }
+    if month:
+        start, end = _month_window(month)
+        match["timestamp"] = {"$gte": start, "$lt": end}
     return await db.events.aggregate([
-        {
-            "$match": {
-                "event_type": {"$in": ["job.viewed", "application.submitted", "application.statusChanged"]},
-                **_recruiter_payload_match(recruiter_id),
-            }
-        },
-        {"$group":  {"_id": "$event_type", "count": {"$sum": 1}}},
+        {"$match": match},
+        {"$group": {"_id": "$event_type", "count": {"$sum": 1}}},
     ]).to_list(length=10)
 
 

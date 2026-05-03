@@ -813,7 +813,7 @@ export function JobManagementPage() {
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${(job.status ?? "open") === "open" ? "bg-[#e7f8ef] text-[#0f8f58]" : "bg-[#f3f4f6] text-[#6b7280]"}`}>
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${(job.status ?? "open") === "open" ? "bg-[#e7f8ef] text-[#0f8f58]" : "bg-[#fee2e2] text-[#b91c1c]"}`}>
                             {(job.status ?? "open") === "open" ? "Active" : "Closed"}
                           </span>
                           <button

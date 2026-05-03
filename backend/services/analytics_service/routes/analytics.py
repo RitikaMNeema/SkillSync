@@ -76,7 +76,7 @@ async def member_dash(body: MemberDashboardRequest, u=Depends(get_current_user))
 async def recruiter_dash(body: RecruiterDashboardRequest, u=Depends(get_current_user)):
     if str(body.recruiter_id) != str(u["user_id"]):
         raise HTTPException(403, "Not authorized to access another recruiter's dashboard")
-    return {"success": True, "data": await ctrl.get_recruiter_dashboard(body.recruiter_id)}
+    return {"success": True, "data": await ctrl.get_recruiter_dashboard(body.recruiter_id, body.month)}
 
 
 @analytics_router.post("/recruiter/profileDashboard")
