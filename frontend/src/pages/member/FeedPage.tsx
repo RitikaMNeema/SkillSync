@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
-  BriefcaseBusiness,
   FileText,
   Image,
   UserRoundPlus,
@@ -14,16 +13,14 @@ import {
 import toast from "react-hot-toast";
 import { useShallow } from "zustand/react/shallow";
 import { getMemberDashboard, getRecruiterProfileDashboard, getTopJobs } from "../../api/analytics";
-import { getApplicationsByMember } from "../../api/applications";
 import { getMutualConnections, listConnections, listPendingConnections, requestConnection, withdrawConnection } from "../../api/connections";
-import { getSavedJobs, getJob, saveJob, searchJobs, unsaveJob } from "../../api/jobs";
-import { createMember, getMember, searchMembers } from "../../api/members";
+import { getJob, searchJobs } from "../../api/jobs";
+import { createMember, searchMembers } from "../../api/members";
 import { createPost, getFeedPosts, uploadPostImage } from "../../api/posts";
 import { searchRecruiters } from "../../api/recruiters";
 import { RightSidebar, Sidebar } from "../../components/layout/Sidebar";
 import { PostCard } from "../../components/posts/PostCard";
 import { Avatar } from "../../components/ui/Avatar";
-import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -31,16 +28,14 @@ import { Input, Textarea } from "../../components/ui/Input";
 import { Alert } from "../../components/ui/Alert";
 import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
-import type { Application } from "../../types/application";
+import { useAuthHydrated } from "../../hooks/useAuthHydrated";
 import type { MemberDashboard, RecruiterProfileDashboard } from "../../types/analytics";
 import type { Job } from "../../types/job";
 import type { MemberProfile, MemberSearchItem } from "../../types/member";
 import type { FeedPost, PostType } from "../../types/post";
 import type { RecruiterProfile } from "../../types/recruiter";
-import { formatRelativeDate } from "../../utils/formatDate";
 import { getApiErrorMessage, getHttpStatus } from "../../utils/getApiErrorMessage";
-import { getUnifiedProfile } from "../../utils/profileAdapter";
-import { getStatusColor } from "../../utils/getStatusColor";
+import { getUnifiedProfile, type UnifiedProfileResolution } from "../../utils/profileAdapter";
 import type { PendingConnection } from "../../types/connection";
 
 const composerActions: Array<{ type: PostType; label: string; icon: typeof Image }> = [
@@ -85,11 +80,11 @@ function outgoingPendingIndex(pendingRequests: PendingConnection[], userId: numb
 
 export function FeedPage() {
   const navigate = useNavigate();
+  const authHydrated = useAuthHydrated();
   const { userId, role } = authStore(useShallow((state) => ({ userId: state.userId, role: state.role })));
+  /** Set from `getUnifiedProfile` so sidebar + analytics match DB row, not a possibly stale `role` before persist hydrates. */
+  const [feedResolvedAs, setFeedResolvedAs] = useState<UnifiedProfileResolution | null>(null);
   const [profile, setProfile] = useState<MemberProfile | null>(null);
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [savedJobIds, setSavedJobIds] = useState<number[]>([]);
-  const [applications, setApplications] = useState<Application[]>([]);
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [peopleSuggestions, setPeopleSuggestions] = useState<MemberSearchItem[]>([]);
   const [recruiterSuggestions, setRecruiterSuggestions] = useState<RecruiterProfile[]>([]);
@@ -117,38 +112,38 @@ export function FeedPage() {
 
     setLoading(true);
     setError("");
+    setFeedResolvedAs(null);
 
     try {
       let member: MemberProfile;
-      if (role === "recruiter") {
-        member = await getUnifiedProfile(userId, "recruiter");
-      } else {
-        try {
-          member = await getMember(userId);
-        } catch (memberError) {
-          if (getHttpStatus(memberError) !== 404) throw memberError;
-          // Some users can authenticate before a member profile row exists.
-          await createMember({
-            member_id: userId,
-            first_name: "First",
-            last_name: "Last",
-            headline: "Aspiring professional"
-          });
-          member = await getMember(userId);
-        }
+      let resolvedAs: UnifiedProfileResolution;
+      try {
+        const loaded = await getUnifiedProfile(userId, role);
+        member = loaded.profile;
+        resolvedAs = loaded.resolvedAs;
+      } catch (firstErr) {
+        // Recruiters only exist in `recruiters`; never bootstrap a member row for them.
+        if (role === "recruiter") throw firstErr;
+        if (getHttpStatus(firstErr) !== 404) throw firstErr;
+        await createMember({
+          member_id: userId,
+          first_name: "First",
+          last_name: "Last",
+          headline: "Aspiring professional"
+        });
+        const loaded = await getUnifiedProfile(userId, role);
+        member = loaded.profile;
+        resolvedAs = loaded.resolvedAs;
       }
       setProfile(member);
+      setFeedResolvedAs(resolvedAs);
 
-      const keyword = member.skills?.[0] || member.headline?.split(" ")[0] || undefined;
       const location = member.location_city || undefined;
 
       const dashboardRequest =
-        role === "recruiter" ? getRecruiterProfileDashboard(userId) : getMemberDashboard(userId);
+        resolvedAs === "recruiter" ? getRecruiterProfileDashboard(userId) : getMemberDashboard(userId);
 
       const results = await Promise.allSettled([
-        searchJobs({ keyword, location, page: 1 }),
-        getApplicationsByMember(userId),
-        getSavedJobs(userId),
         getFeedPosts(1),
         searchMembers({ location, page: 1 }),
         searchRecruiters({ page: 1 }),
@@ -158,19 +153,14 @@ export function FeedPage() {
         getTopJobs(currentMonthKey())
       ]);
 
-      const recommendedJobs = results[0].status === "fulfilled" ? results[0].value.jobs.slice(0, 3) : [];
-      const applicationItems = role === "member" && results[1].status === "fulfilled" ? results[1].value.applications.slice(0, 4) : [];
-      const savedJobs = results[2].status === "fulfilled" ? results[2].value.jobs : [];
-      const feedPosts = results[3].status === "fulfilled" ? results[3].value.posts.slice(0, 5) : [];
-      const memberResults = results[4].status === "fulfilled" ? results[4].value.members : [];
-      const recruiterResults = results[5].status === "fulfilled" ? results[5].value.recruiters.slice(0, 3) : [];
-      const connectionResults = results[6].status === "fulfilled" ? results[6].value : [];
-      const pendingResults = results[7].status === "fulfilled" ? results[7].value : [];
-      const dashboardResult = results[8].status === "fulfilled" ? results[8].value : null;
-
-      setJobs(recommendedJobs);
-      setApplications(applicationItems);
-      setSavedJobIds(savedJobs.map((job) => job.job_id));
+      const feedPosts = results[0].status === "fulfilled" ? results[0].value.posts.slice(0, 5) : [];
+      const memberResults = results[1].status === "fulfilled" ? results[1].value.members : [];
+      const recruiterResults = results[2].status === "fulfilled" ? results[2].value.recruiters.slice(0, 3) : [];
+      const connectionResults =
+        results[3].status === "fulfilled" && Array.isArray(results[3].value) ? results[3].value : [];
+      const pendingResults =
+        results[4].status === "fulfilled" && Array.isArray(results[4].value) ? results[4].value : [];
+      const dashboardResult = results[5].status === "fulfilled" ? results[5].value : null;
       setPosts(feedPosts);
       setRecruiterSuggestions(recruiterResults);
       setConnectedUserIds(connectionResults.map((connection) => connection.connected_user_id));
@@ -204,8 +194,8 @@ export function FeedPage() {
       setSuggestionDegrees(degreeById);
       setSuggestionMutualCounts(mutualCountById);
 
-      if (results[9].status === "fulfilled" && results[9].value.length > 0) {
-        const topJobResults = await Promise.allSettled(results[9].value.slice(0, 3).map((metric) => getJob(Number(metric.job_id))));
+      if (results[6].status === "fulfilled" && results[6].value.length > 0) {
+        const topJobResults = await Promise.allSettled(results[6].value.slice(0, 3).map((metric) => getJob(Number(metric.job_id))));
         setTrendingJobs(
           topJobResults
             .filter((result): result is PromiseFulfilledResult<Job> => result.status === "fulfilled")
@@ -222,13 +212,15 @@ export function FeedPage() {
   }
 
   useEffect(() => {
+    if (!authHydrated) return;
+    if (!userId) {
+      setLoading(false);
+      setProfile(null);
+      setFeedResolvedAs(null);
+      return;
+    }
     void loadFeed();
-  }, [userId, role]);
-
-  const applicationSummary = useMemo(() => {
-    if (!dashboard?.application_status_breakdown?.length) return [];
-    return dashboard.application_status_breakdown.filter((item) => item.count > 0).slice(0, 3);
-  }, [dashboard]);
+  }, [userId, role, authHydrated]);
 
   async function handleCreatePost() {
     if (!userId) return;
@@ -269,26 +261,6 @@ export function FeedPage() {
     } finally {
       setPosting(false);
       setUploadingImage(false);
-    }
-  }
-
-  async function handleToggleSave(job: Job) {
-    if (!userId) return;
-
-    const saved = savedJobIds.includes(job.job_id);
-    const loadingToast = toast.loading(saved ? "Removing saved job..." : "Saving job...");
-
-    try {
-      if (saved) {
-        await unsaveJob(userId, job.job_id);
-        setSavedJobIds((current) => current.filter((id) => id !== job.job_id));
-      } else {
-        await saveJob(userId, job.job_id);
-        setSavedJobIds((current) => [...current, job.job_id]);
-      }
-      toast.success(saved ? "Removed from saved jobs" : "Saved job", { id: loadingToast });
-    } catch {
-      toast.error("Could not update saved jobs", { id: loadingToast });
     }
   }
 
@@ -347,7 +319,7 @@ export function FeedPage() {
     navigate("/connections");
   }
 
-  if (loading) {
+  if (loading || !authHydrated) {
     return (
       <div className="grid gap-6 lg:grid-cols-[225px_minmax(0,554px)_300px]">
         <CardSkeleton />
@@ -360,6 +332,20 @@ export function FeedPage() {
   if (error || !profile) {
     return <Alert message={error || "Could not load your home feed."} onRetry={() => void loadFeed()} />;
   }
+
+  const ownProfileUrl =
+    feedResolvedAs === "recruiter" || role === "recruiter"
+      ? `/profile/${profile.member_id}?type=recruiter`
+      : `/profile/${profile.member_id}`;
+
+  /** Same source as `/connections`: live graph from `listConnections`. Recruiter `connections_count` in MySQL can lag if Kafka sync missed; members row is updated more reliably. */
+  const feedConnectionsCount = Math.max(connectedUserIds.length, profile.connections_count ?? 0);
+
+  /** Analytics 30d total; fall back to SQL `profile_views` on the profile row when events are empty (matches richer seeker card when DB has counts). */
+  const feedProfileViewersCount = Math.max(
+    dashboard?.profile_views_30d ?? 0,
+    profile.profile_views ?? 0
+  );
 
   return (
     <div className="grid gap-6 lg:grid-cols-[225px_minmax(0,554px)_300px]">
@@ -376,7 +362,7 @@ export function FeedPage() {
             <button
               type="button"
               className="mt-3 block text-left hover:underline"
-              onClick={() => navigate(`/profile/${profile.member_id}`)}
+              onClick={() => navigate(ownProfileUrl)}
             >
               <p className="text-[1.35rem] font-semibold leading-tight text-[#1f1f1f]">
                 {profile.first_name} {profile.last_name}
@@ -390,10 +376,16 @@ export function FeedPage() {
               <button
                 type="button"
                 className="flex w-full items-center justify-between text-left font-semibold text-[#444] hover:text-brand"
-                onClick={() => navigate(role === "recruiter" ? "/recruiter/analytics/profile" : "/dashboard")}
+                onClick={() =>
+                  navigate(
+                    feedResolvedAs === "recruiter" || role === "recruiter"
+                      ? "/recruiter/analytics/profile"
+                      : "/dashboard"
+                  )
+                }
               >
                 <span>Profile viewers</span>
-                <span className="font-semibold text-brand">{dashboard?.profile_views_30d ?? 0}</span>
+                <span className="font-semibold text-brand">{feedProfileViewersCount}</span>
               </button>
               <button
                 type="button"
@@ -401,7 +393,7 @@ export function FeedPage() {
                 onClick={goToConnectionsPage}
               >
                 <span>Connections</span>
-                <span className="font-semibold text-brand">{profile.connections_count ?? 0}</span>
+                <span className="font-semibold text-brand">{feedConnectionsCount}</span>
               </button>
             </div>
           </div>
@@ -541,80 +533,6 @@ export function FeedPage() {
           )}
         </Card>
 
-        <Card>
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Jobs based on your profile</h2>
-            <Button variant="ghost" onClick={() => goToJobs({ keyword: profile.skills?.[0] || "", location: profile.location_city || "" })}>
-              See all
-            </Button>
-          </div>
-          {jobs.length ? (
-            <div className="space-y-3">
-              {jobs.map((job) => (
-                <div key={job.job_id} className="flex items-center justify-between gap-3 rounded-card p-3 hover:bg-hover">
-                  <button type="button" className="min-w-0 flex-1 text-left" onClick={() => navigate(`/jobs/${job.job_id}`)}>
-                    <p className="font-semibold">{job.title}</p>
-                    <p className="text-sm text-text-secondary">
-                      {job.company_name} {job.location ? `· ${job.location}` : ""}
-                    </p>
-                  </button>
-                  <Button variant={savedJobIds.includes(job.job_id) ? "secondary" : "ghost"} onClick={() => void handleToggleSave(job)}>
-                    {savedJobIds.includes(job.job_id) ? "Saved" : "Save"}
-                  </Button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyState
-              icon={BriefcaseBusiness}
-              title="No job matches yet"
-              description="Try broadening your profile details or adjusting your filters to discover more openings."
-              actionLabel="Browse all jobs"
-              onAction={() => goToJobs()}
-            />
-          )}
-        </Card>
-
-        {role === "member" ? (
-          <Card>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Your application updates</h2>
-              <Button variant="ghost" onClick={() => navigate("/applications")}>
-                See all
-              </Button>
-            </div>
-            {applications.length ? (
-              <div className="space-y-3">
-                {applications.map((application) => (
-                  <button
-                    key={application.application_id}
-                    type="button"
-                    className="block w-full rounded-card p-3 text-left hover:bg-hover"
-                    onClick={() => navigate("/applications")}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold">{application.job_title || `Application #${application.application_id}`}</p>
-                        <p className="text-sm text-text-secondary">
-                          {application.company_name || "Company"} · {formatRelativeDate(application.application_datetime)}
-                        </p>
-                      </div>
-                      <Badge className={getStatusColor(application.status)}>{application.status}</Badge>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                icon={FileText}
-                title="No applications yet"
-                description="Once you apply to jobs, status updates will appear here."
-                actionLabel="Find jobs"
-                onAction={() => goToJobs()}
-              />
-            )}
-          </Card>
-        ) : null}
       </div>
       <RightSidebar>
         <div className="space-y-4">
@@ -649,7 +567,7 @@ export function FeedPage() {
               <div className="rounded-card bg-hover p-3">
                 <p className="font-semibold text-text-primary">{dashboard?.profile_views_30d ?? 0} profile views in the last 30 days</p>
                 <p className="mt-1 text-text-secondary">
-                  {role === "recruiter" && isRecruiterProfileDashboard(dashboard)
+                  {(feedResolvedAs === "recruiter" || role === "recruiter") && isRecruiterProfileDashboard(dashboard)
                     ? `${dashboard.job_views_30d} job views · ${dashboard.applicants_30d} applicants · ${dashboard.messages_sent_30d} messages sent`
                     : "Your profile visibility is now connected to backend analytics."}
                 </p>
