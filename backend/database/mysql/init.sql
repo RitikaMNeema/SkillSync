@@ -172,6 +172,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   location          VARCHAR(255),
   work_mode         ENUM('remote', 'hybrid', 'onsite') NOT NULL,
   skills_required   JSON,
+  benefits          JSON,
   salary_min        DECIMAL(12, 2),
   salary_max        DECIMAL(12, 2),
   posted_datetime   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

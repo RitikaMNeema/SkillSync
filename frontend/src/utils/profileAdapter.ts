@@ -102,7 +102,14 @@ export async function getUnifiedProfile(id: number, role: UserRole | null): Prom
     const recruiter = await getRecruiter(id);
     return mapRecruiterToMemberProfile(recruiter);
   }
-  return getMember(id);
+  // Recruiters share the same numeric id as auth user_id but live under /recruiters/get, not /members/get.
+  // Without this, /profile/:recruiter_id loads an empty "member" shell for visitors and wrong-role sessions.
+  try {
+    const recruiter = await getRecruiter(id);
+    return mapRecruiterToMemberProfile(recruiter);
+  } catch {
+    return getMember(id);
+  }
 }
 
 export async function updateUnifiedProfile(patch: MemberProfileUpdateInput, role: UserRole | null): Promise<void> {

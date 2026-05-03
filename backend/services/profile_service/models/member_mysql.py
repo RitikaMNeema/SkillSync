@@ -5,6 +5,19 @@ from shared.database.mysql import get_pool
 
 PAGE_SIZE = 20
 
+# Must match `skills.skill_name` / `member_skill_mappings.skill_name` in PROFILE_DETAIL_TABLES_SQL and init.sql.
+SKILL_NAME_MAX_CHARS = 255
+
+
+def _clamp_skill_name(value: Any) -> str:
+    """Résumé parsers and CSV cells can emit phrases longer than the VARCHAR cap."""
+    raw = _safe_str(value) if value is not None else None
+    s = raw or ""
+    if len(s) <= SKILL_NAME_MAX_CHARS:
+        return s
+    return s[:SKILL_NAME_MAX_CHARS].rstrip()
+
+
 PROFILE_DETAIL_TABLES_SQL = [
     """
     CREATE TABLE IF NOT EXISTS experience (
@@ -144,6 +157,31 @@ def _safe_str(value: Any) -> str | None:
     return text or None
 
 
+def _clamp_varchar(value: Any, max_chars: int) -> str | None:
+    """Truncate to match MySQL VARCHAR(n); keeps persistence safe for scraped/parsed profiles."""
+    raw = _safe_str(value)
+    if not raw:
+        return None
+    if len(raw) <= max_chars:
+        return raw
+    trimmed = raw[:max_chars].rstrip()
+    return trimmed or None
+
+
+# Limits aligned with PROFILE_DETAIL_TABLES_SQL / database/mysql/init.sql
+_EXP_TITLE_MAX = 255
+_EXP_COMPANY_MAX = 255
+_EXP_EMPLOYMENT_MAX = 100
+_EXP_MONTH_MAX = 20
+_EXP_LOCATION_MAX = 255
+_EXP_LOCATION_TYPE_MAX = 100
+_EDU_SCHOOL_MAX = 255
+_EDU_DEGREE_MAX = 255
+_EDU_FIELD_MAX = 255
+_EDU_GRADE_MAX = 80
+_EDU_MONTH_MAX = 20
+
+
 def _legacy_json_field(value: Any) -> Any:
     """Parse legacy JSON text columns on members; tolerate empty or invalid JSON."""
     if not isinstance(value, str):
@@ -179,23 +217,27 @@ def _normalize_experience(entries: Any) -> list[dict]:
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        title = _safe_str(_first(entry, "title"))
-        company = _safe_str(_first(entry, "company", "organization"))
+        title = _clamp_varchar(_first(entry, "title"), _EXP_TITLE_MAX)
+        company = _clamp_varchar(_first(entry, "company", "organization"), _EXP_COMPANY_MAX)
         if not title and not company:
             continue
 
         normalized.append(
             {
                 "title": title or "Untitled role",
-                "employment_type": _safe_str(_first(entry, "employment_type", "employmentType")),
+                "employment_type": _clamp_varchar(
+                    _first(entry, "employment_type", "employmentType"), _EXP_EMPLOYMENT_MAX
+                ),
                 "company": company or "Unknown organization",
                 "is_current": bool(_first(entry, "is_current", "isCurrent")),
-                "start_month": _safe_str(_first(entry, "start_month", "startMonth")),
+                "start_month": _clamp_varchar(_first(entry, "start_month", "startMonth"), _EXP_MONTH_MAX),
                 "start_year": _safe_int(_first(entry, "start_year", "startYear")),
-                "end_month": _safe_str(_first(entry, "end_month", "endMonth")),
+                "end_month": _clamp_varchar(_first(entry, "end_month", "endMonth"), _EXP_MONTH_MAX),
                 "end_year": _safe_int(_first(entry, "end_year", "endYear")),
-                "location": _safe_str(_first(entry, "location")),
-                "location_type": _safe_str(_first(entry, "location_type", "locationType")),
+                "location": _clamp_varchar(_first(entry, "location"), _EXP_LOCATION_MAX),
+                "location_type": _clamp_varchar(
+                    _first(entry, "location_type", "locationType"), _EXP_LOCATION_TYPE_MAX
+                ),
                 "description": _safe_str(_first(entry, "description")),
                 "skill_ids": _normalize_skill_ids(entry),
             }
@@ -211,7 +253,7 @@ def _normalize_education(entries: Any) -> list[dict]:
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        school = _safe_str(_first(entry, "school"))
+        school = _clamp_varchar(_first(entry, "school"), _EDU_SCHOOL_MAX)
         if not school:
             continue
 
@@ -222,13 +264,15 @@ def _normalize_education(entries: Any) -> list[dict]:
         normalized.append(
             {
                 "school": school,
-                "degree": _safe_str(_first(entry, "degree")),
-                "field_of_study": _safe_str(_first(entry, "field_of_study", "fieldOfStudy", "field")),
-                "start_month": _safe_str(_first(entry, "start_month", "startMonth")),
+                "degree": _clamp_varchar(_first(entry, "degree"), _EDU_DEGREE_MAX),
+                "field_of_study": _clamp_varchar(
+                    _first(entry, "field_of_study", "fieldOfStudy", "field"), _EDU_FIELD_MAX
+                ),
+                "start_month": _clamp_varchar(_first(entry, "start_month", "startMonth"), _EDU_MONTH_MAX),
                 "start_year": _safe_int(_first(entry, "start_year", "startYear")),
-                "end_month": _safe_str(_first(entry, "end_month", "endMonth")),
+                "end_month": _clamp_varchar(_first(entry, "end_month", "endMonth"), _EDU_MONTH_MAX),
                 "end_year": end_year_val,
-                "grade": _safe_str(_first(entry, "grade")),
+                "grade": _clamp_varchar(_first(entry, "grade"), _EDU_GRADE_MAX),
                 "activities": _safe_str(_first(entry, "activities", "activities_and_societies", "activitiesAndSocieties")),
                 "skill_ids": _normalize_skill_ids(entry),
             }
@@ -245,6 +289,9 @@ def _normalize_skills(entries: Any) -> list[str]:
         skill = _safe_str(entry)
         if skill:
             canonical = SKILL_CANONICAL_MAP.get(skill.lower(), skill)
+            canonical = _clamp_skill_name(canonical)
+            if not canonical:
+                continue
             key = canonical.lower()
             if key in seen:
                 continue
@@ -381,6 +428,44 @@ async def user_exists(user_id: int) -> bool:
             return await cur.fetchone() is not None
 
 
+def _experience_insert_tuple(member_id: int, sort_order: int, entry: dict) -> tuple:
+    """Clamp again at INSERT so stale consumers or odd JSON never exceeds VARCHAR caps."""
+    title = _clamp_varchar(entry.get("title"), _EXP_TITLE_MAX) or "Untitled role"
+    company = _clamp_varchar(entry.get("company"), _EXP_COMPANY_MAX) or "Unknown organization"
+    return (
+        member_id,
+        sort_order,
+        title,
+        _clamp_varchar(entry.get("employment_type"), _EXP_EMPLOYMENT_MAX),
+        company,
+        1 if entry.get("is_current") else 0,
+        _clamp_varchar(entry.get("start_month"), _EXP_MONTH_MAX),
+        entry.get("start_year"),
+        _clamp_varchar(entry.get("end_month"), _EXP_MONTH_MAX),
+        entry.get("end_year"),
+        _clamp_varchar(entry.get("location"), _EXP_LOCATION_MAX),
+        _clamp_varchar(entry.get("location_type"), _EXP_LOCATION_TYPE_MAX),
+        entry.get("description"),
+    )
+
+
+def _education_insert_tuple(member_id: int, sort_order: int, entry: dict) -> tuple:
+    school = _clamp_varchar(entry.get("school"), _EDU_SCHOOL_MAX) or "School"
+    return (
+        member_id,
+        sort_order,
+        school,
+        _clamp_varchar(entry.get("degree"), _EDU_DEGREE_MAX),
+        _clamp_varchar(entry.get("field_of_study"), _EDU_FIELD_MAX),
+        _clamp_varchar(entry.get("start_month"), _EDU_MONTH_MAX),
+        entry.get("start_year"),
+        _clamp_varchar(entry.get("end_month"), _EDU_MONTH_MAX),
+        entry.get("end_year"),
+        _clamp_varchar(entry.get("grade"), _EDU_GRADE_MAX),
+        entry.get("activities"),
+    )
+
+
 async def _replace_member_experience(cur, member_id: int, experience_entries: list[dict]) -> None:
     await cur.execute("DELETE FROM experience WHERE member_id = %s", (member_id,))
     if not experience_entries:
@@ -393,24 +478,7 @@ async def _replace_member_experience(cur, member_id: int, experience_entries: li
              start_month, start_year, end_month, end_year, location, location_type, description)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
-        [
-            (
-                member_id,
-                index,
-                entry["title"],
-                entry.get("employment_type"),
-                entry["company"],
-                1 if entry.get("is_current") else 0,
-                entry.get("start_month"),
-                entry.get("start_year"),
-                entry.get("end_month"),
-                entry.get("end_year"),
-                entry.get("location"),
-                entry.get("location_type"),
-                entry.get("description"),
-            )
-            for index, entry in enumerate(experience_entries)
-        ],
+        [_experience_insert_tuple(member_id, index, entry) for index, entry in enumerate(experience_entries)],
     )
 
 
@@ -426,22 +494,7 @@ async def _replace_member_education(cur, member_id: int, education_entries: list
              start_year, end_month, end_year, grade, activities)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
-        [
-            (
-                member_id,
-                index,
-                entry["school"],
-                entry.get("degree"),
-                entry.get("field_of_study"),
-                entry.get("start_month"),
-                entry.get("start_year"),
-                entry.get("end_month"),
-                entry.get("end_year"),
-                entry.get("grade"),
-                entry.get("activities"),
-            )
-            for index, entry in enumerate(education_entries)
-        ],
+        [_education_insert_tuple(member_id, index, entry) for index, entry in enumerate(education_entries)],
     )
 
 
@@ -469,10 +522,14 @@ async def _replace_member_skill_mappings(
     values: list[tuple[int, str, str, int]] = []
     for index, entry in enumerate(experience_entries):
         for skill in entry.get("skill_ids") or []:
-            values.append((member_id, skill, "experience", index))
+            sn = _clamp_skill_name(skill)
+            if sn:
+                values.append((member_id, sn, "experience", index))
     for index, entry in enumerate(education_entries):
         for skill in entry.get("skill_ids") or []:
-            values.append((member_id, skill, "education", index))
+            sn = _clamp_skill_name(skill)
+            if sn:
+                values.append((member_id, sn, "education", index))
     if not values:
         return
     await cur.executemany(

@@ -187,10 +187,21 @@ async def get_resume(member_id: int) -> dict:
 MAX_PHOTO_BYTES = 5 * 1024 * 1024  # 5 MB
 MAX_RESUME_BYTES = 5 * 1024 * 1024  # 5 MB
 ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/webp"}
-ALLOWED_RESUME_TYPES = {
-    "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-}
+ALLOWED_RESUME_TYPES = frozenset(
+    {
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        # Kaggle resume CSV / programmatic seeds upload raw HTML or plain text.
+        "text/html",
+        "text/plain",
+    }
+)
+
+
+def _normalized_resume_content_type(content_type: str | None) -> str:
+    if not content_type:
+        return ""
+    return content_type.split(";", 1)[0].strip().lower()
 
 
 async def upload_photo_file(
@@ -298,8 +309,11 @@ async def upload_resume_file(
 ) -> dict:
     if member_id != actor_id:
         raise HTTPException(403, "Cannot upload resume for another member")
-    if content_type not in ALLOWED_RESUME_TYPES:
-        raise HTTPException(400, "Only PDF or DOCX files are allowed")
+    if _normalized_resume_content_type(content_type) not in ALLOWED_RESUME_TYPES:
+        raise HTTPException(
+            400,
+            "Only PDF, DOCX, HTML, or plain-text resumes are allowed",
+        )
     if len(data) == 0:
         raise HTTPException(400, "Empty file")
     if len(data) > MAX_RESUME_BYTES:

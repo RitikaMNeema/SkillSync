@@ -19,6 +19,24 @@ router = APIRouter()
 log = logging.getLogger("profile_service.uploads")
 
 
+def _effective_resume_upload_content_type(upload: UploadFile) -> str:
+    """Multipart parts often omit Content-Type or send application/octet-stream; infer from filename."""
+    raw = (upload.content_type or "").strip()
+    base = raw.split(";", 1)[0].strip().lower() if raw else ""
+    name = (upload.filename or "").lower()
+    if base and base != "application/octet-stream":
+        return raw
+    if name.endswith((".html", ".htm")):
+        return "text/html; charset=utf-8"
+    if name.endswith(".txt"):
+        return "text/plain; charset=utf-8"
+    if name.endswith(".pdf"):
+        return "application/pdf"
+    if name.endswith(".docx"):
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    return raw or "application/octet-stream"
+
+
 @router.post("/create", status_code=202)
 async def create(body: CreateMemberRequest, u=Depends(get_current_user)):
     data = await ctrl.enqueue_create(body.model_dump(), u)
@@ -156,12 +174,14 @@ async def upload_resume_file(
     resume: UploadFile = File(...),
     u=Depends(get_current_user),
 ):
+    resolved_ct = _effective_resume_upload_content_type(resume)
     log.info(
-        "uploadResumeFile: member_id=%s actor_id=%s filename=%s content_type=%s",
+        "uploadResumeFile: member_id=%s actor_id=%s filename=%s content_type=%s resolved=%s",
         member_id,
         u.get("user_id"),
         resume.filename,
         resume.content_type,
+        resolved_ct,
     )
     data = await resume.read()
     log.info("uploadResumeFile: read %s bytes", len(data))
@@ -170,7 +190,7 @@ async def upload_resume_file(
             member_id=member_id,
             actor_id=u["user_id"],
             filename=resume.filename or f"resume_{member_id}",
-            content_type=resume.content_type or "application/octet-stream",
+            content_type=resolved_ct,
             data=data,
         )
     except Exception:

@@ -20,11 +20,19 @@ from __future__ import annotations
 import json
 import sys
 import time
+from pathlib import Path
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
+
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+import company_job_benefits as job_benefits  # noqa: E402
+import recruiter_profile_defaults as recruiter_defaults  # noqa: E402
 
 BASE = {
     "auth": "http://localhost:3001",
@@ -506,6 +514,13 @@ def main():
         # ── STEP 3: Recruiters & company ──────────────────────────────
         section("3 / Recruiters & Company")
 
+        dana_enrich = recruiter_defaults.recruiter_profile_enrichment(
+            "Acme Corp",
+            industry="Technology",
+            hq=None,
+            role_label="Senior Technical Recruiter",
+            experience_job_title="Senior Technical Recruiter",
+        )
         dana_data = post(
             client,
             "recruiter",
@@ -515,6 +530,9 @@ def main():
                 "name": "Dana Park",
                 "email": "dana@acme.com",
                 "role": "Senior Technical Recruiter",
+                "first_name": "Dana",
+                "last_name": "Park",
+                **dana_enrich,
                 "company": {"name": "Acme Corp", "industry": "Technology", "size": "1000-5000"},
             },
             token=tokens["recruiter_dana"],
@@ -535,6 +553,13 @@ def main():
             company_id = dana_data["company_id"]
             ok("Dana Park already exists", {"company_id": company_id})
 
+        eli_enrich = recruiter_defaults.recruiter_profile_enrichment(
+            "Acme Corp",
+            industry="Technology",
+            hq=None,
+            role_label="Recruiter",
+            experience_job_title="Technical Recruiter",
+        )
         post(
             client,
             "recruiter",
@@ -544,6 +569,9 @@ def main():
                 "name": "Eli Watson",
                 "email": "eli@acme.com",
                 "role": "Recruiter",
+                "first_name": "Eli",
+                "last_name": "Watson",
+                **eli_enrich,
                 "company_id": company_id,
             },
             token=tokens["recruiter_eli"],
@@ -579,6 +607,7 @@ def main():
                 "seniority_level": spec["seniority_level"],
                 "location": spec["location"],
                 "skills_required": spec["skills_required"],
+                "benefits": job_benefits.benefits_for_company("Acme Corporation"),
                 "salary_min": spec["salary_min"],
                 "salary_max": spec["salary_max"],
                 "company_id": company_id,
