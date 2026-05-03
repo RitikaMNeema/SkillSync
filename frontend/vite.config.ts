@@ -17,6 +17,10 @@ export default defineConfig(({ mode }) => {
   /** If set (e.g. http://localhost:3000), all `/api/*` goes to the gateway — best for uploads. */
   const gateway = (process.env.VITE_PROXY_GATEWAY ?? env.VITE_PROXY_GATEWAY ?? "").trim();
   const proxyHost = (process.env.VITE_PROXY_HOST ?? env.VITE_PROXY_HOST ?? "").trim() || "localhost";
+  /** Where Vite (Node) forwards `/ai-service` — must be reachable from the dev container (e.g. host.docker.internal:3010). */
+  const aiProxyTarget =
+    (process.env.VITE_AI_PROXY_TARGET ?? env.VITE_AI_PROXY_TARGET ?? "").trim() ||
+    `http://${proxyHost}:3010`;
 
   const serviceProxies: Record<string, object> = {
     "/api/auth": {
@@ -73,6 +77,15 @@ export default defineConfig(({ mode }) => {
       target: `http://${proxyHost}:3008`,
       rewrite: (path: string) => path.replace(/^\/api/, ""),
       ...proxyLong
+    },
+    /** AI service (FastAPI on 3010). Browser calls `/ai-service/*` → same-origin in dev; avoids direct `localhost:3010` failures. */
+    "/ai-service": {
+      target: aiProxyTarget,
+      changeOrigin: true,
+      rewrite: (path: string) => path.replace(/^\/ai-service/, ""),
+      timeout: 120_000,
+      proxyTimeout: 120_000,
+      ws: true
     }
   };
 
@@ -109,6 +122,14 @@ export default defineConfig(({ mode }) => {
             "/api": {
               target: gateway,
               ...proxyLong
+            },
+            "/ai-service": {
+              target: aiProxyTarget,
+              changeOrigin: true,
+              rewrite: (path: string) => path.replace(/^\/ai-service/, ""),
+              timeout: 120_000,
+              proxyTimeout: 120_000,
+              ws: true
             }
           }
         : serviceProxies

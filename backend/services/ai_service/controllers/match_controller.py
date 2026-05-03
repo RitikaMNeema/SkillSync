@@ -169,6 +169,10 @@ async def compute_match(payload: AIMatchRequest):
     final_score = round((0.5 * overlap_score) + (0.4 * embedding_score) + location_bonus, 2)
     final_score = min(final_score, 100.0)
 
+    # Heuristic confidence: average of the two main signals (skill overlap vs semantic similarity), 0–100.
+    confidence = round((overlap_score + embedding_score) / 2.0, 1)
+    confidence = max(0.0, min(100.0, confidence))
+
     system_prompt = (
         "You are a hiring assistant. "
         "Given candidate and job data plus computed scoring features, "
@@ -204,6 +208,7 @@ Computed features:
 
     result = {
         "match_score": final_score,
+        "confidence": confidence,
         "overlap_score": round(overlap_score, 2),
         "embedding_score": round(embedding_score, 2),
         "matched_skills": llm_explanation.get("matched_skills", fallback["matched_skills"]),

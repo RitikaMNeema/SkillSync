@@ -288,7 +288,12 @@ export function RecruiterDashboardPage() {
     return { text: `↑ ${openedThisWeek} this week`, up: true };
   }, [recruiterJobs]);
 
-  const firstJobId = recruiterJobs[0]?.job_id ?? 1;
+  const firstOpenJob = useMemo(
+    () => recruiterJobs.find((j) => (j.status ?? "open") === "open") ?? recruiterJobs[0],
+    [recruiterJobs]
+  );
+  const firstJobId = firstOpenJob?.job_id;
+  const monthPickerId = useId();
 
   useEffect(() => {
     if (!authHydrated) return;
@@ -449,12 +454,34 @@ export function RecruiterDashboardPage() {
             Overview of your hiring activity and performance.
           </p>
         </div>
-        <div className="flex w-full flex-wrap items-center justify-start gap-2 lg:w-auto lg:justify-end">
-          <button
-            type="button"
-            onClick={() => navigate("/recruiter/jobs")}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95"
-            style={{ backgroundColor: R_PRIMARY }}
+        <div className="flex w-full flex-col gap-3 lg:w-auto lg:min-w-[320px] lg:items-end">
+          <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
+            <button
+              type="button"
+              onClick={() => navigate("/recruiter/jobs")}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95"
+              style={{ backgroundColor: R_PRIMARY }}
+            >
+              <Plus className="h-4 w-4" strokeWidth={2.5} />
+              Post a job
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                firstJobId
+                  ? navigate(`/recruiter/ai-matching?job_id=${firstJobId}`)
+                  : navigate("/recruiter/ai-matching")
+              }
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] border-2 bg-white px-4 text-sm font-semibold shadow-sm transition hover:bg-[#f8fafc]"
+              style={{ borderColor: R_PRIMARY, color: R_PRIMARY }}
+            >
+              <Sparkles className="h-4 w-4" />
+              Run AI matching
+            </button>
+          </div>
+          <label
+            htmlFor={monthPickerId}
+            className="group flex w-full max-w-md cursor-pointer items-center gap-3 rounded-2xl border border-[#e5e7eb] bg-white px-4 py-3 shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition hover:border-[#d1d5db] focus-within:ring-2 focus-within:ring-[#0066ff33] focus-within:ring-offset-2 lg:ml-auto"
           >
             <Plus className="h-4 w-4" strokeWidth={2.5} />
             Post a job
@@ -806,7 +833,11 @@ export function RecruiterDashboardPage() {
               <button
                 type="button"
                 className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-[#7c3aed] hover:underline"
-                onClick={() => navigate(`/ai-test/${firstJobId}`)}
+                onClick={() =>
+                  firstJobId
+                    ? navigate(`/recruiter/ai-matching?job_id=${firstJobId}`)
+                    : navigate("/recruiter/ai-matching")
+                }
               >
                 Run AI matching
                 <ChevronRight className="h-4 w-4" />
@@ -823,7 +854,10 @@ export function RecruiterDashboardPage() {
                 ✓
               </span>
               <span>
-                Matching ready for <span className="font-medium">{getJobLabel(firstJobId)}</span>
+                Matching ready for{" "}
+                <span className="font-medium">
+                  {firstJobId != null ? getJobLabel(String(firstJobId)) : "your open postings"}
+                </span>
               </span>
             </li>
             <li className="flex gap-2.5">

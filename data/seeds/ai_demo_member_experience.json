@@ -1,0 +1,142 @@
+[
+  {
+    "exp_id": "a780bf11-d9d0-49bf-beaa-3bc9ae4904f5",
+    "member_id": "289efbcb-156b-4cb5-92b1-d3bfb8cbd130",
+    "company": "Gray, Rich and Moore",
+    "title": "Data Scientist",
+    "start_date": "2021-03-01",
+    "end_date": null,
+    "description": "Drive ML model development and data insights across our product. You will build pipelines in Python, query large datasets with SQL, train deep learning models in PyTorch, process big data with Spark, and build dashboards in Tableau for stakeholders. Decide anyone because music agreement high environment.",
+    "is_current": true
+  },
+  {
+    "exp_id": "1a53cdb8-ede4-4c20-9399-68f3b7d2a807",
+    "member_id": "289efbcb-156b-4cb5-92b1-d3bfb8cbd130",
+    "company": "Carrillo-Freeman",
+    "title": "Associate Data Scientist",
+    "start_date": "2018-06-01",
+    "end_date": "2021-02-28",
+    "description": "Growth beat different site build million least. Such six coach you. Artist somebody seek material place seven herself line.",
+    "is_current": false
+  },
+  {
+    "exp_id": "caeaa0ec-b049-479e-8501-8e8a0d4cf6ce",
+    "member_id": "61e7f5cd-3d06-4f3c-8955-60a5d6cf4705",
+    "company": "Vincent-Benjamin",
+    "title": "Senior Backend Engineer",
+    "start_date": "2021-03-01",
+    "end_date": null,
+    "description": "Build and scale microservices in Python using FastAPI, PostgreSQL, Docker, and Kafka. Own reliability, observability, and API design. Truth effect consumer today yeah decade history whether.",
+    "is_current": true
+  },
+  {
+    "exp_id": "c8b16d28-5794-4fba-9451-9e5490f1dcfd",
+    "member_id": "61e7f5cd-3d06-4f3c-8955-60a5d6cf4705",
+    "company": "Clark and Sons",
+    "title": "Associate Senior Backend Engineer",
+    "start_date": "2018-06-01",
+    "end_date": "2021-02-28",
+    "description": "Important family low chance along. Eight peace factor age respond choice subject.",
+    "is_current": false
+  },
+  {
+    "exp_id": "45ab064a-a05f-4e9e-ab3b-47647f3d90e6",
+    "member_id": "79c9a991-835f-4310-8719-001b4c841db1",
+    "company": "Peters-Davis",
+    "title": "Frontend Engineer",
+    "start_date": "2021-03-01",
+    "end_date": null,
+    "description": "Ship accessible React UIs with TypeScript, GraphQL APIs, and modern CSS. Collaborate with design on component libraries. Two consider structure scientist total thousand laugh.",
+    "is_current": true
+  },
+  {
+    "exp_id": "4806fb25-c91d-4fa9-a5a1-62e1b631f25a",
+    "member_id": "79c9a991-835f-4310-8719-001b4c841db1",
+    "company": "Bauer Ltd",
+    "title": "Associate Frontend Engineer",
+    "start_date": "2018-06-01",
+    "end_date": "2021-02-28",
+    "description": "Bit among almost PM plan firm. Evening nice watch likely. Dog keep pretty network miss standard.",
+    "is_current": false
+  },
+  {
+    "exp_id": "036c1144-5cc3-439e-ab2e-5bdbe9efd56f",
+    "member_id": "d9642843-1fbb-4e01-8ec0-c87fe4aa67ef",
+    "company": "Thomas-Humphrey",
+    "title": "ML Engineer",
+    "start_date": "2021-03-01",
+    "end_date": null,
+    "description": "Productionize models on AWS with Kubernetes, TensorFlow, and Python. Focus on latency, monitoring, and safe rollouts. Firm speech feeling rock management.",
+    "is_current": true
+  },
+  {
+    "exp_id": "8f356bd7-18ed-492d-8cf0-f37e2dc23737",
+    "member_id": "d9642843-1fbb-4e01-8ec0-c87fe4aa67ef",
+    "company": "Wagner-Hall",
+    "title": "Associate ML Engineer",
+    "start_date": "2018-06-01",
+    "end_date": "2021-02-28",
+    "description": "Member common executive significant. Coach design the attack. Republican quite quality simply look nothing.",
+    "is_current": false
+  },
+  {
+    "exp_id": "b6a379e6-a878-4afc-8c5c-93ec70c3edf8",
+    "member_id": "204e6833-3c08-40f5-897a-3da20d150f1b",
+    "company": "Harris, White and Hernandez",
+    "title": "Data Analyst",
+    "start_date": "2021-03-01",
+    "end_date": null,
+    "description": "Analyze product metrics with SQL, Excel, and Tableau. Partner with PMs on experimentation and reporting. Who policy throughout between.",
+    "is_current": true
+  },
+  {
+    "exp_id": "51d0c774-359f-4cdf-ae1c-99afaf2981c2",
+    "member_id": "204e6833-3c08-40f5-897a-3da20d150f1b",
+    "company": "Cervantes Group",
+    "title": "Associate Data Analyst",
+    "start_date": "2018-06-01",
+    "end_date": "2021-02-28",
+    "description": "Oil especially message spring week boy. Everything call friend son friend management. War produce either history run house.",
+    "is_current": false
+  },
+  {
+    "exp_id": "b5190118-1526-417e-a07d-076ea8427755",
+    "member_id": "5eb4b858-9ece-4d1a-aec4-8cf103faa460",
+    "company": "Hicks-Wood",
+    "title": "DevOps Engineer",
+    "start_date": "2021-03-01",
+    "end_date": null,
+    "description": "Manage CI/CD, Docker, Kubernetes, and Terraform for multi-region deploys. Improve reliability and cost efficiency. Technology peace indeed.",
+    "is_current": true
+  },
+  {
+    "exp_id": "d9484ccd-6826-497c-a6b0-954742e97ef1",
+    "member_id": "5eb4b858-9ece-4d1a-aec4-8cf103faa460",
+    "company": "Weiss LLC",
+    "title": "Associate DevOps Engineer",
+    "start_date": "2018-06-01",
+    "end_date": "2021-02-28",
+    "description": "Hotel check indicate ask company himself book including. Whatever guess difference glass various middle. Task food before road rule call ever. Consumer significant population kitchen. Government no attack must meet.",
+    "is_current": false
+  },
+  {
+    "exp_id": "9b1dc666-e587-46b9-a987-b448157c43b7",
+    "member_id": "bf757ee3-1a07-4078-9acc-122ab4efbb6b",
+    "company": "Allen-Valdez",
+    "title": "Security Engineer",
+    "start_date": "2021-03-01",
+    "end_date": null,
+    "description": "Harden cloud workloads on AWS, automate compliance checks with Python, and respond to security incidents. Indeed by south project.",
+    "is_current": true
+  },
+  {
+    "exp_id": "0f8a5592-e46f-4b93-8bed-7b82b7fd2413",
+    "member_id": "bf757ee3-1a07-4078-9acc-122ab4efbb6b",
+    "company": "Smith Inc",
+    "title": "Associate Security Engineer",
+    "start_date": "2018-06-01",
+    "end_date": "2021-02-28",
+    "description": "Bad rather ground. Step radio past early north whole. Mention choose effect close join indeed beat. Law evening focus myself participant politics radio prevent. Company score so campaign history condition.",
+    "is_current": false
+  }
+]

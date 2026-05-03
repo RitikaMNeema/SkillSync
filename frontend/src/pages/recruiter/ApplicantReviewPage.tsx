@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { getApplication, getAllApplicationsByJob, updateApplicationStatus } from "../../api/applications";
 import { approveAgentWorkflow, getAgentStatus, getAICommandStatus, startAgentWorkflow } from "../../api/ai";
 import { getJob } from "../../api/jobs";
+import { getRecruiter } from "../../api/recruiters";
 import { getMember } from "../../api/members";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -17,6 +18,7 @@ import type { MemberProfile } from "../../types/member";
 import { selectableApplicationStatuses } from "../../utils/applicationStatus";
 import { cn } from "../../utils/cn";
 import { getStatusColor } from "../../utils/getStatusColor";
+import { matchScoreStyles, sanitizeOutreachDraft } from "./aiMatchingUtils";
 
 const STATUS_FILTERS: Array<ApplicationStatus | "all"> = ["all", "submitted", "rejected", "withdrawn"];
 const AI_TRACE_TERMINAL_STATUSES = new Set(["awaiting_approval", "completed", "failed", "rejected"]);
@@ -32,6 +34,8 @@ type AIAssessment = {
   workflowStatus: string;
   workflowSteps: Array<{ label: string; status: "pending" | "running" | "completed"; time?: string }>;
   outreachMessage: string;
+  outreachSkipped?: boolean;
+  outreachSkipReason?: string;
 };
 
 function toExperienceStrings(profile: MemberProfile): string[] {
@@ -268,7 +272,6 @@ export function ApplicantReviewPage() {
     selectedAppliedAt && !Number.isNaN(selectedAppliedAt.getTime())
       ? selectedAppliedAt.toLocaleDateString()
       : "Unknown date";
-  const selectedSkills = (profile?.skills ?? []).filter(Boolean).slice(0, 5);
   const resumeFileName =
     profile && openResumeUrl
       ? `${profile.first_name.toLowerCase()}_${profile.last_name.toLowerCase()}_resume.pdf`
@@ -325,40 +328,78 @@ export function ApplicantReviewPage() {
     setAiLoading(true);
     setAiError(null);
     aiInFlightRef.current[selected.application_id] = true;
-    void startAgentWorkflow({
-      recruiter_id: job.recruiter_id,
-      candidate: candidatePayload,
-      job: jobPayload,
-      workflow_type: "shortlist_outreach",
-      require_human_approval: true,
-    })
-      .then((queued) => pollAiCommand(queued.command_id))
-      .then((commandDone) => {
+
+    void (async () => {
+      try {
+        let recruiterDisplayName: string | undefined;
+        try {
+          const rec = await getRecruiter(job.recruiter_id);
+          recruiterDisplayName = rec.name?.trim() || undefined;
+        } catch {
+          recruiterDisplayName = undefined;
+        }
+        const candidateDisplayName =
+          `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() || undefined;
+
+        const queued = await startAgentWorkflow({
+          recruiter_id: job.recruiter_id,
+          candidate: candidatePayload,
+          job: jobPayload,
+          workflow_type: "shortlist_outreach",
+          require_human_approval: true,
+          candidate_display_name: candidateDisplayName,
+          recruiter_display_name: recruiterDisplayName
+        });
+        const commandDone = await pollAiCommand(queued.command_id);
         const traceId = commandDone.result?.trace_id as string | undefined;
         if (!traceId) throw new Error("AI trace id was not returned");
-        return pollAiTrace(traceId).then((trace) => ({ trace, traceId }));
-      })
-      .then(({ trace, traceId }) => {
+        const trace = await pollAiTrace(traceId);
         if (cancelled) return;
         if (trace.status === "failed" || trace.status === "rejected") {
           throw new Error(`AI workflow ${trace.status}`);
         }
         const match = trace.final_result?.match_result ?? {};
-        const outreachMessage = trace.final_result?.outreach_draft?.message ?? "";
         const rawScore = Number(match.match_score);
         const score = Number.isFinite(rawScore) ? Math.max(0, Math.min(100, rawScore)) : null;
         if (score == null) {
           throw new Error("AI workflow completed without numeric match_score");
         }
+        const skipped = Boolean((trace.final_result as { outreach_skipped?: boolean })?.outreach_skipped);
+        const skipReason =
+          typeof (trace.final_result as { outreach_skip_reason?: string })?.outreach_skip_reason === "string"
+            ? (trace.final_result as { outreach_skip_reason: string }).outreach_skip_reason
+            : "";
+        const outreachRaw = skipped
+          ? ""
+          : String((trace.final_result?.outreach_draft as { message?: string })?.message ?? "");
+        const candNmForDraft =
+          (candidateDisplayName ?? `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim()) || "there";
+        const recNmForDraft = (recruiterDisplayName ?? "").trim() || "Recruiting Team";
+        const outreachMessage = skipped ? "" : sanitizeOutreachDraft(outreachRaw, candNmForDraft, recNmForDraft);
         const matchedSkills = Array.isArray(match.matched_skills) ? match.matched_skills.filter(Boolean) : [];
         const missingSkills = Array.isArray(match.missing_skills) ? match.missing_skills.filter(Boolean) : [];
         const steps = Array.isArray(trace.steps) ? trace.steps : [];
-        const workflowSteps = steps.map((step: any) => ({
-          label: step.step_name ?? "Step",
-          status: step.status === "completed" ? "completed" : step.status === "running" ? "running" : "pending",
-          time: step.completed_at || step.started_at || undefined,
-        }));
+        const workflowSteps = steps.map(
+          (step: { step_name?: string; status?: string; completed_at?: string; started_at?: string }) => {
+            const st: "pending" | "running" | "completed" =
+              step.status === "completed" ? "completed" : step.status === "running" ? "running" : "pending";
+            return {
+              label: step.step_name ?? "Step",
+              status: st,
+              time: step.completed_at || step.started_at || undefined
+            };
+          }
+        );
         const recommendation = typeof match.recommendation === "string" ? match.recommendation : "";
+        const rawConf = Number(match.confidence);
+        const overlap = Number(match.overlap_score);
+        const embed = Number(match.embedding_score);
+        let confidenceFromApi: number | null = null;
+        if (Number.isFinite(rawConf)) {
+          confidenceFromApi = Math.max(0, Math.min(100, rawConf));
+        } else if (Number.isFinite(overlap) && Number.isFinite(embed)) {
+          confidenceFromApi = Math.max(0, Math.min(100, Math.round((overlap + embed) / 2)));
+        }
         const assessment: AIAssessment = {
           traceId,
           matchScore: score,
@@ -366,17 +407,20 @@ export function ApplicantReviewPage() {
           topGaps: missingSkills.slice(0, 5),
           recommendation,
           reasoning: typeof match.reasoning === "string" ? match.reasoning : "",
-          confidence: null,
+          confidence: confidenceFromApi,
           workflowStatus: trace.status,
           workflowSteps,
           outreachMessage,
+          outreachSkipped: skipped,
+          outreachSkipReason: skipReason || undefined
         };
         setAiByApplicationId((current) => ({ ...current, [selected.application_id]: assessment }));
         if (outreachMessage) {
           setDraftMessage(outreachMessage);
+        } else if (skipped) {
+          setDraftMessage("");
         }
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
         if (!cancelled) {
           setAiError(error instanceof Error ? error.message : "AI analysis unavailable");
           setAiByApplicationId((current) => {
@@ -385,11 +429,11 @@ export function ApplicantReviewPage() {
             return next;
           });
         }
-      })
-      .finally(() => {
+      } finally {
         aiInFlightRef.current[selected.application_id] = false;
         if (!cancelled) setAiLoading(false);
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;
@@ -418,6 +462,10 @@ export function ApplicantReviewPage() {
       toast.error("AI workflow is not ready yet.");
       return;
     }
+    if (activeAi.outreachSkipped) {
+      toast.error("No outreach draft — match score is below the minimum for outreach.");
+      return;
+    }
     if ((job?.status ?? "open") === "closed") {
       toast.error("Cannot approve outreach for a closed job posting.");
       return;
@@ -437,7 +485,9 @@ export function ApplicantReviewPage() {
       .then((queued) => pollAiCommand(queued.command_id))
       .then(() => getAgentStatus(activeAi.traceId))
       .then((trace) => {
-        const nextMessage = trace.final_result?.outreach_draft?.message ?? draftMessage;
+        const rawNext = String(trace.final_result?.outreach_draft?.message ?? draftMessage);
+        const candNm = profile ? `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() || "there" : "there";
+        const nextMessage = sanitizeOutreachDraft(rawNext, candNm, "Recruiting Team");
         setAiByApplicationId((current) => {
           const existing = current[selected.application_id];
           if (!existing) return current;
@@ -543,11 +593,18 @@ export function ApplicantReviewPage() {
               </div>
             ) : (
               filtered.map((application) => (
-                <button
+                <div
                   key={application.application_id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setSelected(application)}
-                  className={`w-full rounded-xl border px-3 py-3 text-left transition hover:border-[#c4d7ef] hover:bg-[#f7fbff] ${
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelected(application);
+                    }
+                  }}
+                  className={`w-full cursor-pointer rounded-xl border px-3 py-3 text-left transition hover:border-[#c4d7ef] hover:bg-[#f7fbff] ${
                     selected?.application_id === application.application_id ? "border-[#0a66c2] bg-[#eef5fc]" : "border-gray-200"
                   }`}
                 >
@@ -561,10 +618,16 @@ export function ApplicantReviewPage() {
                       })()}
                     </div>
                     <div className="min-w-0">
-                      <p className="truncate font-semibold text-[#1f2937]">
-                        {memberProfilesById[application.member_id]
-                          ? `${memberProfilesById[application.member_id].first_name} ${memberProfilesById[application.member_id].last_name}`
-                          : `Member #${application.member_id}`}
+                      <p className="min-w-0 truncate font-semibold text-[#1f2937]">
+                        <Link
+                          to={`/profile/${application.member_id}`}
+                          onClick={(event) => event.stopPropagation()}
+                          className="text-[#1f2937] hover:text-[#0a66c2] hover:underline focus-visible:rounded-sm focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#0a66c2]"
+                        >
+                          {memberProfilesById[application.member_id]
+                            ? `${memberProfilesById[application.member_id].first_name} ${memberProfilesById[application.member_id].last_name}`
+                            : `Member #${application.member_id}`}
+                        </Link>
                       </p>
                       <p className="text-xs capitalize text-[#4b5563]">
                         {application.status} ·{" "}
@@ -575,7 +638,7 @@ export function ApplicantReviewPage() {
                       </p>
                     </div>
                   </div>
-                </button>
+                </div>
               ))
             )}
             {applications.length > 0 && filtered.length === 0 ? (
@@ -593,18 +656,14 @@ export function ApplicantReviewPage() {
             <Card className="flex min-h-[360px] items-center justify-center rounded-xl border border-gray-200 shadow-sm text-text-secondary">Select an applicant</Card>
           ) : (
             <div className="space-y-4">
-              <CandidateHeader
-                profile={profile}
-                selected={selected}
-                appliedText={selectedAppliedText}
-                selectedSkills={selectedSkills}
-              />
+              <CandidateHeader profile={profile} selected={selected} appliedText={selectedAppliedText} />
               <AIMatchCard
                 loading={aiLoading && !jobIsClosed}
                 score={aiScore}
                 confidence={activeAi?.confidence}
                 strongReasons={activeAi?.strongReasons ?? []}
                 topGaps={activeAi?.topGaps ?? []}
+                reasoning={activeAi?.reasoning ?? ""}
                 error={jobIsClosed ? null : aiError}
                 onRetry={handleRetryAiAnalysis}
                 aiUnavailable={jobIsClosed ? "AI matching is not available while this job posting is closed." : null}
@@ -745,7 +804,13 @@ export function ApplicantReviewPage() {
             message={draftMessage}
             editing={isEditingDraft}
             isApproving={approvingAi}
-            canApprove={Boolean(activeAi?.traceId) && !jobIsClosed}
+            canApprove={
+              Boolean(activeAi?.traceId) &&
+              !jobIsClosed &&
+              activeAi?.workflowStatus === "awaiting_approval" &&
+              !activeAi?.outreachSkipped
+            }
+            skipNotice={activeAi?.outreachSkipped ? activeAi?.outreachSkipReason ?? null : null}
             onSubjectChange={setDraftSubject}
             onMessageChange={setDraftMessage}
             onToggleEdit={() => setIsEditingDraft((current) => !current)}
@@ -760,13 +825,11 @@ export function ApplicantReviewPage() {
 function CandidateHeader({
   profile,
   selected,
-  appliedText,
-  selectedSkills
+  appliedText
 }: {
   profile: MemberProfile;
   selected: Application;
   appliedText: string;
-  selectedSkills: string[];
 }) {
   const fullName = `${profile.first_name} ${profile.last_name}`.trim();
   const [first = "", last = ""] = fullName.split(" ");
@@ -779,7 +842,14 @@ function CandidateHeader({
             {initials}
           </div>
           <div>
-            <h2 className="text-2xl font-semibold text-[#111827]">{fullName}</h2>
+            <h2 className="text-2xl font-semibold text-[#111827]">
+              <Link
+                to={`/profile/${profile.member_id}`}
+                className="text-[#111827] hover:text-[#0a66c2] hover:underline focus-visible:rounded-sm focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#0a66c2]"
+              >
+                {fullName}
+              </Link>
+            </h2>
             <p className="text-sm text-[#4b5563]">{profile.headline || "Professional profile"}</p>
             <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-[#6b7280]">
               <span className="inline-flex items-center gap-1">
@@ -790,17 +860,6 @@ function CandidateHeader({
                 <Mail className="h-3.5 w-3.5" />
                 Applied {appliedText}
               </span>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {selectedSkills.length ? (
-                selectedSkills.map((skill) => (
-                  <span key={skill} className="rounded-full bg-[#eef5fc] px-2.5 py-1 text-xs font-medium text-[#0a66c2]">
-                    {skill}
-                  </span>
-                ))
-              ) : (
-                <span className="text-xs text-[#6b7280]">No highlighted skills</span>
-              )}
             </div>
           </div>
         </div>
@@ -816,6 +875,7 @@ function AIMatchCard({
   confidence,
   strongReasons,
   topGaps,
+  reasoning,
   error,
   onRetry,
   aiUnavailable
@@ -825,6 +885,7 @@ function AIMatchCard({
   confidence?: number | null;
   strongReasons: string[];
   topGaps: string[];
+  reasoning?: string;
   error?: string | null;
   onRetry: () => void;
   aiUnavailable?: string | null;
@@ -852,6 +913,24 @@ function AIMatchCard({
             ? "Moderate Match"
             : "Weak Match";
   const displayConfidence = typeof confidence === "number" && Number.isFinite(confidence) ? confidence : null;
+  const alignmentHeading =
+    numericScore == null
+      ? "Match highlights"
+      : numericScore >= 80
+        ? "Why it's a strong match"
+        : numericScore >= 60
+          ? "Strengths for this role"
+          : numericScore >= 35
+            ? "Partial alignment"
+            : "Why the match is weak";
+  const reasoningTrim = (reasoning ?? "").trim();
+  const dial =
+    numericScore == null
+      ? { ring: "border-gray-300", pct: "text-gray-800", sub: "text-gray-500" }
+      : (() => {
+          const ms = matchScoreStyles(numericScore);
+          return { ring: ms.dialRing, pct: ms.dialPct, sub: ms.dialSub };
+        })();
   return (
     <Card className="rounded-xl border border-gray-200 p-5 shadow-sm transition hover:shadow-md">
       <div className="mb-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[#6b7280]">AI Match Score</div>
@@ -864,9 +943,9 @@ function AIMatchCard({
         </div>
       ) : null}
       <div className="flex items-start gap-4">
-        <div className="flex h-24 w-24 shrink-0 flex-col items-center justify-center rounded-full border-[6px] border-[#10b981] bg-white">
-          <span className="text-[28px] font-semibold leading-none text-[#0b4f35]">{numericScore == null ? (isScorePending ? "..." : "--") : `${Math.round(numericScore)}%`}</span>
-          <span className="mt-1 text-[11px] font-medium text-[#059669]">{label}</span>
+        <div className={`flex h-24 w-24 shrink-0 flex-col items-center justify-center rounded-full border-[6px] bg-white ${dial.ring}`}>
+          <span className={`text-[28px] font-semibold leading-none ${dial.pct}`}>{numericScore == null ? (isScorePending ? "..." : "--") : `${Math.round(numericScore)}%`}</span>
+          <span className={`mt-1 text-[11px] font-medium ${dial.sub}`}>{label}</span>
         </div>
         <div className="min-w-0 flex-1">
           <p className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f2937]"><Sparkles className="h-4 w-4 text-[#0a66c2]" />{label}</p>
@@ -879,12 +958,25 @@ function AIMatchCard({
           ) : (
             <div className="mt-3 grid gap-4 md:grid-cols-2">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-[#6b7280]">Why it&apos;s a strong match</p>
-                <ul className="mt-2 space-y-1.5 text-sm text-[#374151]">
-                  {strongReasons.length ? strongReasons.map((reason) => (
-                    <li key={reason} className="flex items-start gap-1.5"><CheckCircle2 className="mt-0.5 h-3.5 w-3.5 text-emerald-500" />{reason}</li>
-                  )) : <li className="text-[#6b7280]">{isScorePending ? "Waiting for AI match results..." : "No matched skills returned."}</li>}
-                </ul>
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#6b7280]">{alignmentHeading}</p>
+                {strongReasons.length ? (
+                  <ul className="mt-2 space-y-1.5 text-sm text-[#374151]">
+                    {strongReasons.map((reason) => (
+                      <li key={reason} className="flex items-start gap-1.5">
+                        <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                        {reason}
+                      </li>
+                    ))}
+                  </ul>
+                ) : reasoningTrim ? (
+                  <p className="mt-2 text-sm leading-relaxed text-[#374151]">
+                    {reasoningTrim.length > 560 ? `${reasoningTrim.slice(0, 560)}…` : reasoningTrim}
+                  </p>
+                ) : (
+                  <p className="mt-2 text-sm text-[#6b7280]">
+                    {isScorePending ? "Waiting for AI match results…" : "No matched skills returned for this pairing."}
+                  </p>
+                )}
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-[#6b7280]">Top gaps</p>
@@ -899,11 +991,18 @@ function AIMatchCard({
           <div className="mt-4">
             <div className="mb-1 flex items-center justify-between text-xs text-[#6b7280]">
               <span>AI confidence</span>
-              <span>{displayConfidence == null ? "N/A" : `${displayConfidence}%`}</span>
+              <span>
+                {displayConfidence == null
+                  ? "—"
+                  : `${Number.isInteger(displayConfidence) ? displayConfidence : displayConfidence.toFixed(1)}%`}
+              </span>
             </div>
             <div className="h-2 rounded-full bg-gray-100">
               <div className="h-2 rounded-full bg-[#0a66c2] transition-all" style={{ width: `${displayConfidence ?? 0}%` }} />
             </div>
+            <p className="mt-1 text-[11px] text-[#9ca3af]">
+              Based on overlap between required skills and résumé similarity signals.
+            </p>
           </div>
         </div>
       </div>
@@ -1004,6 +1103,7 @@ function OutreachDraftPanel({
   editing,
   isApproving,
   canApprove,
+  skipNotice,
   onSubjectChange,
   onMessageChange,
   onToggleEdit,
@@ -1014,6 +1114,7 @@ function OutreachDraftPanel({
   editing: boolean;
   isApproving: boolean;
   canApprove: boolean;
+  skipNotice?: string | null;
   onSubjectChange: (value: string) => void;
   onMessageChange: (value: string) => void;
   onToggleEdit: () => void;
@@ -1025,6 +1126,9 @@ function OutreachDraftPanel({
         <h3 className="text-sm font-semibold text-[#111827]">Outreach Draft</h3>
         <ChevronDown className="h-4 w-4 text-gray-400" />
       </div>
+      {skipNotice ? (
+        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">{skipNotice}</p>
+      ) : null}
       <div className="mt-3 space-y-3">
         <label className="block text-xs font-semibold text-[#374151]" htmlFor="outreach-subject">
           Subject

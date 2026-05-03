@@ -41,6 +41,8 @@ class OutreachDraftRequest(BaseModel):
     candidate: CandidateProfile
     job: JobPayload
     tone: str = "professional"
+    candidate_display_name: Optional[str] = None
+    recruiter_display_name: Optional[str] = None
 
 
 class AgentWorkflowRequest(BaseModel):
@@ -51,6 +53,8 @@ class AgentWorkflowRequest(BaseModel):
     workflow_type: str = "shortlist_outreach"
     require_human_approval: bool = True
     idempotency_key: Optional[str] = None
+    candidate_display_name: Optional[str] = None
+    recruiter_display_name: Optional[str] = None
 
 class ApprovalRequest(BaseModel):
     trace_id: str
