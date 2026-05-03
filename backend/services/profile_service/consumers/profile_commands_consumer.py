@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
 import controllers.members as members_ctrl
 import controllers.posts as posts_ctrl
 from models.command_status import set_command_status
@@ -57,6 +59,11 @@ async def start_profile_commands_consumer() -> None:
         try:
             result = await _execute(action, actor, payload)
             await set_command_status(command_id, {"command_id": command_id, "status": "completed", "action": action, "result": result, "completed_at": datetime.now(timezone.utc).isoformat()})
+        except StarletteHTTPException as exc:
+            detail = exc.detail
+            msg = detail if isinstance(detail, str) else str(exc)
+            await set_command_status(command_id, {"command_id": command_id, "status": "failed", "action": action, "error": msg, "failed_at": datetime.now(timezone.utc).isoformat()})
+            raise
         except Exception as exc:
             await set_command_status(command_id, {"command_id": command_id, "status": "failed", "action": action, "error": str(exc), "failed_at": datetime.now(timezone.utc).isoformat()})
             raise

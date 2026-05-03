@@ -8,6 +8,7 @@ import {
   LogOut,
   MessageSquare,
   Search,
+  TrendingUp,
   Trash2,
   User,
   Users
@@ -22,11 +23,12 @@ import { searchJobs } from "../../api/jobs";
 import { getRecruiter, searchRecruiters } from "../../api/recruiters";
 import { authStore } from "../../context/AuthContext";
 import { useDebounce } from "../../hooks/useDebounce";
+import { APP_SHELL_MAIN_COLUMN_CLASS } from "../../constants/appShellLayout";
 import { cn } from "../../utils/cn";
-import { getHomePath } from "../../utils/navigation";
+import { getHomePath, getJobsNavPath } from "../../utils/navigation";
 import { Avatar } from "../ui/Avatar";
 import { Button } from "../ui/Button";
-import { Input } from "../ui/Input";
+import { LeadingIconInput } from "../ui/LeadingIconInput";
 import { DeleteAccountDialogs } from "./DeleteAccountDialogs";
 import { LinkedInWordmark } from "./LinkedInWordmark";
 
@@ -65,12 +67,14 @@ export function Navbar() {
   const [seenNetworkCount, setSeenNetworkCount] = useState(0);
   const [seenMessageCount, setSeenMessageCount] = useState(0);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const searchRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLFormElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const debouncedQuery = useDebounce(query, 220);
   const homePath = getHomePath(role);
   /** Same full profile shell as members (`ProfilePage`); `/recruiters/:id` only showed a minimal card. */
   const profileMeHref = userId ? `/profile/${userId}` : "/feed";
+
+  const jobsNavPath = getJobsNavPath(role);
 
   const navItems = useMemo(
     () =>
@@ -78,18 +82,18 @@ export function Navbar() {
         ? [
             { to: "/feed", label: "Home", icon: Home },
             { to: "/connections", label: "My Network", icon: Users },
-            { to: "/jobs", label: "Jobs", icon: BriefcaseBusiness },
+            { to: jobsNavPath, label: "Jobs", icon: BriefcaseBusiness },
             { to: "/messages", label: "Messaging", icon: MessageSquare },
             { to: "/dashboard", label: "Analytics", icon: BarChart3 }
           ]
         : [
             { to: "/feed", label: "Home", icon: Home },
-            { to: "/jobs", label: "Jobs", icon: BriefcaseBusiness },
+            { to: jobsNavPath, label: "Jobs", icon: BriefcaseBusiness },
             { to: "/connections", label: "My Network", icon: Users },
             { to: "/messages", label: "Messaging", icon: MessageSquare },
             { to: "/dashboard", label: "Analytics", icon: BarChart3 }
           ],
-    [role]
+    [role, jobsNavPath]
   );
 
   function handleSearch(event: FormEvent<HTMLFormElement>) {
@@ -279,14 +283,18 @@ export function Navbar() {
   return (
     <>
       <nav className="sticky top-0 z-50 border-b bg-white shadow-navbar">
-        <div className="mx-auto flex h-[52px] max-w-[1128px] items-center gap-3 px-4">
+        <div className={cn(APP_SHELL_MAIN_COLUMN_CLASS, "flex h-[52px] items-center gap-3 py-0")}>
           <div className="flex min-w-0 items-center gap-3">
             <LinkedInWordmark to={homePath} compact />
-            <form className="relative hidden md:block" onSubmit={handleSearch} ref={searchRef}>
-              <Search className="pointer-events-none absolute left-5 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-[#1f1f1f]" strokeWidth={2.5} />
-              <Input
-                className="h-[46px] w-[min(34vw,540px)] min-w-[260px] rounded-full border-[2px] border-[#b0b4b8] bg-white !pl-11 pr-6 text-[17px] placeholder:text-[#666666] focus:border-[#666666] focus:shadow-none"
-                placeholder="I'm looking for..."
+            <form className="relative hidden md:block" autoComplete="off" onSubmit={handleSearch} ref={searchRef}>
+              <LeadingIconInput
+                Icon={Search}
+                iconStrokeWidth={2.5}
+                iconClassName="text-[#1f1f1f]"
+                autoComplete="off"
+                className="w-[min(34vw,540px)] min-w-[260px] !pr-6"
+                aria-label="Search people, jobs, posts, and more"
+                placeholder="Search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 onFocus={() => {
@@ -439,24 +447,14 @@ export function Navbar() {
                       </Link>
                     </>
                   ) : (
-                    <>
-                      <Link
-                        to="/recruiter/jobs"
-                        className="flex items-center gap-3 rounded-card px-3 py-2 text-sm font-semibold text-text-primary hover:bg-hover hover:no-underline"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        <BriefcaseBusiness className="h-4 w-4 text-brand" />
-                        Manage job posts
-                      </Link>
-                      <Link
-                        to="/jobs"
-                        className="flex items-center gap-3 rounded-card px-3 py-2 text-sm font-semibold text-text-primary hover:bg-hover hover:no-underline"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        <Bookmark className="h-4 w-4 text-brand" />
-                        Browse jobs
-                      </Link>
-                    </>
+                    <Link
+                      to="/recruiter/analytics/profile"
+                      className="flex items-center gap-3 rounded-card px-3 py-2 text-sm font-semibold text-text-primary hover:bg-hover hover:no-underline"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      <TrendingUp className="h-4 w-4 text-brand" />
+                      Insights
+                    </Link>
                   )}
                   <div className="my-2 border-t border-[#e5e7eb]" />
                   <button

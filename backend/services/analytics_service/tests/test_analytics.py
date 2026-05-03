@@ -14,6 +14,34 @@ for mod in ("aiomysql", "aiokafka", "redis.asyncio", "motor", "motor.motor_async
 import controllers.analytics as ctrl  # noqa: E402
 
 
+def test_get_recruiter_profile_dashboard_shapes_status_fields():
+    dashboard = {
+        "profile_views_30d": 3,
+        "profile_views_daily_30d": [],
+        "search_appearances_30d": 7,
+        "job_views_30d": 10,
+        "job_saves_30d": 2,
+        "applicants_30d": 4,
+        "messages_sent_30d": 1,
+        "application_status_breakdown": [
+            {"_id": "submitted", "count": 2},
+            {"_id": "interview", "count": 1},
+        ],
+    }
+    with patch("controllers.analytics.cache_get", new=AsyncMock(return_value=None)), \
+         patch("controllers.analytics.recruiter_profile_dashboard", new=AsyncMock(return_value=dashboard)), \
+         patch("controllers.analytics.cache_set", new=AsyncMock()):
+        result = asyncio.run(ctrl.get_recruiter_profile_dashboard(42))
+
+    assert result["profile_views_30d"] == 3
+    assert result["search_appearances_30d"] == 7
+    assert result["job_views_30d"] == 10
+    assert result["application_status_breakdown"] == [
+        {"status": "submitted", "count": 2},
+        {"status": "interview", "count": 1},
+    ]
+
+
 def test_get_member_dashboard_shapes_search_and_status_fields():
     dashboard = {
         "profile_views_30d": 8,

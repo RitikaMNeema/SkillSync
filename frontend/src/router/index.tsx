@@ -23,6 +23,7 @@ import { AIHiringPage } from "../pages/recruiter/AIHiringPage";
 import { ApplicantReviewPage } from "../pages/recruiter/ApplicantReviewPage";
 import { JobManagementPage } from "../pages/recruiter/JobManagementPage";
 import { RecruiterDashboardPage } from "../pages/recruiter/RecruiterDashboardPage";
+import { RecruiterProfileAnalyticsPage } from "../pages/recruiter/RecruiterProfileAnalyticsPage";
 import { RecruiterProfilePage } from "../pages/recruiter/RecruiterProfilePage";
 import type { UserRole } from "../types/common";
 import { getHomePath } from "../utils/navigation";
@@ -121,6 +122,7 @@ export const router = createBrowserRouter([
         ),
         children: [
           { path: "/recruiter/dashboard", element: <Navigate to="/feed" replace /> },
+          { path: "/recruiter/analytics/profile", element: <RecruiterProfileAnalyticsPage /> },
           { path: "/recruiter/jobs", element: <JobManagementPage /> },
           { path: "/recruiter/jobs/:job_id/applicants", element: <ApplicantReviewPage /> },
           { path: "/recruiter/ai/:job_id", element: <AIHiringPage /> },

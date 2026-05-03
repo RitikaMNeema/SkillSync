@@ -3,9 +3,6 @@ import { Card } from "../../components/ui/Card";
 import { LinkedInWordmark } from "../../components/layout/LinkedInWordmark";
 import { Button } from "../../components/ui/Button";
 
-/**
- * Placeholder until password reset is implemented end-to-end.
- */
 export function ForgotPasswordPage() {
   const navigate = useNavigate();
   return (
@@ -19,8 +16,8 @@ export function ForgotPasswordPage() {
                 Forgot password
               </h1>
               <p className="mb-6 text-base leading-6 text-[#4b4b4b]">
-                Password reset is not available in this demo yet. If you are locked out, contact your administrator or
-                create a new account with a different email.
+                Self-service password reset is not available for this deployment. If you are locked out, contact your
+                administrator or create a new account with a different email.
               </p>
               <Button
                 fullWidth

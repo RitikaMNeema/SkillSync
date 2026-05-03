@@ -96,7 +96,7 @@ export function JobFilters({
             type="text"
             value={filters.industry}
             onChange={(e) => onChange("industry", e.target.value)}
-            placeholder="e.g. Technology, Finance"
+            aria-label="Industry filter"
             className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
           />
         </div>

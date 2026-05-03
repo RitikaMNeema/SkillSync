@@ -34,7 +34,7 @@ export function NetworkCardHeader({ title, action, border = true, className }: N
     <div
       className={cn(
         "flex items-center justify-between gap-3",
-        border && "border-b border-[#e0dfdc] pb-2.5",
+        border && "border-b border-[#e0dfdc] pb-3",
         className
       )}
     >

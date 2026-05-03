@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { ChevronDown, MoreHorizontal, Search } from "lucide-react";
+import { ChevronDown, Lightbulb, MailOpen, MoreHorizontal, Search, UsersRound } from "lucide-react";
 import {
   acceptConnection,
   getMutualConnections,
@@ -17,6 +17,7 @@ import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
 import type { Connection, MutualConnection, PendingConnection } from "../../types/connection";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import { AppShellBreakout, AppShellMainRow } from "../../components/layout/AppShellRegions";
 import {
   MutualAvatarStack,
   NetworkCard,
@@ -26,6 +27,7 @@ import {
   NetworkSidebar,
   type NetworkSidebarKey,
 } from "../../components/network";
+import { APP_SHELL_MAIN_COLUMN_CLASS } from "../../constants/appShellLayout";
 
 function formatConnectedRelative(isoString: string): string {
   const t = new Date(isoString).getTime();
@@ -301,7 +303,7 @@ export function ConnectionsPage() {
     }
   };
 
-  const handleViewProfile = async (connectedUserId: number) => {
+  const openProfileByUserId = async (connectedUserId: number) => {
     setActiveConnectionMenuId(null);
     try {
       await getMember(connectedUserId);
@@ -332,30 +334,34 @@ export function ConnectionsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-[50vh] bg-[#f3f2ef] px-4 py-6">
-        <div className="mx-auto max-w-[1440px] space-y-3">
-          <CardSkeleton />
-          <CardSkeleton />
-        </div>
+      <div className="min-h-[50vh] bg-[#f3f2ef] py-6">
+        <AppShellBreakout>
+          <div className={APP_SHELL_MAIN_COLUMN_CLASS}>
+            <div className="space-y-3">
+              <CardSkeleton />
+              <CardSkeleton />
+            </div>
+          </div>
+        </AppShellBreakout>
       </div>
     );
   }
 
   return (
-    <div className="min-h-[calc(100vh-100px)] bg-[#f3f2ef] pb-6 pt-2">
-      <div className="relative left-1/2 w-screen -translate-x-1/2">
-        <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-3 px-3 md:flex-row md:items-start md:gap-4 md:px-4">
+    <div className="min-h-[calc(100vh-100px)] bg-[#f3f2ef] pb-8 pt-3">
+      <AppShellBreakout>
+        <AppShellMainRow className="flex-col gap-3.5 md:flex-row md:items-start md:gap-5">
           <div className="shrink-0 md:hidden">{sidebarColumn}</div>
 
           <aside className="hidden shrink-0 md:block md:w-[252px]">{sidebarColumn}</aside>
 
           <div className="flex w-full min-w-0 flex-1 flex-col gap-3">
             <NetworkCard padded={false}>
-              <div className="border-b border-[#e0dfdc] px-5 pt-0 md:px-6">
+              <div className="border-b border-[#e0dfdc] px-5 pt-1 md:px-6">
                 <div className="flex gap-10">
                   <button
                     type="button"
-                    className="-mb-px border-b-2 border-[#0a66c2] pb-2 pt-2 text-[17px] font-semibold text-[#0a66c2]"
+                    className="-mb-px border-b-2 border-[#0a66c2] pb-2.5 pt-2 text-[16px] font-semibold leading-snug tracking-[-0.01em] text-[#0a66c2]"
                     aria-current="page"
                   >
                     My Network
@@ -365,10 +371,14 @@ export function ConnectionsPage() {
             </NetworkCard>
 
           <NetworkCard padded={false}>
-            <div className="px-5 pt-3 md:px-6">
+            <div className="px-5 pt-4 md:px-6">
               <NetworkCardHeader
                 border
-                title={<h2 className="text-lg font-semibold text-[#222]">Invitations ({visiblePending.length})</h2>}
+                title={
+                  <h2 className="text-[18px] font-semibold leading-snug tracking-[-0.015em] text-[#222]">
+                    Invitations ({visiblePending.length})
+                  </h2>
+                }
                 action={
                   <div className="relative flex items-center gap-0.5" ref={invitationsMenuRef}>
                     <button
@@ -418,7 +428,17 @@ export function ConnectionsPage() {
               />
             </div>
             {visiblePending.length === 0 ? (
-              <p className="px-5 pb-3 text-sm text-[#666] md:px-6">No pending invitations</p>
+              <div className="px-5 pb-7 pt-1 text-center md:px-6">
+                <div className="mx-auto mb-4 flex h-[4.25rem] w-[4.25rem] items-center justify-center rounded-full bg-[#f5f7fa] text-[#7a8795]">
+                  <MailOpen className="h-7 w-7" />
+                </div>
+                <p className="text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] text-[#222]">
+                  No pending invitations
+                </p>
+                <p className="mx-auto mt-2 max-w-md text-[15px] leading-6 text-[#666]">
+                  When someone invites you to connect, you&apos;ll see it here.
+                </p>
+              </div>
             ) : (
               <div className="divide-y divide-[#e0dfdc]">
                 {visiblePending.map((request) => {
@@ -434,7 +454,7 @@ export function ConnectionsPage() {
                     bundle != null && bundle.count > 0 ? (
                       <div className="flex flex-wrap items-center gap-2">
                         {bundle.mutuals.length > 0 ? <MutualAvatarStack emails={emails} /> : null}
-                        <span className="text-xs text-[#666]">
+                        <span className="text-[12px] leading-snug text-[#666]">
                           {bundle.mutuals.length > 0
                             ? mutualCaptionLine(bundle.mutuals, bundle.count)
                             : `${bundle.count} mutual connection${bundle.count === 1 ? "" : "s"}`}
@@ -446,19 +466,41 @@ export function ConnectionsPage() {
                     <NetworkListRow
                       key={request.id}
                       avatar={
-                        invitation.profilePhotoUrl ? (
-                          <img
-                            src={invitation.profilePhotoUrl}
-                            alt=""
-                            className="h-14 w-14 rounded-full object-cover ring-1 ring-[#e0dfdc]"
-                          />
-                        ) : (
-                          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#dce6f1] text-sm font-semibold text-[#2b5d8d] ring-1 ring-[#e0dfdc]">
-                            {invitation.initials}
-                          </div>
-                        )
+                        <button
+                          type="button"
+                          className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[#0a66c2]"
+                          onClick={() =>
+                            void openProfileByUserId(
+                              (request.direction ?? "incoming") === "incoming" ? request.requester_id : request.receiver_id
+                            )
+                          }
+                        >
+                          {invitation.profilePhotoUrl ? (
+                            <img
+                              src={invitation.profilePhotoUrl}
+                              alt=""
+                              className="h-14 w-14 rounded-full object-cover ring-1 ring-[#e0dfdc]"
+                            />
+                          ) : (
+                            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#dce6f1] text-sm font-semibold text-[#2b5d8d] ring-1 ring-[#e0dfdc]">
+                              {invitation.initials}
+                            </div>
+                          )}
+                        </button>
                       }
-                      primary={<span className="truncate font-semibold">{invitation.name}</span>}
+                      primary={
+                        <button
+                          type="button"
+                          className="truncate font-semibold text-left hover:underline"
+                          onClick={() =>
+                            void openProfileByUserId(
+                              (request.direction ?? "incoming") === "incoming" ? request.requester_id : request.receiver_id
+                            )
+                          }
+                        >
+                          {invitation.name}
+                        </button>
+                      }
                       secondary={<span className="line-clamp-2 text-[#666]">{subtitle}</span>}
                       tertiary={tertiary}
                       actions={
@@ -493,37 +535,39 @@ export function ConnectionsPage() {
 
           <div ref={connectionsListRef}>
             <NetworkCard padded={false}>
-              <div className="flex flex-col gap-3 border-b border-[#e0dfdc] px-5 py-3 md:px-6 md:flex-row md:items-center md:justify-between md:gap-4">
-                <h2 className="shrink-0 text-lg font-semibold text-[#222]">Connections ({connections.length})</h2>
+              <div className="flex flex-col gap-3.5 border-b border-[#e0dfdc] px-5 py-3.5 md:px-6 md:flex-row md:items-center md:justify-between md:gap-5">
+                <h2 className="shrink-0 text-[18px] font-semibold leading-snug tracking-[-0.015em] text-[#222]">
+                  Connections ({connections.length})
+                </h2>
                 <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-                  <div className="relative w-full min-w-0 md:max-w-[280px]">
+                  <div className="relative w-full min-w-0 sm:w-[320px] md:w-[320px]">
                     <Search
-                      className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#7a7a7a]"
+                      className="pointer-events-none absolute left-4 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-[#7a7a7a]"
                       aria-hidden
                     />
                     <input
                       type="text"
                       value={connectionQuery}
                       onChange={(e) => setConnectionQuery(e.target.value)}
-                      placeholder="Search connections"
-                      className="h-10 w-full rounded-[8px] border border-[#d6d6d6] bg-white pl-10 pr-3 text-sm font-normal text-[#222] placeholder:text-[#757575] focus:border-[#0a66c2] focus:outline-none"
+                      className="h-9 w-full rounded-[6px] border border-[#d6d6d6] bg-white !pl-12 pr-3 text-[15px] font-normal text-[#222] placeholder:text-[#757575] focus:border-[#666666] focus:outline-none focus-visible:border-[#666666]"
                       aria-label="Search connections"
+                      placeholder="Search connections"
                     />
                   </div>
-                  <div className="flex shrink-0 items-center gap-2 text-sm">
+                  <div className="flex shrink-0 items-center gap-2 text-[15px]">
                     <span className="whitespace-nowrap text-[#666]">Sort by:</span>
                     <div className="relative inline-block">
                       <select
                         value={sortKey}
                         onChange={(e) => setSortKey(e.target.value as "recent" | "name")}
                         aria-label="Sort connections"
-                        className="h-10 cursor-pointer appearance-none rounded-[8px] border border-[#d6d6d6] bg-white py-2 pl-3 pr-9 text-sm font-semibold leading-none text-[#222] focus:border-[#0a66c2] focus:outline-none"
+                        className="h-9 cursor-pointer appearance-none rounded-[6px] border border-[#d6d6d6] bg-white py-2 pl-3 pr-9 text-[15px] font-semibold leading-none text-[#222] focus:border-[#0a66c2] focus:outline-none"
                       >
                         <option value="recent">Recently added</option>
                         <option value="name">First name</option>
                       </select>
                       <ChevronDown
-                        className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#666]"
+                        className="pointer-events-none absolute right-2.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-[#666]"
                         aria-hidden
                       />
                     </div>
@@ -531,9 +575,26 @@ export function ConnectionsPage() {
                 </div>
               </div>
               {connections.length === 0 ? (
-                <p className="px-5 py-4 text-sm text-[#666] md:px-6">No connections yet.</p>
+                <div className="px-5 py-9 text-center md:px-6">
+                  <div className="mx-auto mb-4 flex h-[4.25rem] w-[4.25rem] items-center justify-center rounded-full bg-[#f5f7fa] text-[#7a8795]">
+                    <UsersRound className="h-8 w-8" />
+                  </div>
+                  <p className="text-[28px] font-semibold leading-[1.15] tracking-[-0.02em] text-[#222]">
+                    You haven’t made any connections yet
+                  </p>
+                  <p className="mx-auto mt-2 max-w-lg text-[15px] leading-6 text-[#666]">
+                    Start building your network by connecting with people you know.
+                  </p>
+                  <Button
+                    type="button"
+                    className="mt-5 rounded-full bg-[#0a66c2] px-6 py-2.5 text-[14px] font-semibold text-white hover:bg-[#004182]"
+                    onClick={() => navigate("/search")}
+                  >
+                    Find connections
+                  </Button>
+                </div>
               ) : filteredConnections.length === 0 ? (
-                <p className="px-5 py-4 text-sm text-[#666] md:px-6">No connections match your search.</p>
+                <p className="px-5 py-5 text-[15px] leading-snug text-[#666] md:px-6">No connections match your search.</p>
               ) : (
                 <div className="divide-y divide-[#e0dfdc]">
                   {filteredConnections.map((connection) => {
@@ -547,7 +608,11 @@ export function ConnectionsPage() {
                       <NetworkListRow
                         key={connection.id}
                         avatar={
-                          <div className="relative">
+                          <button
+                            type="button"
+                            className="relative rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[#0a66c2]"
+                            onClick={() => void openProfileByUserId(connection.connected_user_id)}
+                          >
                             {prof?.profilePhotoUrl ? (
                               <img
                                 src={prof.profilePhotoUrl}
@@ -566,11 +631,17 @@ export function ConnectionsPage() {
                                 aria-hidden
                               />
                             ) : null}
-                          </div>
+                          </button>
                         }
                         primary={
                           <span className="truncate">
-                            <span className="font-semibold text-[#222]">{displayName}</span>
+                            <button
+                              type="button"
+                              className="font-semibold text-[#222] hover:underline"
+                              onClick={() => void openProfileByUserId(connection.connected_user_id)}
+                            >
+                              {displayName}
+                            </button>
                             <span className="font-semibold text-[#666]"> · 1st</span>
                           </span>
                         }
@@ -615,13 +686,6 @@ export function ConnectionsPage() {
                                   <button
                                     type="button"
                                     className="block w-full px-4 py-2.5 text-left text-sm text-[#222] hover:bg-[#f3f2ef]"
-                                    onClick={() => void handleViewProfile(connection.connected_user_id)}
-                                  >
-                                    View profile
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="block w-full px-4 py-2.5 text-left text-sm text-[#222] hover:bg-[#f3f2ef]"
                                     onClick={() => void handleRemoveConnection(connection.connected_user_id)}
                                   >
                                     Remove connection
@@ -636,6 +700,19 @@ export function ConnectionsPage() {
                   })}
                 </div>
               )}
+              <div className="flex flex-col gap-2 border-t border-[#e0dfdc] bg-[#fffdf4] px-5 py-2.5 sm:flex-row sm:items-center sm:justify-between md:px-6">
+                <p className="inline-flex items-start gap-2.5 text-[13px] leading-5 text-[#6b7280] sm:items-center">
+                  <Lightbulb className="mt-0.5 h-[15px] w-[15px] shrink-0 text-[#b08900] sm:mt-0" />
+                  Tip: Personalize your invitation to increase acceptance rates.
+                </p>
+                <button
+                  type="button"
+                  className="shrink-0 self-start text-left text-[13px] font-semibold text-[#0a66c2] hover:underline sm:self-auto sm:text-right"
+                  onClick={() => navigate("/search")}
+                >
+                  Learn how
+                </button>
+              </div>
             </NetworkCard>
           </div>
 
@@ -643,8 +720,8 @@ export function ConnectionsPage() {
         </div>
 
         <div className="hidden w-0 shrink-0 xl:block" aria-hidden />
-        </div>
-      </div>
+        </AppShellMainRow>
+      </AppShellBreakout>
     </div>
   );
 }

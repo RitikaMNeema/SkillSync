@@ -1,4 +1,4 @@
-import { BriefcaseBusiness, CircleHelp, Eye, EyeOff, GraduationCap, Lightbulb, Pencil, Plus, Search, Sparkles } from "lucide-react";
+import { BriefcaseBusiness, CircleHelp, Eye, EyeOff, FileText, GraduationCap, Lightbulb, Pencil, Plus, Search, Sparkles, Users } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import toast from "react-hot-toast";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -24,20 +24,23 @@ import { Alert } from "../../components/ui/Alert";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { CardSkeleton } from "../../components/ui/Skeleton";
+import { Avatar } from "../../components/ui/Avatar";
 import { authStore } from "../../context/AuthContext";
-import type { EducationEntry, ExperienceEntry, LanguageEntry, MemberProfile } from "../../types/member";
+import type { EducationEntry, ExperienceEntry, LanguageEntry, MemberProfile, MemberSearchItem } from "../../types/member";
 import { ExperienceCard } from "../../components/profile/ExperienceCard";
 import { ProfileHeader } from "../../components/profile/ProfileHeader";
 import { ResumeUpload } from "../../components/profile/ResumeUpload";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import { getUnifiedProfile, updateUnifiedProfile } from "../../utils/profileAdapter";
-import { getMemberDashboard } from "../../api/analytics";
-import { listConnections, listPendingConnections, requestConnection, withdrawConnection } from "../../api/connections";
-import { deleteCoverPhoto } from "../../api/members";
+import { getMemberDashboard, getRecruiterProfileDashboard } from "../../api/analytics";
+import { getMutualConnections, listConnections, listPendingConnections, requestConnection, withdrawConnection } from "../../api/connections";
+import { deleteCoverPhoto, searchMembers } from "../../api/members";
 import {
   deleteRecruiterCoverPhoto,
+  searchRecruiters,
   uploadRecruiterCoverPhoto,
-  uploadRecruiterProfilePhoto
+  uploadRecruiterProfilePhoto,
+  type RecruiterProfile
 } from "../../api/recruiters";
 
 type ProfileActiveModal =
@@ -78,6 +81,12 @@ function applySkillToIds(ids: string[] | null | undefined, skill: string, select
   return base;
 }
 
+/** Strict equality can fail when persisted auth stores numeric ids as strings — breaks own-profile / connections UX. */
+function sameUserId(a: number | null | undefined, b: number | null | undefined): boolean {
+  if (a == null || b == null) return false;
+  return Number(a) === Number(b);
+}
+
 function buildDefaultProfileSlug(firstName: string, lastName: string, memberId: number): string {
   const normalized = [firstName, lastName]
     .map((token) =>
@@ -89,6 +98,15 @@ function buildDefaultProfileSlug(firstName: string, lastName: string, memberId: 
     .filter(Boolean);
   const prefix = normalized.length ? normalized.join("-") : `user-${memberId}`;
   return `${prefix}-${memberId}`;
+}
+
+interface SidebarPersonSuggestion {
+  id: string;
+  name: string;
+  subtitle: string;
+  mutual: string;
+  avatarUrl?: string | null;
+  to: string;
 }
 
 export function ProfilePage() {
@@ -103,8 +121,7 @@ export function ProfilePage() {
   const isRecruiterViewingOwnProfile =
     currentRole === "recruiter" &&
     Number.isFinite(parsedMemberId) &&
-    currentUserId !== null &&
-    parsedMemberId === currentUserId;
+    sameUserId(parsedMemberId, currentUserId);
   const profileApiRole = isRecruiterViewingOwnProfile || isForcedRecruiterProfile ? "recruiter" : "member";
   const [member, setMember] = useState<MemberProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -114,15 +131,18 @@ export function ProfilePage() {
   const [pendingIsOutgoing, setPendingIsOutgoing] = useState(false);
   const [sendingConnection, setSendingConnection] = useState(false);
   const [resolvedConnectionsCount, setResolvedConnectionsCount] = useState<number | null>(null);
-  const [activityStats, setActivityStats] = useState<{
-    profileViews: number;
-    searchAppearances: number;
-    profileViewsTrend: number;
-  } | null>(null);
+  type ProfileActivityStats =
+    | { variant: "member"; profileViews: number; searchAppearances: number; profileViewsTrend: number }
+    | { variant: "recruiter"; profileViews: number; applicants30d: number; profileViewsTrend: number };
+
+  const [activityStats, setActivityStats] = useState<ProfileActivityStats | null>(null);
   const [activeModal, setActiveModal] = useState<ProfileActiveModal | null>(null);
   const [skillsListModalOpen, setSkillsListModalOpen] = useState(false);
   const [showAllLanguages, setShowAllLanguages] = useState(false);
   const [addSectionOpen, setAddSectionOpen] = useState(false);
+  const [publicPeopleYouMayKnow, setPublicPeopleYouMayKnow] = useState<SidebarPersonSuggestion[]>([]);
+  const [mutualConnectionsCount, setMutualConnectionsCount] = useState<number>(0);
+  const [mutualConnectionPreview, setMutualConnectionPreview] = useState<string>("");
   const [dismissedCards, setDismissedCards] = useState({
     experience: false,
     education: false,
@@ -163,35 +183,44 @@ export function ProfilePage() {
       return;
     }
     let cancelled = false;
-    void getMemberDashboard(parsedMemberId)
-      .then((dashboard) => {
-        if (cancelled) return;
-        const daily = dashboard.profile_views_daily_30d ?? [];
-        let profileViewsTrend = 0;
-        if (daily.length > 0) {
-          const midpoint = Math.floor(daily.length / 2);
-          const previous = daily.slice(0, midpoint).reduce((sum, point) => sum + point.count, 0);
-          const recent = daily.slice(midpoint).reduce((sum, point) => sum + point.count, 0);
-          if (previous <= 0) {
-            profileViewsTrend = recent > 0 ? 100 : 0;
-          } else {
-            profileViewsTrend = ((recent - previous) / previous) * 100;
-          }
-        }
-        setActivityStats({
-          profileViews: dashboard.profile_views_30d ?? 0,
-          searchAppearances: dashboard.search_appearances_30d ?? 0,
-          profileViewsTrend
+
+    function viewsTrendFromDaily(daily: Array<{ date: string; count: number }>): number {
+      if (daily.length === 0) return 0;
+      const midpoint = Math.floor(daily.length / 2);
+      const previous = daily.slice(0, midpoint).reduce((sum, point) => sum + point.count, 0);
+      const recent = daily.slice(midpoint).reduce((sum, point) => sum + point.count, 0);
+      if (previous <= 0) return recent > 0 ? 100 : 0;
+      return ((recent - previous) / previous) * 100;
+    }
+
+    const promise = isRecruiterViewingOwnProfile
+      ? getRecruiterProfileDashboard(parsedMemberId).then((d) => {
+          if (cancelled) return;
+          setActivityStats({
+            variant: "recruiter",
+            profileViews: d.profile_views_30d ?? 0,
+            applicants30d: d.applicants_30d ?? 0,
+            profileViewsTrend: viewsTrendFromDaily(d.profile_views_daily_30d ?? [])
+          });
+        })
+      : getMemberDashboard(parsedMemberId).then((dashboard) => {
+          if (cancelled) return;
+          setActivityStats({
+            variant: "member",
+            profileViews: dashboard.profile_views_30d ?? 0,
+            searchAppearances: dashboard.search_appearances_30d ?? 0,
+            profileViewsTrend: viewsTrendFromDaily(dashboard.profile_views_daily_30d ?? [])
+          });
         });
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setActivityStats(null);
-      });
+
+    promise.catch(() => {
+      if (cancelled) return;
+      setActivityStats(null);
+    });
     return () => {
       cancelled = true;
     };
-  }, [parsedMemberId]);
+  }, [parsedMemberId, isRecruiterViewingOwnProfile]);
 
   useEffect(() => {
     if (!member || !currentUserId) {
@@ -202,10 +231,10 @@ export function ProfilePage() {
       return;
     }
     let cancelled = false;
-    void Promise.all([listConnections(currentUserId), listPendingConnections(currentUserId)])
+    void Promise.all([listConnections(Number(currentUserId)), listPendingConnections(Number(currentUserId))])
       .then(([connections, pending]) => {
         if (cancelled) return;
-        if (member.member_id === currentUserId) {
+        if (sameUserId(member.member_id, currentUserId)) {
           setResolvedConnectionsCount(connections.length);
           setConnectionStatus("none");
           setPendingRequestId(null);
@@ -213,7 +242,7 @@ export function ProfilePage() {
           return;
         }
         setResolvedConnectionsCount(null);
-        const isConnected = connections.some((entry) => entry.connected_user_id === member.member_id);
+        const isConnected = connections.some((entry) => sameUserId(entry.connected_user_id, member.member_id));
         if (isConnected) {
           setConnectionStatus("connected");
           setPendingRequestId(null);
@@ -222,13 +251,13 @@ export function ProfilePage() {
         }
         const pendingEntry = pending.find(
           (entry) =>
-            (entry.requester_id === currentUserId && entry.receiver_id === member.member_id) ||
-            (entry.requester_id === member.member_id && entry.receiver_id === currentUserId)
+            (sameUserId(entry.requester_id, currentUserId) && sameUserId(entry.receiver_id, member.member_id)) ||
+            (sameUserId(entry.requester_id, member.member_id) && sameUserId(entry.receiver_id, currentUserId))
         );
         if (pendingEntry) {
           setConnectionStatus("pending");
           setPendingRequestId(pendingEntry.id);
-          setPendingIsOutgoing(pendingEntry.requester_id === currentUserId);
+          setPendingIsOutgoing(sameUserId(pendingEntry.requester_id, currentUserId));
           return;
         }
         setConnectionStatus("none");
@@ -247,8 +276,92 @@ export function ProfilePage() {
     };
   }, [member, currentUserId, location.key]);
 
+  useEffect(() => {
+    const viewingOwn = !!member && sameUserId(member.member_id, currentUserId);
+    if (!member || !currentUserId || viewingOwn) {
+      setMutualConnectionsCount(0);
+      setMutualConnectionPreview("");
+      return;
+    }
+
+    let cancelled = false;
+    void getMutualConnections(Number(currentUserId), member.member_id)
+      .then((data) => {
+        if (cancelled) return;
+        const mutuals = data.mutual_connections ?? [];
+        setMutualConnectionsCount(data.count ?? mutuals.length ?? 0);
+        const previewEmail = mutuals[0]?.email ?? "";
+        const previewName = previewEmail ? previewEmail.split("@")[0].replace(/[._-]+/g, " ") : "";
+        setMutualConnectionPreview(previewName);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setMutualConnectionsCount(0);
+        setMutualConnectionPreview("");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [member, currentUserId]);
+
+  useEffect(() => {
+    const viewingOwn = !!member && sameUserId(member.member_id, currentUserId);
+    if (!member || viewingOwn) {
+      setPublicPeopleYouMayKnow([]);
+      return;
+    }
+
+    let cancelled = false;
+    void Promise.all([searchMembers({ page: 1 }), searchRecruiters({ page: 1 })])
+      .then(([membersResult, recruitersResult]) => {
+        if (cancelled) return;
+
+        const memberSuggestions: SidebarPersonSuggestion[] = (membersResult.members ?? [])
+          .filter(
+            (candidate: MemberSearchItem) =>
+              !sameUserId(candidate.member_id, member.member_id) && !sameUserId(candidate.member_id, currentUserId)
+          )
+          .map((candidate: MemberSearchItem) => ({
+            id: `member-${candidate.member_id}`,
+            name: `${candidate.first_name} ${candidate.last_name}`.trim() || `Member #${candidate.member_id}`,
+            subtitle: candidate.headline?.trim() || "Member",
+            mutual: `${candidate.connections_count ?? 0} connections`,
+            avatarUrl: candidate.profile_photo_url ?? null,
+            to: `/profile/${candidate.member_id}`
+          }));
+
+        const recruiterSuggestions: SidebarPersonSuggestion[] = (recruitersResult.recruiters ?? [])
+          .filter(
+            (candidate: RecruiterProfile) =>
+              !sameUserId(candidate.recruiter_id, member.member_id) && !sameUserId(candidate.recruiter_id, currentUserId)
+          )
+          .map((candidate: RecruiterProfile) => ({
+            id: `recruiter-${candidate.recruiter_id}`,
+            name: candidate.name?.trim() || `Recruiter #${candidate.recruiter_id}`,
+            subtitle: [candidate.role, candidate.company_name].filter(Boolean).join(" at ") || "Recruiter",
+            mutual: `${candidate.connections_count ?? 0} connections`,
+            avatarUrl: candidate.profile_photo_url ?? null,
+            to: `/profile/${candidate.recruiter_id}?type=recruiter`
+          }));
+
+        const deduped = new Map<string, SidebarPersonSuggestion>();
+        [...memberSuggestions, ...recruiterSuggestions].forEach((entry) => {
+          if (!deduped.has(entry.id)) deduped.set(entry.id, entry);
+        });
+        setPublicPeopleYouMayKnow(Array.from(deduped.values()).slice(0, 3));
+      })
+      .catch(() => {
+        if (!cancelled) setPublicPeopleYouMayKnow([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [member, currentUserId]);
+
   async function handleConnect() {
-    if (!member || !currentUserId || member.member_id === currentUserId) return;
+    if (!member || !currentUserId || sameUserId(member.member_id, currentUserId)) return;
 
     if (connectionStatus === "connected") return;
     setSendingConnection(true);
@@ -266,13 +379,13 @@ export function ProfilePage() {
         toast.success("Invitation withdrawn", { id: loadingToast });
         return;
       }
-      await requestConnection(currentUserId, member.member_id);
+      await requestConnection(Number(currentUserId), member.member_id);
       setConnectionStatus("pending");
       setPendingIsOutgoing(true);
       // Refresh to resolve request id for follow-up withdraw action.
-      const refreshedPending = await listPendingConnections(currentUserId);
+      const refreshedPending = await listPendingConnections(Number(currentUserId));
       const outgoingMatch = refreshedPending.find(
-        (entry) => entry.requester_id === currentUserId && entry.receiver_id === member.member_id
+        (entry) => sameUserId(entry.requester_id, currentUserId) && sameUserId(entry.receiver_id, member.member_id)
       );
       setPendingRequestId(outgoingMatch?.id ?? null);
       toast.success("Connection request sent", { id: loadingToast });
@@ -287,7 +400,7 @@ export function ProfilePage() {
   }
 
   function handleMessage() {
-    if (!member || !currentUserId || member.member_id === currentUserId) return;
+    if (!member || !currentUserId || sameUserId(member.member_id, currentUserId)) return;
     navigate(`/messages?user=${member.member_id}`);
   }
 
@@ -497,7 +610,7 @@ export function ProfilePage() {
         scrollTo(resumeRef);
         break;
       default:
-        toast("This section is coming soon", { icon: "ℹ️" });
+        break;
     }
   }
 
@@ -653,7 +766,7 @@ export function ProfilePage() {
 
   if (error || !member) return <Alert message={error || "Profile not found"} />;
 
-  const isOwnProfile = member.member_id === currentUserId;
+  const isOwnProfile = sameUserId(member.member_id, currentUserId);
   const headerMember =
     isOwnProfile && resolvedConnectionsCount !== null
       ? { ...member, connections_count: resolvedConnectionsCount }
@@ -695,9 +808,14 @@ export function ProfilePage() {
     ? new Date(member.birthday).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })
     : null;
   const profileViewsValue = activityStats?.profileViews ?? member.profile_views ?? 0;
-  const searchAppearancesValue = activityStats?.searchAppearances ?? 0;
+  const secondaryMetricValue =
+    activityStats?.variant === "member"
+      ? activityStats.searchAppearances
+      : activityStats?.variant === "recruiter"
+        ? activityStats.applicants30d
+        : 0;
+  const secondaryMetricTrendValue = 0;
   const profileViewsTrendValue = activityStats?.profileViewsTrend ?? 0;
-  const searchAppearancesTrendValue = 0;
   const formatTrend = (value: number) => {
     if (!Number.isFinite(value) || Math.abs(value) < 0.5) {
       return { label: "0%", colorClass: "text-[#6b7280]", prefix: "•" as const };
@@ -710,8 +828,7 @@ export function ProfilePage() {
     };
   };
   const profileViewsTrend = formatTrend(profileViewsTrendValue);
-  const searchAppearancesTrend = formatTrend(searchAppearancesTrendValue);
-
+  const secondaryMetricTrend = formatTrend(secondaryMetricTrendValue);
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
       <div className="space-y-3 animate-fade-in">
@@ -777,6 +894,10 @@ export function ProfilePage() {
           connectDisabled={sendingConnection || connectionStatus === "connected" || (connectionStatus === "pending" && !pendingIsOutgoing)}
           onConnect={() => void handleConnect()}
           onMessage={handleMessage}
+          canRemoveConnection={connectionStatus === "connected"}
+          onRemoveConnection={() => toast("Remove connection is not implemented yet.", { icon: "ℹ️" })}
+          onReportProfile={() => toast("Report submitted. We will review this profile.", { icon: "✅" })}
+          onBlockProfile={() => toast("Block user is not implemented yet.", { icon: "ℹ️" })}
         />
         <Card ref={aboutRef} className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
           <div className="mb-3 flex items-start justify-between gap-3">
@@ -980,7 +1101,7 @@ export function ProfilePage() {
             </button>
           ) : null}
         </Card>
-        {member.member_id === currentUserId && currentRole === "member" ? (
+        {sameUserId(member.member_id, currentUserId) && currentRole === "member" ? (
           <div ref={resumeRef}>
             <ResumeUpload memberId={member.member_id} />
           </div>
@@ -988,117 +1109,203 @@ export function ProfilePage() {
       </div>
       <RightSidebar>
         <div className="space-y-3">
-        <Card className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-lg font-semibold text-[#1f1f1f]">Profile language</h3>
-              <p className="mt-2 text-sm text-[#5b6470]">{profileLanguage}</p>
+          {isOwnProfile ? (
+            <>
+              <Card className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-semibold text-[#1f1f1f]">Profile language</h3>
+                    <p className="mt-2 text-sm text-[#5b6470]">{profileLanguage}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-full p-2 text-[#4b5563] transition hover:bg-[#f3f6f8]"
+                    aria-label="Edit profile language"
+                    onClick={() => setActiveModal({ type: "profile_language" })}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                </div>
+              </Card>
+              <Card className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-semibold text-[#1f1f1f]">Public profile & URL</h3>
+                    <p className="mt-2 break-all text-sm text-[#5b6470]">{publicProfileUrl}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-full p-2 text-[#4b5563] transition hover:bg-[#f3f6f8]"
+                    aria-label="Edit public profile URL"
+                    onClick={() => setActiveModal({ type: "public_profile_url" })}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                </div>
+              </Card>
+              <Card className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-semibold text-[#1f1f1f]">Analytics</h3>
+                  <CircleHelp className="h-4 w-4 text-[#6b7280]" />
+                </div>
+                <p className="mt-1 inline-flex items-center gap-1 text-sm text-[#6b7280]">
+                  <EyeOff className="h-4 w-4" />
+                  Private to you
+                </p>
+                <div className="mt-4 space-y-4">
+                  <div className="flex items-start gap-3">
+                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#eef4fb]">
+                      <Eye className="h-5 w-5 text-[#0a66c2]" />
+                    </span>
+                    <div>
+                      <p className="text-2xl font-semibold leading-none text-[#1f1f1f]">{profileViewsValue}</p>
+                      <p className="mt-1 text-[1.05rem] text-[#444]">Profile views</p>
+                      <p className="text-sm text-[#6b7280]">Last 30 days</p>
+                      <p className={`mt-2 text-sm font-semibold ${profileViewsTrend.colorClass}`}>
+                        {profileViewsTrend.prefix} {profileViewsTrend.label}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="border-t border-[#e6eaef] pt-4">
+                    <div className="flex items-start gap-3">
+                      <span
+                        className={`inline-flex h-10 w-10 items-center justify-center rounded-full ${currentRole === "recruiter" ? "bg-[#f2edfb]" : "bg-[#eaf8ef]"}`}
+                      >
+                        {currentRole === "recruiter" ? (
+                          <FileText className="h-5 w-5 text-[#6b46c1]" />
+                        ) : (
+                          <Search className="h-5 w-5 text-[#0f8f58]" />
+                        )}
+                      </span>
+                      <div>
+                        <p className="text-2xl font-semibold leading-none text-[#1f1f1f]">{secondaryMetricValue}</p>
+                        <p className="mt-1 text-[1.05rem] text-[#444]">
+                          {currentRole === "recruiter" ? "Applicants" : "Search appearances"}
+                        </p>
+                        <p className="text-sm text-[#6b7280]">Last 30 days</p>
+                        <p className={`mt-2 text-sm font-semibold ${secondaryMetricTrend.colorClass}`}>
+                          {secondaryMetricTrend.prefix} {secondaryMetricTrend.label}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="mt-4 text-[1.05rem] font-semibold text-[#0a66c2] hover:underline"
+                  onClick={() =>
+                    navigate(currentRole === "recruiter" ? "/recruiter/analytics/profile" : "/dashboard")
+                  }
+                >
+                  {currentRole === "recruiter" ? "View all insights →" : "View all analytics →"}
+                </button>
+              </Card>
+            </>
+          ) : (
+            <>
+              <Card className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+                <h3 className="text-lg font-semibold text-[#1f1f1f]">People you may know</h3>
+                <div className="mt-4 space-y-4">
+                  {publicPeopleYouMayKnow.length ? publicPeopleYouMayKnow.map((person) => (
+                    <div key={person.id} className="flex items-start gap-3">
+                      <Avatar src={person.avatarUrl ?? undefined} name={person.name} alt={person.name} size="md" />
+                      <div className="min-w-0 flex-1">
+                        <button type="button" className="block text-left hover:underline" onClick={() => navigate(person.to)}>
+                          <p className="truncate text-base font-semibold text-[#1f1f1f]">{person.name}</p>
+                        </button>
+                        <p className="text-sm text-[#555]">{person.subtitle}</p>
+                        <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-[#6b7280]">
+                          <Users className="h-3 w-3" />
+                          {person.mutual}
+                        </p>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="mt-2 h-9 rounded-full border-[#0a66c2] px-4 text-sm font-semibold text-[#0a66c2] hover:bg-[#eef3f8]"
+                          onClick={() => navigate(person.to)}
+                        >
+                          View profile
+                        </Button>
+                      </div>
+                    </div>
+                  )) : (
+                    <p className="text-sm text-[#6b7280]">No people suggestions available yet.</p>
+                  )}
+                </div>
+              </Card>
+              <Card className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+                <h3 className="text-lg font-semibold text-[#1f1f1f]">Highlights</h3>
+                <div className="mt-4 flex items-start gap-3">
+                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#eef4fb]">
+                    <Users className="h-5 w-5 text-[#0a66c2]" />
+                  </span>
+                  <div>
+                    {connectionStatus === "connected" ? (
+                      <>
+                        <p className="text-base font-semibold text-[#1f1f1f]">Connected</p>
+                        <p className="text-sm text-[#6b7280]">You and {member.first_name} are connected.</p>
+                      </>
+                    ) : connectionStatus === "pending" ? (
+                      <>
+                        <p className="text-base font-semibold text-[#1f1f1f]">Invitation pending</p>
+                        <p className="text-sm text-[#6b7280]">
+                          {pendingIsOutgoing
+                            ? `You sent ${member.first_name} a connection request.`
+                            : `${member.first_name} sent you a connection request.`}
+                        </p>
+                      </>
+                    ) : mutualConnectionsCount > 0 ? (
+                      <>
+                        <p className="text-base font-semibold text-[#1f1f1f]">
+                          {mutualConnectionsCount} mutual connection{mutualConnectionsCount === 1 ? "" : "s"}
+                        </p>
+                        <p className="text-sm text-[#6b7280]">
+                          {mutualConnectionPreview
+                            ? `You and ${member.first_name} both know ${mutualConnectionPreview}.`
+                            : `You and ${member.first_name} share connections.`}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-base font-semibold text-[#1f1f1f]">No mutual connections yet</p>
+                        <p className="text-sm text-[#6b7280]">Connect to grow your shared network.</p>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            </>
+          )}
+          <Card className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-[#1f1f1f]">Suggested for you</h3>
+              <CircleHelp className="h-4 w-4 text-[#6b7280]" />
             </div>
-            {isOwnProfile ? (
-              <button
-                type="button"
-                className="rounded-full p-2 text-[#4b5563] transition hover:bg-[#f3f6f8]"
-                aria-label="Edit profile language"
-                onClick={() => setActiveModal({ type: "profile_language" })}
-              >
-                <Pencil className="h-4 w-4" />
-              </button>
-            ) : null}
-          </div>
-        </Card>
-        <Card className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h3 className="text-lg font-semibold text-[#1f1f1f]">Public profile & URL</h3>
-              <p className="mt-2 break-all text-sm text-[#5b6470]">{publicProfileUrl}</p>
-            </div>
-            {isOwnProfile ? (
-              <button
-                type="button"
-                className="rounded-full p-2 text-[#4b5563] transition hover:bg-[#f3f6f8]"
-                aria-label="Edit public profile URL"
-                onClick={() => setActiveModal({ type: "public_profile_url" })}
-              >
-                <Pencil className="h-4 w-4" />
-              </button>
-            ) : null}
-          </div>
-        </Card>
-        <Card className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-          <div className="flex items-center gap-2">
-            <h3 className="text-lg font-semibold text-[#1f1f1f]">Analytics</h3>
-            <CircleHelp className="h-4 w-4 text-[#6b7280]" />
-          </div>
-          <p className="mt-1 inline-flex items-center gap-1 text-sm text-[#6b7280]">
-            <EyeOff className="h-4 w-4" />
-            Private to you
-          </p>
-          <div className="mt-4 space-y-4">
-            <div className="flex items-start gap-3">
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#eef4fb]">
-                <Eye className="h-5 w-5 text-[#0a66c2]" />
+            <p className="mt-1 inline-flex items-center gap-1 text-sm text-[#6b7280]">
+              <EyeOff className="h-4 w-4" />
+              {isOwnProfile ? "Private to you" : "Based on this profile"}
+            </p>
+            <div className="mt-4 flex items-start gap-3">
+              <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#fff8de]">
+                <Lightbulb className="h-5 w-5 text-[#b08900]" />
               </span>
               <div>
-                <p className="text-2xl font-semibold leading-none text-[#1f1f1f]">{profileViewsValue}</p>
-                <p className="mt-1 text-[1.05rem] text-[#444]">Profile views</p>
-                <p className="text-sm text-[#6b7280]">Last 30 days</p>
-                <p className={`mt-2 text-sm font-semibold ${profileViewsTrend.colorClass}`}>
-                  {profileViewsTrend.prefix} {profileViewsTrend.label}
+                <p className="text-[1.05rem] text-[#444]">
+                  Add a summary about your skills and experience to stand out to recruiters.
                 </p>
+                {isOwnProfile ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="mt-3 h-10 rounded-full border-[#aeb5bd] px-5 text-[1.05rem] font-semibold text-[#444] hover:bg-[#f3f6f8]"
+                    onClick={() => setActiveModal({ type: "about" })}
+                  >
+                    Add summary
+                  </Button>
+                ) : null}
               </div>
             </div>
-            <div className="border-t border-[#e6eaef] pt-4">
-              <div className="flex items-start gap-3">
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#eaf8ef]">
-                  <Search className="h-5 w-5 text-[#0f8f58]" />
-                </span>
-                <div>
-                  <p className="text-2xl font-semibold leading-none text-[#1f1f1f]">{searchAppearancesValue}</p>
-                  <p className="mt-1 text-[1.05rem] text-[#444]">Search appearances</p>
-                  <p className="text-sm text-[#6b7280]">Last 30 days</p>
-                  <p className={`mt-2 text-sm font-semibold ${searchAppearancesTrend.colorClass}`}>
-                    {searchAppearancesTrend.prefix} {searchAppearancesTrend.label}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="mt-4 text-[1.05rem] font-semibold text-[#0a66c2] hover:underline"
-            onClick={() => navigate("/dashboard")}
-          >
-            View all analytics →
-          </button>
-        </Card>
-        <Card className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-          <div className="flex items-center gap-2">
-            <h3 className="text-lg font-semibold text-[#1f1f1f]">Suggested for you</h3>
-            <CircleHelp className="h-4 w-4 text-[#6b7280]" />
-          </div>
-          <p className="mt-1 inline-flex items-center gap-1 text-sm text-[#6b7280]">
-            <EyeOff className="h-4 w-4" />
-            Private to you
-          </p>
-          <div className="mt-4 flex items-start gap-3">
-            <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#fff8de]">
-              <Lightbulb className="h-5 w-5 text-[#b08900]" />
-            </span>
-            <div>
-              <p className="text-[1.05rem] text-[#444]">
-                Add a summary about your skills and experience to stand out to recruiters.
-              </p>
-              <Button
-                type="button"
-                variant="secondary"
-                className="mt-3 h-10 rounded-full border-[#aeb5bd] px-5 text-[1.05rem] font-semibold text-[#444] hover:bg-[#f3f6f8]"
-                onClick={() => setActiveModal({ type: "about" })}
-              >
-                Add summary
-              </Button>
-            </div>
-          </div>
-        </Card>
+          </Card>
         </div>
       </RightSidebar>
       {activeModal?.type === "experience" ? (

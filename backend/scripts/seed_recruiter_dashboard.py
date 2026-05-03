@@ -28,9 +28,16 @@ import random
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import httpx
+
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+import company_job_benefits as job_benefits  # noqa: E402
 
 BASE = {
     "auth": "http://localhost:3001",
@@ -212,6 +219,7 @@ def _create_unique_jobs_for_dana(
                 ["Python", "FastAPI", "Kafka", "React", "TypeScript", "SQL", "Docker", "AWS"],
                 k=4,
             ),
+            "benefits": job_benefits.benefits_for_company("Acme Corporation"),
             "salary_min": 120000 + (idx * 5000),
             "salary_max": 160000 + (idx * 5000),
             "company_id": company_id,

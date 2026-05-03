@@ -1,6 +1,8 @@
 from fastapi import HTTPException, UploadFile
 
+from models.author_hydration import hydrate_author_for_user_id
 from models.member_mysql import get_member_by_id
+from models.recruiters_mysql import get_recruiter_row_for_author
 from models.post_interactions_mongo import (
     toggle_like, create_comment, list_comments,
 )
@@ -20,20 +22,25 @@ from producers.profile_command_producer import enqueue_profile_command
 
 
 async def create(body: dict, viewer_id: int) -> dict:
-    mid = int(body["member_id"])
+    uid = int(body["member_id"])
     vid = int(viewer_id)
-    if mid != vid:
-        raise HTTPException(403, "Cannot create post for another member")
-    member = await get_member_by_id(mid)
-    if not member:
-        raise HTTPException(404, "Member not found")
+    if uid != vid:
+        raise HTTPException(403, "Cannot create post for another user")
+    author = await hydrate_author_for_user_id(uid)
+    if not author:
+        raise HTTPException(
+            404,
+            "No member or recruiter profile found for this account. Finish onboarding before posting.",
+        )
+    member = await get_member_by_id(uid)
 
     post = await create_post(
-        mid,
-        member,
+        uid,
+        author,
         (body.get("content") or "").strip(),
         body["post_type"],
         body.get("media_url"),
+        is_member=member is not None,
     )
 
     try:
@@ -52,9 +59,8 @@ async def feed(page: int, viewer_id: int) -> dict:
 
 
 async def by_member(member_id: int, page: int, viewer_id: int) -> dict:
-    member = await get_member_by_id(member_id)
-    if not member:
-        raise HTTPException(404, "Member not found")
+    if not await get_member_by_id(member_id) and not await get_recruiter_row_for_author(member_id):
+        raise HTTPException(404, "Profile not found")
     return await list_member_posts(member_id, page, viewer_id=viewer_id)
 
 

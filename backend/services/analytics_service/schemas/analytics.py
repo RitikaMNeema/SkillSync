@@ -45,6 +45,11 @@ class MemberDashboardRequest(BaseModel):
 
 class RecruiterDashboardRequest(BaseModel):
     recruiter_id: int
+    month: Optional[str] = None  # "YYYY-MM-DD" (typically first day); UTC month window like other analytics
+
+
+class RecruiterProfileDashboardRequest(BaseModel):
+    recruiter_id: int
 
 
 class EventCountsRequest(BaseModel):

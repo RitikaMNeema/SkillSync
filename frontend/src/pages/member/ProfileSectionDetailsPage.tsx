@@ -15,6 +15,8 @@ import { Card } from "../../components/ui/Card";
 import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
 import type { EducationEntry, ExperienceEntry, LanguageEntry, MemberProfile } from "../../types/member";
+import { APP_SHELL_MAIN_COLUMN_CLASS } from "../../constants/appShellLayout";
+import { cn } from "../../utils/cn";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import { getUnifiedProfile, updateUnifiedProfile } from "../../utils/profileAdapter";
 
@@ -362,7 +364,7 @@ export function ProfileSectionDetailsPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-[960px] px-4 py-8">
+      <div className={cn(APP_SHELL_MAIN_COLUMN_CLASS, "py-8")}>
         <CardSkeleton />
       </div>
     );
@@ -370,7 +372,7 @@ export function ProfileSectionDetailsPage() {
 
   if (error || !member) {
     return (
-      <div className="mx-auto max-w-[960px] px-4 py-8">
+      <div className={cn(APP_SHELL_MAIN_COLUMN_CLASS, "py-8")}>
         <Alert message={error || "Profile not found"} />
         <Link to={member_id ? `/profile/${member_id}` : "/feed"} className="mt-4 inline-block text-brand hover:underline">
           Back to profile
@@ -387,7 +389,7 @@ export function ProfileSectionDetailsPage() {
   const allLanguages = member.unstructured?.languages ?? [];
 
   return (
-    <div className="mx-auto max-w-[960px] px-4 py-8">
+    <div className={cn(APP_SHELL_MAIN_COLUMN_CLASS, "py-8")}>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <button

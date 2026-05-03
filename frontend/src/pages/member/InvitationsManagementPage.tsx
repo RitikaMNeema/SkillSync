@@ -9,7 +9,9 @@ import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
 import type { MutualConnection, PendingConnection } from "../../types/connection";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import { AppShellBreakout, AppShellMainRow } from "../../components/layout/AppShellRegions";
 import { MutualAvatarStack, NetworkCard, NetworkCardHeader, NetworkListRow } from "../../components/network";
+import { APP_SHELL_MAIN_COLUMN_CLASS } from "../../constants/appShellLayout";
 
 type TabKey = "received" | "sent";
 
@@ -165,18 +167,23 @@ export function InvitationsManagementPage() {
 
   if (loading) {
     return (
-      <div className="min-h-[50vh] bg-[#f3f2ef] px-4 py-6">
-        <div className="mx-auto max-w-[960px] space-y-3">
-          <CardSkeleton />
-          <CardSkeleton />
-        </div>
+      <div className="min-h-[50vh] bg-[#f3f2ef] py-6">
+        <AppShellBreakout>
+          <div className={APP_SHELL_MAIN_COLUMN_CLASS}>
+            <div className="space-y-3">
+              <CardSkeleton />
+              <CardSkeleton />
+            </div>
+          </div>
+        </AppShellBreakout>
       </div>
     );
   }
 
   return (
     <div className="min-h-[calc(100vh-100px)] bg-[#f3f2ef] pb-6 pt-2">
-      <div className="mx-auto w-full max-w-[960px] px-3 md:px-4">
+      <AppShellBreakout>
+        <AppShellMainRow className="flex-col">
         <NetworkCard padded={false}>
           <div className="border-b border-[#e0dfdc] px-5 pt-2 md:px-6">
             <div className="flex gap-8">
@@ -285,7 +292,8 @@ export function InvitationsManagementPage() {
             </div>
           )}
         </NetworkCard>
-      </div>
+        </AppShellMainRow>
+      </AppShellBreakout>
     </div>
   );
 }

@@ -40,7 +40,11 @@ export function ProfileHeader({
   connectLabel = "Connect",
   connectDisabled = false,
   onConnect,
-  onMessage
+  onMessage,
+  canRemoveConnection = false,
+  onRemoveConnection,
+  onReportProfile,
+  onBlockProfile
 }: {
   member: MemberProfile;
   isOwnProfile: boolean;
@@ -63,14 +67,20 @@ export function ProfileHeader({
   connectDisabled?: boolean;
   onConnect?: () => void;
   onMessage?: () => void;
+  canRemoveConnection?: boolean;
+  onRemoveConnection?: () => void;
+  onReportProfile?: () => void;
+  onBlockProfile?: () => void;
 }) {
   const [uploading, setUploading] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [savingOpenTo, setSavingOpenTo] = useState(false);
   const [coverMenuOpen, setCoverMenuOpen] = useState(false);
   const [hoveringPendingConnect, setHoveringPendingConnect] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const coverMenuButtonRef = useRef<HTMLButtonElement>(null);
   const coverMenuPanelRef = useRef<HTMLDivElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
   const [coverMenuFixedStyle, setCoverMenuFixedStyle] = useState<CSSProperties>({});
   const profileStatus = resolveProfileStatus(member);
   const hasCoverPhoto = Boolean(
@@ -187,6 +197,17 @@ export function ProfileHeader({
       window.removeEventListener("resize", onScrollOrResize);
     };
   }, [coverMenuOpen]);
+
+  useEffect(() => {
+    if (!moreMenuOpen) return undefined;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (moreMenuRef.current?.contains(target)) return;
+      setMoreMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [moreMenuOpen]);
 
   useEffect(() => {
     if (!coverMenuOpen) return undefined;
@@ -377,6 +398,51 @@ export function ProfileHeader({
                 >
                   Message
                 </Button>
+                <div ref={moreMenuRef} className="relative">
+                  <Button
+                    variant="secondary"
+                    className="h-10 rounded-full border-[1.5px] border-[#aeb5bd] px-4 text-sm font-semibold text-[#3f3f46] hover:bg-[#f3f6f8]"
+                    onClick={() => setMoreMenuOpen((current) => !current)}
+                  >
+                    More
+                  </Button>
+                  {moreMenuOpen ? (
+                    <div className="absolute right-0 top-12 z-30 min-w-[200px] rounded-xl border border-[#e5e7eb] bg-white p-1.5 shadow-lg">
+                      {canRemoveConnection ? (
+                        <button
+                          type="button"
+                          className="w-full rounded-lg px-3 py-2 text-left text-sm text-[#374151] hover:bg-[#f3f4f6]"
+                          onClick={() => {
+                            setMoreMenuOpen(false);
+                            onRemoveConnection?.();
+                          }}
+                        >
+                          Remove connection
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="w-full rounded-lg px-3 py-2 text-left text-sm text-[#374151] hover:bg-[#f3f4f6]"
+                        onClick={() => {
+                          setMoreMenuOpen(false);
+                          onReportProfile?.();
+                        }}
+                      >
+                        Report profile
+                      </button>
+                      <button
+                        type="button"
+                        className="w-full rounded-lg px-3 py-2 text-left text-sm text-[#b91c1c] hover:bg-[#fef2f2]"
+                        onClick={() => {
+                          setMoreMenuOpen(false);
+                          onBlockProfile?.();
+                        }}
+                      >
+                        Block user
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               </>
             )}
           </div>
