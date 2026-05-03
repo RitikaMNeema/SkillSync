@@ -44,3 +44,14 @@ export interface RecruiterDashboardMetric {
   event_type: string;
   count: number;
 }
+
+export interface RecruiterProfileDashboard {
+  profile_views_30d: number;
+  profile_views_daily_30d?: Array<{ date: string; count: number }>;
+  search_appearances_30d: number;
+  job_views_30d: number;
+  job_saves_30d: number;
+  applicants_30d: number;
+  messages_sent_30d: number;
+  application_status_breakdown: Array<{ status: string; count: number }>;
+}

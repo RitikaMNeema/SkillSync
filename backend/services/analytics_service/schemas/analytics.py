@@ -47,6 +47,10 @@ class RecruiterDashboardRequest(BaseModel):
     recruiter_id: int
 
 
+class RecruiterProfileDashboardRequest(BaseModel):
+    recruiter_id: int
+
+
 class EventCountsRequest(BaseModel):
     month: str | None = None  # "YYYY-MM-DD"
     recruiter_id: int | None = None

@@ -1,11 +1,15 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from schemas.analytics import (
     IngestRequest, TopJobsRequest, LowTractionJobsRequest, SavedJobsRequest, JobClicksRequest, GeoRequest,
-    MemberDashboardRequest, RecruiterDashboardRequest,
+    MemberDashboardRequest, RecruiterDashboardRequest, RecruiterProfileDashboardRequest,
     EventCountsRequest,
 )
 import controllers.analytics as ctrl
 from shared.middleware.auth import get_current_user
+
+log = logging.getLogger(__name__)
 
 events_router    = APIRouter()
 analytics_router = APIRouter()
@@ -73,6 +77,17 @@ async def recruiter_dash(body: RecruiterDashboardRequest, u=Depends(get_current_
     if str(body.recruiter_id) != str(u["user_id"]):
         raise HTTPException(403, "Not authorized to access another recruiter's dashboard")
     return {"success": True, "data": await ctrl.get_recruiter_dashboard(body.recruiter_id)}
+
+
+@analytics_router.post("/recruiter/profileDashboard")
+async def recruiter_profile_dash(body: RecruiterProfileDashboardRequest, u=Depends(get_current_user)):
+    if str(body.recruiter_id) != str(u["user_id"]):
+        raise HTTPException(403, "Not authorized to access another recruiter's profile analytics")
+    try:
+        return {"success": True, "data": await ctrl.get_recruiter_profile_dashboard(body.recruiter_id)}
+    except Exception:
+        log.exception("recruiter profileDashboard recruiter_id=%s", body.recruiter_id)
+        raise HTTPException(503, "Could not load recruiter profile analytics — check MongoDB and analytics-service logs.") from None
 
 
 @analytics_router.post("/debug/eventCounts")

@@ -6,6 +6,7 @@ import type {
   GeoMetric,
   MemberDashboard,
   RecruiterDashboardMetric,
+  RecruiterProfileDashboard,
   SavedJobMetric,
   TopJobMetric
 } from "../types/analytics";
@@ -47,6 +48,13 @@ export async function getMemberDashboard(member_id: number) {
 
 export async function getRecruiterDashboard(recruiter_id: number) {
   const response = await api.post<ApiResponse<RecruiterDashboardMetric[]>>("/analytics/recruiter/dashboard", {
+    recruiter_id
+  });
+  return response.data.data;
+}
+
+export async function getRecruiterProfileDashboard(recruiter_id: number) {
+  const response = await api.post<ApiResponse<RecruiterProfileDashboard>>("/analytics/recruiter/profileDashboard", {
     recruiter_id
   });
   return response.data.data;

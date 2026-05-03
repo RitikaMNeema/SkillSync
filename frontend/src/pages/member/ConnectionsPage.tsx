@@ -549,8 +549,9 @@ export function ConnectionsPage() {
                       type="text"
                       value={connectionQuery}
                       onChange={(e) => setConnectionQuery(e.target.value)}
-                      className="h-9 w-full rounded-[6px] border border-[#d6d6d6] bg-white !pl-12 pr-3 text-[15px] font-normal text-[#222] focus:border-[#666666] focus:outline-none focus-visible:border-[#666666]"
+                      className="h-9 w-full rounded-[6px] border border-[#d6d6d6] bg-white !pl-12 pr-3 text-[15px] font-normal text-[#222] placeholder:text-[#757575] focus:border-[#666666] focus:outline-none focus-visible:border-[#666666]"
                       aria-label="Search connections"
+                      placeholder="Search connections"
                     />
                   </div>
                   <div className="flex shrink-0 items-center gap-2 text-[15px]">

@@ -8,6 +8,7 @@ import {
   LogOut,
   MessageSquare,
   Search,
+  TrendingUp,
   Trash2,
   User,
   Users
@@ -293,6 +294,7 @@ export function Navbar() {
                 autoComplete="off"
                 className="w-[min(34vw,540px)] min-w-[260px] !pr-6"
                 aria-label="Search people, jobs, posts, and more"
+                placeholder="Search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 onFocus={() => {
@@ -445,16 +447,14 @@ export function Navbar() {
                       </Link>
                     </>
                   ) : (
-                    <>
-                      <Link
-                        to="/dashboard"
-                        className="flex items-center gap-3 rounded-card px-3 py-2 text-sm font-semibold text-text-primary hover:bg-hover hover:no-underline"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        <BarChart3 className="h-4 w-4 text-brand" />
-                        Analytics
-                      </Link>
-                    </>
+                    <Link
+                      to="/recruiter/analytics/profile"
+                      className="flex items-center gap-3 rounded-card px-3 py-2 text-sm font-semibold text-text-primary hover:bg-hover hover:no-underline"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      <TrendingUp className="h-4 w-4 text-brand" />
+                      Insights
+                    </Link>
                   )}
                   <div className="my-2 border-t border-[#e5e7eb]" />
                   <button

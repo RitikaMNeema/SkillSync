@@ -25,9 +25,10 @@ def _json(data):
     return jsonable_encoder(data, custom_encoder=_json_custom)
 
 
-@router.post("/create", status_code=202)
+@router.post("/create", status_code=201)
 async def create(body: CreatePostRequest, u=Depends(get_current_user)):
-    return {"success": True, "data": _json(await ctrl.enqueue_create(body.model_dump(), u))}
+    # Synchronous publish: avoids Kafka/consumer lag and stale-worker "Member not found" failures for recruiters.
+    return {"success": True, "data": _json(await ctrl.create(body.model_dump(), int(u["user_id"])))}
 
 
 @router.post("/feed")

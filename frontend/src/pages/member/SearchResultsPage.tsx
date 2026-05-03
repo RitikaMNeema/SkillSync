@@ -324,6 +324,7 @@ export function SearchResultsPage() {
               autoComplete="off"
               className="h-10 rounded-full border border-solid border-[#d0d7de] bg-white !pl-[3rem] pr-4 text-[0.95rem] caret-[#1f2937] focus:border-[#666666] focus:!shadow-none focus:outline-none"
               aria-label="Search"
+              placeholder="Search people, jobs, or posts"
             />
           </div>
           <Button type="button" onClick={handleSearch} className="h-10 shrink-0 rounded-full px-5 py-2 text-sm">

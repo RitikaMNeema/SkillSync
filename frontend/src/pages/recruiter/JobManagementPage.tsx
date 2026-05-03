@@ -85,6 +85,23 @@ function haystackMatchesSearchTokens(searchableLower: string, phrase: string): b
   return tokens.every((token) => searchableLower.includes(token));
 }
 
+function extractBenefitsFromStoredDescription(description: string | null | undefined): string[] {
+  const t = (description ?? "").trim();
+  if (!t) return [];
+  const inline = /\bBenefits\s*:\s*([^\n]+)/i.exec(t);
+  if (inline?.[1]) return inline[1].split(/[,|]/).map((s) => s.trim()).filter(Boolean);
+  const block = /\bBenefits\s*\n([^\n]+)/i.exec(t);
+  if (block?.[1]) return block[1].split(/[,|]/).map((s) => s.trim()).filter(Boolean);
+  return [];
+}
+
+function extractVisibleToSeekersFromStoredDescription(description: string | null | undefined): boolean {
+  const t = (description ?? "").trim();
+  const m = /\bVisible to job seekers\s*:\s*(yes|no)\b/i.exec(t);
+  if (m) return m[1].toLowerCase() === "yes";
+  return true;
+}
+
 function parseDescriptionSections(description: string | null | undefined): {
   about_job: string;
   responsibilities: string;
@@ -519,7 +536,7 @@ export function JobManagementPage() {
         `Responsibilities\n${responsibilities}`,
         `Qualifications\n${qualifications}`,
         additionalCompensation.length ? `Additional compensation: ${additionalCompensation.join(", ")}` : "",
-        benefits.length ? `Benefits: ${benefits.join(", ")}` : "",
+        benefits.length ? `Benefits\n${benefits.join(", ")}` : "",
         `Visible to job seekers: ${visibleToSeekers ? "Yes" : "No"}`
       ].filter(Boolean);
       const payload = {
@@ -588,6 +605,8 @@ export function JobManagementPage() {
       responsibilities: parsedSections.responsibilities,
       qualifications: parsedSections.qualifications
     });
+    setBenefits(extractBenefitsFromStoredDescription(job.description ?? ""));
+    setVisibleToSeekers(extractVisibleToSeekersFromStoredDescription(job.description ?? ""));
     setPostedSuccess(false);
     setCurrentStep(1);
     setOpen(true);
@@ -675,6 +694,7 @@ export function JobManagementPage() {
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
             aria-label="Search job title, keyword, or company"
+            placeholder="Search jobs"
           />
           <LeadingIconInput
             Icon={MapPin}
@@ -682,6 +702,7 @@ export function JobManagementPage() {
             value={locationKeyword}
             onChange={(event) => setLocationKeyword(event.target.value)}
             aria-label="City, state, or zip code"
+            placeholder="Location"
           />
           <Button
             type="button"

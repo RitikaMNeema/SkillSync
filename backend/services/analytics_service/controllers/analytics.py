@@ -11,6 +11,7 @@ from models.event import (
     geo_distribution,
     member_dashboard,
     recruiter_dashboard,
+    recruiter_profile_dashboard,
     event_counts_by_type,
 )
 
@@ -116,6 +117,20 @@ async def get_recruiter_dashboard(recruiter_id: int) -> list:
     result = [{"event_type": r["_id"], "count": r["count"]} for r in data]
     await cache_set(ck, result, TTL)
     return result
+
+
+async def get_recruiter_profile_dashboard(recruiter_id: int) -> dict:
+    ck = f"analytics:recruiter_profile:v1:{recruiter_id}"
+    hit = await cache_get(ck)
+    if hit is not None:
+        return hit
+    data = await recruiter_profile_dashboard(recruiter_id)
+    data["application_status_breakdown"] = [
+        {"status": r["_id"], "count": r["count"]}
+        for r in data.get("application_status_breakdown", [])
+    ]
+    await cache_set(ck, data, TTL)
+    return data
 
 
 async def get_event_counts(month: str | None = None, recruiter_id: int | None = None, job_id: str | None = None) -> list:

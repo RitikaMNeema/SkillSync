@@ -501,6 +501,7 @@ export function ApplicantReviewPage() {
             onChange={(event) => setSearch(event.target.value)}
             className="border-gray-200"
             aria-label="Search applicants"
+            placeholder="Search applicants"
           />
           <div className="mt-3 flex flex-wrap gap-2">
             {STATUS_FILTERS.map((status) => (

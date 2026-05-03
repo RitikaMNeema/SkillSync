@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from shared.database.mongo import get_db
-from models.member_mysql import get_member_by_id
+from models.author_hydration import hydrate_author_for_user_id
 
 PAGE_SIZE = 10
 _log = logging.getLogger(__name__)
@@ -36,23 +36,34 @@ async def ensure_post_indexes() -> None:
     """Idempotent index creation. Call from main.py lifespan."""
     await _posts().create_index([("created_at", -1)])
     await _posts().create_index("member_id")
+    await _posts().create_index("user_id")
     await _posts().create_index("post_id", unique=True)
     await _likes().create_index([("post_id", 1), ("member_id", 1)], unique=True)
     await _likes().create_index("post_id")
     await _comments().create_index([("post_id", 1), ("created_at", 1)])
 
 
+def _author_user_id(row: dict) -> int | None:
+    raw = row.get("user_id")
+    if raw is not None:
+        return int(raw)
+    mid = row.get("member_id")
+    return int(mid) if mid is not None else None
+
+
 async def create_post(
-    member_id: int,
+    author_user_id: int,
     author: dict,
     content: str,
     post_type: str,
     media_url: str | None = None,
+    *,
+    is_member: bool,
 ) -> dict:
     now = datetime.now(timezone.utc)
     doc = {
         "post_id": uuid4().hex,
-        "member_id": member_id,
+        "user_id": author_user_id,
         "post_type": post_type,
         "content": content,
         "media_url": media_url,
@@ -64,6 +75,8 @@ async def create_post(
         },
         "created_at": now,
     }
+    if is_member:
+        doc["member_id"] = author_user_id
     await _posts().insert_one(doc)
     doc.pop("_id", None)  # insert_one mutates doc; ObjectId is not JSON-serializable
     doc["created_at"] = now.isoformat()
@@ -79,17 +92,14 @@ async def _hydrate(rows: list[dict], viewer_id: int | None) -> list[dict]:
     if not rows:
         return rows
 
-    # 1. Live author info from MySQL (fixes stale-snapshot bug)
-    member_ids = list({r["member_id"] for r in rows})
+    # 1. Live author info from MySQL (member or recruiter)
     for r in rows:
-        current = await get_member_by_id(r["member_id"])
-        if current:
-            r["author"] = {
-                "first_name": current.get("first_name"),
-                "last_name": current.get("last_name"),
-                "headline": current.get("headline"),
-                "profile_photo_url": current.get("profile_photo_url"),
-            }
+        aid = _author_user_id(r)
+        if aid is None:
+            continue
+        snap = await hydrate_author_for_user_id(aid)
+        if snap:
+            r["author"] = snap
 
     # 2. Like & comment counts (batched)
     post_ids = [r["post_id"] for r in rows]
@@ -167,8 +177,9 @@ async def list_feed_posts(page: int, viewer_id: int | None = None) -> dict:
         _log.warning("Could not load connections for feed (viewer=%s): %s", vid, exc)
 
     connected_ids = list(dict.fromkeys(connected_ids))
-    allowed_member_ids = list(dict.fromkeys([*connected_ids, vid]))
-    filter_query = {"member_id": {"$in": allowed_member_ids}}
+    allowed_user_ids = list(dict.fromkeys([*connected_ids, vid]))
+    legacy_posts = {"$and": [{"user_id": {"$exists": False}}, {"member_id": {"$in": allowed_user_ids}}]}
+    filter_query = {"$or": [{"user_id": {"$in": allowed_user_ids}}, legacy_posts]}
 
     cursor = (
         _posts()
@@ -184,15 +195,16 @@ async def list_feed_posts(page: int, viewer_id: int | None = None) -> dict:
 
 async def list_member_posts(member_id: int, page: int, viewer_id: int | None = None) -> dict:
     skip = (page - 1) * PAGE_SIZE
+    author_query = {"$or": [{"member_id": member_id}, {"user_id": member_id}]}
     cursor = (
         _posts()
-        .find({"member_id": member_id}, {"_id": 0})
+        .find(author_query, {"_id": 0})
         .sort("created_at", -1)
         .skip(skip)
         .limit(PAGE_SIZE)
     )
     rows = await cursor.to_list(length=PAGE_SIZE)
-    total = await _posts().count_documents({"member_id": member_id})
+    total = await _posts().count_documents(author_query)
     rows = await _hydrate(rows, viewer_id)
     return {"posts": rows, "total": total, "page": page, "page_size": PAGE_SIZE}
 
@@ -233,6 +245,12 @@ async def delete_post(post_id: str) -> dict:
 
 
 async def get_post_owner(post_id: str) -> int | None:
-    """Return the member_id that owns this post, or None if not found."""
-    post = await _posts().find_one({"post_id": post_id}, {"_id": 0, "member_id": 1})
-    return post["member_id"] if post else None
+    """Return the author's `users.id` (member or recruiter), or None if not found."""
+    post = await _posts().find_one({"post_id": post_id}, {"_id": 0, "member_id": 1, "user_id": 1})
+    if not post:
+        return None
+    uid = post.get("user_id")
+    if uid is not None:
+        return int(uid)
+    mid = post.get("member_id")
+    return int(mid) if mid is not None else None
