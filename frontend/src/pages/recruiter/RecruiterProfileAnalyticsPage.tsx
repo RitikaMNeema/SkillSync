@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { Bookmark, BriefcaseBusiness, Eye, FileText, Lightbulb } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { getRecruiterProfileDashboard } from "../../api/analytics";
+import { ProfileViewersList } from "../../components/analytics/ProfileViewersList";
 import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
 import { useAuthHydrated } from "../../hooks/useAuthHydrated";
@@ -209,6 +210,8 @@ export function RecruiterProfileAnalyticsPage() {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
+
+            <ProfileViewersList rows={dashboard.profile_viewers_recent} />
           </div>
 
           <div className="rounded-lg border border-[#e2e6ea] bg-white p-3.5">

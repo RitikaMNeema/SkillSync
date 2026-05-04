@@ -34,19 +34,18 @@ import { ExperienceCard } from "../../components/profile/ExperienceCard";
 import { ProfileHeader } from "../../components/profile/ProfileHeader";
 import { ResumeUpload } from "../../components/profile/ResumeUpload";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
-import { formatRelativeDate } from "../../utils/formatDate";
 import {
   getUnifiedProfile,
   updateUnifiedProfile,
   type UnifiedProfileResolution
 } from "../../utils/profileAdapter";
+import { ProfileViewersList } from "../../components/analytics/ProfileViewersList";
 import { getMemberDashboard, getRecruiterProfileDashboard } from "../../api/analytics";
 import { getMutualConnections, listConnections, listPendingConnections, requestConnection, withdrawConnection } from "../../api/connections";
 import { getAllApplicationsByMember } from "../../api/applications";
 import { deleteCoverPhoto, getMember, recordMemberProfileView, searchMembers } from "../../api/members";
 import {
   deleteRecruiterCoverPhoto,
-  getRecruiter,
   recordRecruiterProfileView,
   searchRecruiters,
   uploadRecruiterCoverPhoto,
@@ -171,8 +170,6 @@ export function ProfilePage() {
       };
 
   const [activityStats, setActivityStats] = useState<ProfileActivityStats | null>(null);
-  /** Resolved labels for analytics `profile_viewers_recent` (API only sends viewer_user_id). */
-  const [viewerDisplayNames, setViewerDisplayNames] = useState<Record<string, string>>({});
   const [activeModal, setActiveModal] = useState<ProfileActiveModal | null>(null);
   const [skillsListModalOpen, setSkillsListModalOpen] = useState(false);
   const [showAllLanguages, setShowAllLanguages] = useState(false);
@@ -303,40 +300,6 @@ export function ProfilePage() {
       cancelled = true;
     };
   }, [parsedMemberId, isRecruiterViewingOwnProfile, profileResolvedAs]);
-
-  useEffect(() => {
-    const rows = activityStats?.profileViewersRecent;
-    if (!rows?.length) {
-      setViewerDisplayNames({});
-      return;
-    }
-    let cancelled = false;
-    const unique = [...new Set(rows.map((r) => String(r.viewer_user_id)))].slice(0, 25);
-    void (async () => {
-      const next: Record<string, string> = {};
-      for (const id of unique) {
-        const uid = Number(id);
-        if (!Number.isFinite(uid)) continue;
-        let label = "";
-        try {
-          const m = await getMember(uid);
-          label = `${m.first_name ?? ""} ${m.last_name ?? ""}`.trim();
-        } catch {
-          try {
-            const rec = await getRecruiter(uid);
-            label = (rec.name ?? `${rec.first_name ?? ""} ${rec.last_name ?? ""}`).trim();
-          } catch {
-            label = "";
-          }
-        }
-        next[id] = label || `User ${id}`;
-      }
-      if (!cancelled) setViewerDisplayNames(next);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activityStats]);
 
   useEffect(() => {
     if (!Number.isFinite(parsedMemberId) || parsedMemberId <= 0 || currentUserId == null) {
@@ -1321,25 +1284,7 @@ export function ProfilePage() {
                       </p>
                     </div>
                   </div>
-                  {activityStats && (activityStats.profileViewersRecent?.length ?? 0) > 0 ? (
-                    <div className="mt-4 border-t border-[#e6eaef] pt-4">
-                      <p className="text-sm font-semibold text-[#1f1f1f]">Who viewed your profile</p>
-                      <ul className="mt-2 max-h-40 space-y-2 overflow-y-auto">
-                        {(activityStats.profileViewersRecent ?? []).map((row, idx) => (
-                          <li key={`${String(row.viewer_user_id)}-${idx}`} className="flex items-center justify-between gap-2 text-xs">
-                            <button
-                              type="button"
-                              className="min-w-0 truncate text-left font-medium text-[#0a66c2] hover:underline"
-                              onClick={() => navigate(`/profile/${row.viewer_user_id}`)}
-                            >
-                              {viewerDisplayNames[String(row.viewer_user_id)] ?? `User ${row.viewer_user_id}`}
-                            </button>
-                            <span className="shrink-0 tabular-nums text-[#6b7280]">{formatRelativeDate(row.last_viewed_at)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
+                  {activityStats ? <ProfileViewersList rows={activityStats.profileViewersRecent} /> : null}
                   <div className="border-t border-[#e6eaef] pt-4">
                     <div className="flex items-start gap-3">
                       <span

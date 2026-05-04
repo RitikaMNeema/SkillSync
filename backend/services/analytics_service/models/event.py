@@ -2,6 +2,9 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from shared.database.mongo import get_db
 
+# Distinct viewers returned for profile dashboards (member + recruiter).
+PROFILE_VIEWERS_RECENT_LIMIT = 5
+
 
 def _recruiter_profile_view_match(recruiter_id: int) -> dict:
     """profile.viewed events for recruiter-owned profiles (producer + legacy shapes)."""
@@ -244,9 +247,9 @@ async def member_dashboard(member_id) -> dict:
             {"$sort": {"timestamp": -1}},
             {"$group": {"_id": "$actor_id", "last_viewed_at": {"$first": "$timestamp"}}},
             {"$sort": {"last_viewed_at": -1}},
-            {"$limit": 25},
+            {"$limit": PROFILE_VIEWERS_RECENT_LIMIT},
         ]
-    ).to_list(length=26)
+    ).to_list(length=PROFILE_VIEWERS_RECENT_LIMIT + 1)
     profile_viewers_recent = []
     for row in viewers_rows:
         ts = row.get("last_viewed_at")
@@ -341,9 +344,9 @@ async def recruiter_profile_dashboard(recruiter_id: int) -> dict:
             {"$sort": {"timestamp": -1}},
             {"$group": {"_id": "$actor_id", "last_viewed_at": {"$first": "$timestamp"}}},
             {"$sort": {"last_viewed_at": -1}},
-            {"$limit": 25},
+            {"$limit": PROFILE_VIEWERS_RECENT_LIMIT},
         ]
-    ).to_list(length=26)
+    ).to_list(length=PROFILE_VIEWERS_RECENT_LIMIT + 1)
     profile_viewers_recent = []
     for row in viewers_rows:
         ts = row.get("last_viewed_at")

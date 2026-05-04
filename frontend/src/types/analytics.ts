@@ -43,7 +43,7 @@ export interface MemberDashboard {
     status: ApplicationStatus;
     count: number;
   }>;
-  /** Distinct viewers (last 30d), most recent first — excludes self-views. */
+  /** Distinct viewers (last 30d), most recent first — excludes self-views; capped at 5. */
   profile_viewers_recent?: ProfileViewerEntry[];
 }
 
@@ -61,5 +61,6 @@ export interface RecruiterProfileDashboard {
   applicants_30d: number;
   messages_sent_30d: number;
   application_status_breakdown: Array<{ status: string; count: number }>;
+  /** Distinct viewers (last 30d), most recent first — capped at 5. */
   profile_viewers_recent?: ProfileViewerEntry[];
 }
