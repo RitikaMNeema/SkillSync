@@ -177,7 +177,7 @@ export function MessagesPage() {
       return {
         name: recruiter.name?.trim() || recruiter.email || `Recruiter ${id}`,
         subtitle: recruiter.role?.trim() || recruiter.company_name || "Recruiter",
-        photoUrl: null,
+        photoUrl: recruiter.profile_photo_url ?? null,
         summary: null,
         locationLine: null,
         profileSlug: null,
@@ -286,6 +286,20 @@ export function MessagesPage() {
       ),
     [forceUnreadThreadIds, threads, unreadCountByThread]
   );
+
+  const avatarSrcByThreadId = useMemo(() => {
+    const map: Record<string, string | null | undefined> = {};
+    if (userId == null) return map;
+    const self = String(userId);
+    for (const thread of threads) {
+      const others = thread.participant_ids.filter((id) => id !== self);
+      const primaryId = others[0];
+      if (primaryId) {
+        map[thread.thread_id] = profileByUserId[primaryId]?.photoUrl ?? null;
+      }
+    }
+    return map;
+  }, [threads, userId, profileByUserId]);
 
   const filteredThreads = threads.filter((thread) => {
     if (hiddenThreadIds[thread.thread_id]) return false;
@@ -801,6 +815,7 @@ export function MessagesPage() {
                   unreadCountByThread={displayUnreadCountByThread}
                   starredThreadIds={starredThreadIds}
                   previewByThread={previewByThread}
+                  avatarSrcByThreadId={avatarSrcByThreadId}
                   onStartNewMessage={() => {
                     setShowComposer(true);
                     setSearchQuery("");

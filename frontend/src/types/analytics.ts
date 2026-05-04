@@ -27,6 +27,11 @@ export interface GeoMetric {
   count: number;
 }
 
+export interface ProfileViewerEntry {
+  viewer_user_id: string | number;
+  last_viewed_at: string;
+}
+
 export interface MemberDashboard {
   profile_views_30d: number;
   profile_views_daily_30d?: Array<{
@@ -38,6 +43,8 @@ export interface MemberDashboard {
     status: ApplicationStatus;
     count: number;
   }>;
+  /** Distinct viewers (last 30d), most recent first — excludes self-views. */
+  profile_viewers_recent?: ProfileViewerEntry[];
 }
 
 export interface RecruiterDashboardMetric {
@@ -54,4 +61,5 @@ export interface RecruiterProfileDashboard {
   applicants_30d: number;
   messages_sent_30d: number;
   application_status_breakdown: Array<{ status: string; count: number }>;
+  profile_viewers_recent?: ProfileViewerEntry[];
 }

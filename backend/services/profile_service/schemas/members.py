@@ -43,6 +43,11 @@ class GetMemberRequest(BaseModel):
     member_id: int
 
 
+class RecordProfileViewRequest(BaseModel):
+    """Record one profile view (deduped server-side; not tied to profile GET)."""
+    member_id: int
+
+
 class UpdateMemberRequest(BaseModel):
     model_config = {"extra": "ignore"}
 

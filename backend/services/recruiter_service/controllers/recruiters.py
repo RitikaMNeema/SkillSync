@@ -15,8 +15,10 @@ from models.recruiter import (
 from models.command_status import get_command_status
 from producers.recruiter_command_producer import enqueue_recruiter_command
 from producers.recruiter_analytics_producer import emit_recruiter_profile_viewed, emit_recruiter_search_appeared
+from shared.redis_utils.client import get_redis
 
 log = logging.getLogger(__name__)
+PROFILE_VIEW_DEDUP_TTL_SEC = 86400
 
 
 async def _emit_recruiter_search_appearance_events(
@@ -122,17 +124,35 @@ async def create(body: dict) -> dict:
 
 
 async def get(recruiter_id: int, actor: dict | None = None) -> dict:
+    """Load recruiter profile. View analytics use ``record_profile_view``, not this GET."""
+    _ = actor
     r = await get_recruiter(recruiter_id)
     if not r:
         raise HTTPException(404, "Recruiter not found")
-    if actor and actor.get("user_id") is not None:
-        try:
-            viewer = int(actor["user_id"])
-            if viewer != recruiter_id:
-                await emit_recruiter_profile_viewed(viewer, recruiter_id)
-        except Exception:
-            log.exception("emit_recruiter_profile_viewed failed recruiter_id=%s", recruiter_id)
     return r
+
+
+async def record_profile_view(viewer_id: int, recruiter_id: int) -> dict:
+    if int(viewer_id) == int(recruiter_id):
+        return {"recorded": False, "reason": "self_view"}
+    if not await get_recruiter(recruiter_id):
+        raise HTTPException(404, "Recruiter not found")
+
+    dedupe_key = f"profile_view_dedupe:v1:{viewer_id}:{recruiter_id}"
+    try:
+        redis = await get_redis()
+        first_time = await redis.set(dedupe_key, "1", nx=True, ex=PROFILE_VIEW_DEDUP_TTL_SEC)
+        if not first_time:
+            return {"recorded": False, "reason": "deduplicated_24h"}
+    except Exception:
+        log.warning("recruiter profile view dedupe redis unavailable; emitting anyway", exc_info=True)
+
+    try:
+        await emit_recruiter_profile_viewed(viewer_id, recruiter_id)
+    except Exception:
+        log.exception("emit_recruiter_profile_viewed failed recruiter_id=%s viewer_id=%s", recruiter_id, viewer_id)
+        raise HTTPException(503, "Could not record profile view — try again later.") from None
+    return {"recorded": True}
 
 
 async def update(body: dict) -> dict:
@@ -162,7 +182,7 @@ async def delete(recruiter_id: int) -> dict:
 
 
 async def search(name, company, industry, page, actor_id: int | None = None) -> dict:
-    rows, total = await search_recruiters(name, company, industry, page)
+    rows, total = await search_recruiters(name, company, industry, page, exclude_recruiter_id=actor_id)
     await _emit_recruiter_search_appearance_events(actor_id, rows, name, company, industry)
     return {"recruiters": rows, "total": total, "page": page, "page_size": PAGE_SIZE}
 

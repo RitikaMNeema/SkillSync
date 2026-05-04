@@ -1015,9 +1015,15 @@ async def clear_cover_file(member_id: int) -> None:
             )
 
 
-async def search_members(keyword, skill, location, page, page_size=PAGE_SIZE) -> tuple[list, int]:
+async def search_members(
+    keyword, skill, location, page, page_size=PAGE_SIZE, *, exclude_member_id=None
+) -> tuple[list, int]:
     conditions = ["m.is_deleted = 0"]
     values = []
+
+    if exclude_member_id is not None:
+        conditions.append("m.member_id <> %s")
+        values.append(exclude_member_id)
 
     if keyword:
         conditions.append("(m.headline LIKE %s OR m.summary LIKE %s OR m.first_name LIKE %s OR m.last_name LIKE %s OR JSON_SEARCH(LOWER(m.skills), 'one', %s) IS NOT NULL)")

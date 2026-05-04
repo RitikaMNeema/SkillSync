@@ -341,6 +341,10 @@ async def compute_match(payload: AIMatchRequest):
         confidence = round(0.25 * overlap_score + 0.75 * embedding_score, 1)
     confidence = max(0.0, min(100.0, confidence))
 
+    # Heuristic confidence: average of the two main signals (skill overlap vs semantic similarity), 0–100.
+    confidence = round((overlap_score + embedding_score) / 2.0, 1)
+    confidence = max(0.0, min(100.0, confidence))
+
     system_prompt = (
         "You are a hiring assistant. "
         "Given candidate and job data plus computed scoring features, "

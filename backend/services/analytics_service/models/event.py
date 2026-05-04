@@ -44,7 +44,57 @@ def _job_payload_match(job_id: str) -> dict:
     return {"payload.job_id": {"$in": ids}}
 
 
+def _not_actor_is_profile_owner(profile_owner_id: int) -> dict:
+    """Exclude profile.viewed rows where the viewer is the profile owner (self-views)."""
+    pid = profile_owner_id
+    return {"$nor": [{"actor_id": str(pid)}, {"actor_id": pid}]}
+
+
+def _is_self_profile_view_event(envelope: dict) -> bool:
+    """True when profile.viewed represents the owner opening their own profile."""
+    if envelope.get("event_type") != "profile.viewed":
+        return False
+    actor = envelope.get("actor_id")
+    if actor is None:
+        return False
+    ent = envelope.get("entity") or {}
+    payload = envelope.get("payload") or {}
+    raw_subject = ent.get("entity_id") or payload.get("member_id") or payload.get("recruiter_id")
+    if raw_subject is None:
+        return False
+    try:
+        return int(actor) == int(raw_subject)
+    except (TypeError, ValueError):
+        return str(actor).strip() == str(raw_subject).strip()
+
+
+async def _invalidate_profile_view_analytics_cache(envelope: dict) -> None:
+    """Drop cached dashboard aggregates so the next read reflects the new profile.viewed row."""
+    if envelope.get("event_type") != "profile.viewed":
+        return
+    ent = envelope.get("entity") or {}
+    et = str(ent.get("entity_type") or "").lower()
+    eid = ent.get("entity_id")
+    if not eid:
+        return
+    try:
+        oid = int(eid)
+    except (TypeError, ValueError):
+        return
+    try:
+        from shared.redis_utils.cache import cache_del
+
+        if et == "recruiter":
+            await cache_del(f"analytics:recruiter_profile:v1:{oid}")
+        else:
+            await cache_del(f"analytics:member:v3:{oid}")
+    except Exception:
+        return
+
+
 async def insert_event(envelope: dict) -> None:
+    if _is_self_profile_view_event(envelope):
+        return
     db = get_db()
     await db.events.insert_one({
         "event_type":      envelope["event_type"],
@@ -55,6 +105,7 @@ async def insert_event(envelope: dict) -> None:
         "payload":         envelope.get("payload"),
         "idempotency_key": envelope["idempotency_key"],
     })
+    await _invalidate_profile_view_analytics_cache(envelope)
 
 
 async def top_jobs_by_applications(month: str, recruiter_id: int | None = None) -> list:
@@ -152,18 +203,16 @@ async def member_dashboard(member_id) -> dict:
     db = get_db()
     now = datetime.now(timezone.utc)
     since = now - timedelta(days=30)
+    view_base = {
+        "event_type": "profile.viewed",
+        "timestamp": {"$gte": since},
+        "$or": [{"payload.member_id": str(member_id)}, {"entity.entity_id": str(member_id)}],
+        **_not_actor_is_profile_owner(int(member_id)),
+    }
     views_total, views_daily, search_appearances, status_changed, submitted = await __import__("asyncio").gather(
-        db.events.count_documents({
-            "event_type": "profile.viewed",
-            "timestamp": {"$gte": since},
-            "$or": [{"payload.member_id": str(member_id)}, {"entity.entity_id": str(member_id)}],
-        }),
+        db.events.count_documents(view_base),
         db.events.aggregate([
-            {"$match": {
-                "event_type": "profile.viewed",
-                "timestamp": {"$gte": since},
-                "$or": [{"payload.member_id": str(member_id)}, {"entity.entity_id": str(member_id)}],
-            }},
+            {"$match": view_base},
             {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}}, "count": {"$sum": 1}}},
         ]).to_list(length=60),
         db.events.count_documents({
@@ -188,11 +237,32 @@ async def member_dashboard(member_id) -> dict:
     statuses = {row["_id"]: row["count"] for row in status_changed}
     statuses["submitted"] = statuses.get("submitted", 0) + submitted
     breakdown = [{"_id": status, "count": count} for status, count in statuses.items() if status]
+
+    viewers_rows = await db.events.aggregate(
+        [
+            {"$match": view_base},
+            {"$sort": {"timestamp": -1}},
+            {"$group": {"_id": "$actor_id", "last_viewed_at": {"$first": "$timestamp"}}},
+            {"$sort": {"last_viewed_at": -1}},
+            {"$limit": 25},
+        ]
+    ).to_list(length=26)
+    profile_viewers_recent = []
+    for row in viewers_rows:
+        ts = row.get("last_viewed_at")
+        profile_viewers_recent.append(
+            {
+                "viewer_user_id": row.get("_id"),
+                "last_viewed_at": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+            }
+        )
+
     return {
         "profile_views_30d": views_total,
         "profile_views_daily_30d": profile_views_daily,
         "search_appearances_30d": search_appearances,
         "application_status_breakdown": breakdown,
+        "profile_viewers_recent": profile_viewers_recent,
     }
 
 
@@ -221,11 +291,17 @@ async def recruiter_profile_dashboard(recruiter_id: int) -> dict:
     job_m = _recruiter_payload_match(recruiter_id)
     rid_str = str(recruiter_id)
 
+    profile_views_match = {
+        "event_type": "profile.viewed",
+        **tmatch,
+        **profile_m,
+        **_not_actor_is_profile_owner(int(recruiter_id)),
+    }
     views_total, views_daily, job_views, job_saves, applicants, messages_sent, status_changed, search_appearances = (
         await asyncio.gather(
-            db.events.count_documents({"event_type": "profile.viewed", **tmatch, **profile_m}),
+            db.events.count_documents(profile_views_match),
             db.events.aggregate([
-                {"$match": {"event_type": "profile.viewed", **tmatch, **profile_m}},
+                {"$match": profile_views_match},
                 {
                     "$group": {
                         "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
@@ -259,6 +335,25 @@ async def recruiter_profile_dashboard(recruiter_id: int) -> dict:
     statuses["submitted"] = statuses.get("submitted", 0) + applicants
     breakdown = [{"_id": status, "count": count} for status, count in statuses.items() if status]
 
+    viewers_rows = await db.events.aggregate(
+        [
+            {"$match": profile_views_match},
+            {"$sort": {"timestamp": -1}},
+            {"$group": {"_id": "$actor_id", "last_viewed_at": {"$first": "$timestamp"}}},
+            {"$sort": {"last_viewed_at": -1}},
+            {"$limit": 25},
+        ]
+    ).to_list(length=26)
+    profile_viewers_recent = []
+    for row in viewers_rows:
+        ts = row.get("last_viewed_at")
+        profile_viewers_recent.append(
+            {
+                "viewer_user_id": row.get("_id"),
+                "last_viewed_at": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+            }
+        )
+
     return {
         "profile_views_30d": views_total,
         "profile_views_daily_30d": profile_views_daily,
@@ -268,6 +363,7 @@ async def recruiter_profile_dashboard(recruiter_id: int) -> dict:
         "applicants_30d": applicants,
         "messages_sent_30d": messages_sent,
         "application_status_breakdown": breakdown,
+        "profile_viewers_recent": profile_viewers_recent,
     }
 
 

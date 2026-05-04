@@ -12,6 +12,7 @@ export function ThreadList({
   unreadCountByThread,
   starredThreadIds,
   previewByThread,
+  avatarSrcByThreadId,
   onStartNewMessage: _onStartNewMessage
 }: {
   threads: Thread[];
@@ -21,6 +22,8 @@ export function ThreadList({
   unreadCountByThread?: Record<string, number>;
   starredThreadIds?: Record<string, boolean>;
   previewByThread?: Record<string, string>;
+  /** Primary other participant’s profile photo URL (same source as conversation header). */
+  avatarSrcByThreadId?: Record<string, string | null | undefined>;
   onStartNewMessage?: () => void;
 }) {
   if (!threads.length) {
@@ -42,6 +45,7 @@ export function ThreadList({
       {threads.map((thread) => {
         const label = threadLabels?.[thread.thread_id] ?? `Conversation ${thread.thread_id.slice(0, 6)}`;
         const avatarName = label.split(",")[0]?.trim().split(" ")[0] || label;
+        const photoSrc = avatarSrcByThreadId?.[thread.thread_id] ?? undefined;
         const unreadCount = unreadCountByThread?.[thread.thread_id] ?? 0;
         const isStarred = Boolean(starredThreadIds?.[thread.thread_id]);
         const active = activeThreadId === thread.thread_id;
@@ -57,7 +61,7 @@ export function ThreadList({
             )}
           >
             {active ? <span className="absolute left-0 top-2 bottom-2 w-1 rounded-full bg-[#0a66c2]" aria-hidden /> : null}
-            <Avatar alt="Thread" name={avatarName} size="md" />
+            <Avatar alt={label} name={avatarName} src={photoSrc} size="md" />
             <div className="min-w-0 flex-1 pt-0.5">
               <div className="flex items-start justify-between gap-2">
                 <p className={cn("truncate text-[15px] leading-tight", active ? "font-semibold text-[#1f1f1f]" : "font-semibold text-[#1f1f1f]")}>

@@ -32,6 +32,14 @@ export async function getRecruiter(recruiter_id: number) {
   return response.data.data;
 }
 
+/** Records a profile view for a recruiter profile (24h dedupe + self-view guard on server). */
+export async function recordRecruiterProfileView(recruiter_id: number) {
+  const response = await api.post<ApiResponse<{ recorded: boolean; reason?: string }>>("/recruiters/recordProfileView", {
+    recruiter_id
+  });
+  return response.data.data;
+}
+
 export async function updateRecruiter(payload: Partial<RecruiterProfile> & { recruiter_id: number }) {
   const response = await api.post<ApiResponse<RecruiterProfile>>("/recruiters/update", payload);
   return resolveCommandResult<RecruiterProfile>(response.data.data, "/recruiters/commandStatus");
