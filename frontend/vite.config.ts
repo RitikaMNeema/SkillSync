@@ -73,6 +73,11 @@ export default defineConfig(({ mode }) => {
       rewrite: (path: string) => path.replace(/^\/api/, ""),
       ...proxyLong
     },
+    "/api/network": {
+      target: `http://${proxyHost}:3009`,
+      rewrite: (path: string) => path.replace(/^\/api/, ""),
+      ...proxyLong
+    },
     "/api/events": {
       target: `http://${proxyHost}:3008`,
       rewrite: (path: string) => path.replace(/^\/api/, ""),
@@ -119,6 +124,12 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       proxy: gateway
         ? {
+            // Must be before `/api` so network score POST is not swallowed by the SPA/gateway-only path.
+            "/api/network": {
+              target: `http://${proxyHost}:3009`,
+              rewrite: (path: string) => path.replace(/^\/api/, ""),
+              ...proxyLong
+            },
             "/api": {
               target: gateway,
               ...proxyLong

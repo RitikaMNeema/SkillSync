@@ -67,7 +67,9 @@ services:
       mysql:
         condition: service_healthy
     volumes:
-      - ./database/mysql/migrations/003_application_status_hired.sql:/003.sql:ro
+      # Mount the whole folder so Docker never tries to bind-mount a host *directory*
+      # that was accidentally created with the .sql name (file-vs-dir mount error).
+      - ./database/mysql/migrations:/migrations:ro
       - ./database/mysql/ensure-hired-enum.sh:/ensure-hired-enum.sh:ro
     entrypoint: ["/bin/sh", "/ensure-hired-enum.sh"]
 
@@ -408,6 +410,31 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  network-service:
+    build:
+      context: .
+      dockerfile: services/network_service/Dockerfile
+    container_name: linkedin_network
+    restart: unless-stopped
+    env_file: *app-env-files
+    environment:
+      PORT: ${NETWORK_SERVICE_PORT:-3009}
+      PYTHONPATH: /app
+      <<: *docker-runtime-env
+    ports:
+      - "${NETWORK_SERVICE_PORT:-3009}:${NETWORK_SERVICE_PORT:-3009}"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${NETWORK_SERVICE_PORT:-3009}/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   ai-service:
     build:

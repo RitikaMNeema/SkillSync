@@ -78,6 +78,10 @@ server {
     rewrite ^/api/(.*)$ /$1 break;
     proxy_pass http://$api_host:3008;
   }
+  location ^~ /api/network/ {
+    rewrite ^/api/(.*)$ /$1 break;
+    proxy_pass http://$api_host:3009;
+  }
   location ^~ /api/events/ {
     rewrite ^/api/(.*)$ /$1 break;
     proxy_pass http://$api_host:3008;

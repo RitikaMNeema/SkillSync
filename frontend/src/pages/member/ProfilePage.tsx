@@ -43,15 +43,17 @@ import {
 import { getMemberDashboard, getRecruiterProfileDashboard } from "../../api/analytics";
 import { getMutualConnections, listConnections, listPendingConnections, requestConnection, withdrawConnection } from "../../api/connections";
 import { getAllApplicationsByMember } from "../../api/applications";
-import { deleteCoverPhoto, recordMemberProfileView, searchMembers } from "../../api/members";
+import { deleteCoverPhoto, getMember, recordMemberProfileView, searchMembers } from "../../api/members";
 import {
   deleteRecruiterCoverPhoto,
+  getRecruiter,
   recordRecruiterProfileView,
   searchRecruiters,
   uploadRecruiterCoverPhoto,
   uploadRecruiterProfilePhoto,
   type RecruiterProfile
 } from "../../api/recruiters";
+import { NetworkScoreCard } from "../../components/profile/NetworkScoreCard";
 
 type ProfileActiveModal =
   | {
@@ -169,6 +171,8 @@ export function ProfilePage() {
       };
 
   const [activityStats, setActivityStats] = useState<ProfileActivityStats | null>(null);
+  /** Resolved labels for analytics `profile_viewers_recent` (API only sends viewer_user_id). */
+  const [viewerDisplayNames, setViewerDisplayNames] = useState<Record<string, string>>({});
   const [activeModal, setActiveModal] = useState<ProfileActiveModal | null>(null);
   const [skillsListModalOpen, setSkillsListModalOpen] = useState(false);
   const [showAllLanguages, setShowAllLanguages] = useState(false);
@@ -301,6 +305,40 @@ export function ProfilePage() {
   }, [parsedMemberId, isRecruiterViewingOwnProfile, profileResolvedAs]);
 
   useEffect(() => {
+    const rows = activityStats?.profileViewersRecent;
+    if (!rows?.length) {
+      setViewerDisplayNames({});
+      return;
+    }
+    let cancelled = false;
+    const unique = [...new Set(rows.map((r) => String(r.viewer_user_id)))].slice(0, 25);
+    void (async () => {
+      const next: Record<string, string> = {};
+      for (const id of unique) {
+        const uid = Number(id);
+        if (!Number.isFinite(uid)) continue;
+        let label = "";
+        try {
+          const m = await getMember(uid);
+          label = `${m.first_name ?? ""} ${m.last_name ?? ""}`.trim();
+        } catch {
+          try {
+            const rec = await getRecruiter(uid);
+            label = (rec.name ?? `${rec.first_name ?? ""} ${rec.last_name ?? ""}`).trim();
+          } catch {
+            label = "";
+          }
+        }
+        next[id] = label || `User ${id}`;
+      }
+      if (!cancelled) setViewerDisplayNames(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activityStats]);
+
+  useEffect(() => {
     if (!Number.isFinite(parsedMemberId) || parsedMemberId <= 0 || currentUserId == null) {
       setHiredApplications([]);
       return;
@@ -311,7 +349,7 @@ export function ProfilePage() {
     }
     let cancelled = false;
     void getAllApplicationsByMember(parsedMemberId)
-      .then(({ applications }) => {
+      .then(({ applications: apps }) => {
         if (cancelled) return;
         setHiredApplications(applications.filter((a) => a.status === "hired"));
       })
@@ -1294,7 +1332,7 @@ export function ProfilePage() {
                               className="min-w-0 truncate text-left font-medium text-[#0a66c2] hover:underline"
                               onClick={() => navigate(`/profile/${row.viewer_user_id}`)}
                             >
-                              User {row.viewer_user_id}
+                              {viewerDisplayNames[String(row.viewer_user_id)] ?? `User ${row.viewer_user_id}`}
                             </button>
                             <span className="shrink-0 tabular-nums text-[#6b7280]">{formatRelativeDate(row.last_viewed_at)}</span>
                           </li>
@@ -1417,6 +1455,15 @@ export function ProfilePage() {
               </Card>
             </>
           )}
+          {member &&
+          isOwnProfile &&
+          (profileResolvedAs === "member" || profileResolvedAs === "recruiter") ? (
+            <NetworkScoreCard
+              variant="sidebar"
+              memberId={member.member_id}
+              connectionsCount={resolvedConnectionsCount !== null ? resolvedConnectionsCount : (member.connections_count ?? 0)}
+            />
+          ) : null}
           <Card className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
             <div className="flex items-center gap-2">
               <h3 className="text-lg font-semibold text-[#1f1f1f]">Suggested for you</h3>

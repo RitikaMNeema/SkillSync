@@ -52,7 +52,7 @@ export async function getApplicationsByMember(member_id: number, page = 1) {
   return response.data.data;
 }
 
-/** Every page for this member (profile / job detail must not cap at first `page_size`). */
+/** All pages for this member (profile / job detail must not cap at first `page_size`). */
 export async function getAllApplicationsByMember(member_id: number) {
   const applications: Application[] = [];
   let page = 1;
