@@ -6,7 +6,6 @@ import {
   Eye,
   Filter,
   Loader2,
-  Mail,
   MessageSquare,
   Sparkles
 } from "lucide-react";
@@ -24,6 +23,7 @@ import {
   type CommandStatusResponse
 } from "../../api/ai";
 import { getAllApplicationsByJob } from "../../api/applications";
+import { openThread, sendMessage } from "../../api/messages";
 import { getRecruiter } from "../../api/recruiters";
 import type { Application } from "../../types/application";
 import { applicationStatusSkipsAiShortlist } from "../../utils/applicationStatus";
@@ -500,6 +500,24 @@ export function AIMatchingFlowPage() {
           reviewer_id: recruiterId ?? null
         });
         await pollCommandUntilDone(queued.command_id);
+
+        if ((action === "approve" || action === "edit") && recruiterId) {
+          try {
+            const thread = await openThread([recruiterId, outreachMemberId]);
+            const messageText = outreachSubject
+              ? `Subject: ${outreachSubject}\n\n${outreachBody}`
+              : outreachBody;
+            await sendMessage(thread.thread_id, recruiterId, messageText);
+          } catch (deliveryErr) {
+            console.error("Failed to deliver outreach to inbox", deliveryErr);
+            toast.error(
+              deliveryErr instanceof Error
+                ? `Approved, but could not deliver to inbox: ${deliveryErr.message}`
+                : "Approved, but could not deliver to inbox."
+            );
+          }
+        }
+
         setOutreachStatus((prev) => ({
           ...prev,
           [outreachMemberId]:
@@ -507,7 +525,9 @@ export function AIMatchingFlowPage() {
         }));
         setOutreachOpen(false);
         toast.success(
-          action === "reject" ? "Outreach rejected." : "Decision recorded. Email send is a placeholder in this build."
+          action === "reject"
+            ? "Outreach rejected."
+            : "Message sent to candidate's inbox."
         );
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Approval failed");
@@ -515,7 +535,7 @@ export function AIMatchingFlowPage() {
         setOutreachLoading(false);
       }
     },
-    [outreachTraceId, outreachMemberId, outreachBody, recruiterId]
+    [outreachTraceId, outreachMemberId, outreachBody, outreachSubject, recruiterId]
   );
 
   const renderStepTracker = () => (
@@ -1085,28 +1105,16 @@ export function AIMatchingFlowPage() {
                               </button>
                               <button
                                 type="button"
-                                className="rounded-lg p-2 text-[#0A66C2] hover:bg-[#eff6ff]"
-                                aria-label="Open messaging"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  navigate("/messages");
-                                  toast("Messaging opens in a new context — thread creation is not wired here.");
-                                }}
-                              >
-                                <MessageSquare className="h-4 w-4" />
-                              </button>
-                              <button
-                                type="button"
                                 className={`rounded-lg p-2 ${
                                   row.match.match_score >= MIN_OUTREACH_MATCH_SCORE
                                     ? "text-[#0A66C2] hover:bg-[#eff6ff]"
                                     : "cursor-not-allowed text-[#cbd5e1]"
                                 }`}
-                                aria-label="Generate outreach"
+                                aria-label="Generate outreach message"
                                 title={
                                   row.match.match_score < MIN_OUTREACH_MATCH_SCORE
                                     ? `Outreach from ${MIN_OUTREACH_MATCH_SCORE}% match only`
-                                    : "Generate outreach draft"
+                                    : "Generate outreach message"
                                 }
                                 disabled={row.match.match_score < MIN_OUTREACH_MATCH_SCORE}
                                 onClick={(e) => {
@@ -1114,7 +1122,7 @@ export function AIMatchingFlowPage() {
                                   void openOutreachForRow(row);
                                 }}
                               >
-                                <Mail className="h-4 w-4" />
+                                <MessageSquare className="h-4 w-4" />
                               </button>
                             </div>
                             <div className="mt-1 flex flex-wrap justify-center gap-1 text-[10px] text-[#9ca3af]">
@@ -1230,8 +1238,7 @@ function OutreachModal({
             </Button>
           </div>
           <p className="text-xs leading-relaxed text-[#6b7280]">
-            Once approved, the message will be sent via email. You can track the response in the outreach tracker.
-            <span className="block text-[#9ca3af]">Email delivery is not implemented in this environment — approval is recorded in the AI service.</span>
+            Once approved, the message will be delivered to the candidate&apos;s SkillSync inbox. You can track the response in Messages.
           </p>
           <button type="button" className="text-sm font-semibold text-[#6b7280] hover:text-[#111827]" onClick={onClose}>
             Close
