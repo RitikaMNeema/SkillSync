@@ -349,7 +349,7 @@ async def clear_recruiter_cover_file(recruiter_id: int) -> None:
             )
 
 
-async def search_recruiters(name, company, industry, page) -> tuple[list, int]:
+async def search_recruiters(name, company, industry, page, *, exclude_recruiter_id=None) -> tuple[list, int]:
     conditions, values = [], []
     if name:
         conditions.append("r.name LIKE %s"); values.append(f"%{name}%")
@@ -357,6 +357,9 @@ async def search_recruiters(name, company, industry, page) -> tuple[list, int]:
         conditions.append("c.name LIKE %s"); values.append(f"%{company}%")
     if industry:
         conditions.append("c.industry LIKE %s"); values.append(f"%{industry}%")
+    if exclude_recruiter_id is not None:
+        conditions.append("r.recruiter_id <> %s")
+        values.append(exclude_recruiter_id)
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     offset = (page - 1) * PAGE_SIZE
     pool = await get_pool()

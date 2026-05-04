@@ -5,6 +5,8 @@ from shared.kafka_utils.producer import publish_event
 
 async def emit_recruiter_profile_viewed(actor_id: int, recruiter_id: int) -> None:
     """Same analytics event type as member profile views, with recruiter entity."""
+    if int(actor_id) == int(recruiter_id):
+        return
     envelope = build_envelope(
         topics.PROFILE_VIEWED,
         str(actor_id),

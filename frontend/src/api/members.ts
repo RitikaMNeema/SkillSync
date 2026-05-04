@@ -8,6 +8,14 @@ export async function getMember(member_id: number) {
   return response.data.data;
 }
 
+/** Records a profile view for analytics (24h dedupe + self-view guard on server). Call once when opening another member’s profile. */
+export async function recordMemberProfileView(member_id: number) {
+  const response = await api.post<ApiResponse<{ recorded: boolean; reason?: string }>>("/members/recordProfileView", {
+    member_id
+  });
+  return response.data.data;
+}
+
 export async function createMember(
   payload: Partial<MemberProfile> & { member_id: number; first_name: string; last_name: string; headline: string },
   authToken?: string

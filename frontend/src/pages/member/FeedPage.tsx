@@ -550,7 +550,7 @@ export function FeedPage() {
                       <p className="text-sm text-text-secondary">{recruiter.name}</p>
                       <p className="text-sm text-text-secondary">{recruiter.industry || "Company"}</p>
                     </div>
-                    <Button variant="secondary" onClick={() => goToJobs({ industry: recruiter.industry || "", location: profile.location_city || "" })}>
+                    <Button variant="secondary" onClick={() => goToJobs({ location: profile.location_city || "" })}>
                       View jobs
                     </Button>
                   </div>

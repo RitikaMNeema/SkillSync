@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 from schemas.members import (
     CreateMemberRequest,
     GetMemberRequest,
+    RecordProfileViewRequest,
     UpdateMemberRequest,
     DeleteMemberRequest,
     SearchMembersRequest,
@@ -46,6 +47,12 @@ async def create(body: CreateMemberRequest, u=Depends(get_current_user)):
 @router.post("/get")
 async def get(body: GetMemberRequest, u=Depends(get_current_user)):
     data = await ctrl.get(body.member_id, u["user_id"])
+    return {"success": True, "data": data}
+
+
+@router.post("/recordProfileView")
+async def record_profile_view(body: RecordProfileViewRequest, u=Depends(get_current_user)):
+    data = await ctrl.record_profile_view(int(u["user_id"]), body.member_id)
     return {"success": True, "data": data}
 
 

@@ -25,11 +25,13 @@ from models.profile_mongo import create_profile, get_profile, update_profile
 from models import files_mongo
 from models.command_status import get_command_status
 from producers.profile_producer import emit_member_search_appeared, emit_profile_updated, emit_profile_viewed
+from shared.redis_utils.client import get_redis
 from producers.profile_command_producer import enqueue_profile_command
 from shared.redis_utils.cache import cache_get, cache_set, cache_del
 
 PROFILE_TTL = 300
 SEARCH_TTL = 120
+PROFILE_VIEW_DEDUP_TTL_SEC = 86400  # 24h — same viewer / same profile owner counts at most once per window
 log = logging.getLogger(__name__)
 
 
@@ -39,15 +41,6 @@ def _profile_key(member_id):
 
 def _search_key(params):
     return f"profile:search:{params}"
-
-
-async def _emit_profile_view_event(actor_id: int | None, member_id: int) -> None:
-    if actor_id is None or str(actor_id) == str(member_id):
-        return
-    try:
-        await emit_profile_viewed(actor_id, member_id)
-    except Exception:
-        log.exception("emit_profile_viewed failed for member_id=%s actor_id=%s", member_id, actor_id)
 
 
 async def _emit_search_appearance_events(actor_id: int | None, rows: list, keyword, skill, location) -> None:
@@ -85,11 +78,12 @@ async def create(body: dict, actor_id: int) -> dict:
 
 
 async def get(member_id: int, actor_id: int | None = None) -> dict:
+    """Load profile data. Profile *view* analytics are recorded via ``record_profile_view``, not here."""
+    _ = actor_id  # kept for route compatibility; do not emit view events on read (prefetch / navbar / search).
     cached = await cache_get(_profile_key(member_id))
     # Drop pre-migration cached entries that don't have the new columns yet so
     # the sidebar URL / open-to / language flow through on the first read.
     if cached and "profile_slug" in cached and "open_to" in cached and "profile_status" in cached:
-        await _emit_profile_view_event(actor_id, member_id)
         return cached
     if cached:
         await cache_del(_profile_key(member_id))
@@ -99,8 +93,35 @@ async def get(member_id: int, actor_id: int | None = None) -> dict:
     mongo_data = await get_profile(member_id)
     profile = {**mysql_data, "unstructured": mongo_data or {}}
     await cache_set(_profile_key(member_id), profile, PROFILE_TTL)
-    await _emit_profile_view_event(actor_id, member_id)
     return profile
+
+
+async def record_profile_view(viewer_id: int, member_id: int) -> dict:
+    """Emit at most one profile.viewed per (viewer, member) per 24h; never for self."""
+    try:
+        if int(viewer_id) == int(member_id):
+            return {"recorded": False, "reason": "self_view"}
+    except (TypeError, ValueError):
+        if str(viewer_id).strip() == str(member_id).strip():
+            return {"recorded": False, "reason": "self_view"}
+    if not await get_member_by_id(member_id):
+        raise HTTPException(404, "Member not found")
+
+    dedupe_key = f"profile_view_dedupe:v1:{viewer_id}:{member_id}"
+    try:
+        redis = await get_redis()
+        first_time = await redis.set(dedupe_key, "1", nx=True, ex=PROFILE_VIEW_DEDUP_TTL_SEC)
+        if not first_time:
+            return {"recorded": False, "reason": "deduplicated_24h"}
+    except Exception:
+        log.warning("profile view dedupe redis unavailable; emitting view anyway", exc_info=True)
+
+    try:
+        await emit_profile_viewed(viewer_id, member_id)
+    except Exception:
+        log.exception("emit_profile_viewed failed member_id=%s viewer_id=%s", member_id, viewer_id)
+        raise HTTPException(503, "Could not record profile view — try again later.") from None
+    return {"recorded": True}
 
 
 async def update(body: dict, actor_id) -> dict:
@@ -154,12 +175,14 @@ async def delete(member_id: int) -> dict:
 
 
 async def search(keyword, skill, location, page, actor_id: int | None = None) -> dict:
-    key = _search_key(f"{keyword}-{skill}-{location}-{page}")
+    # Include actor in cache key so one user's excluded-self result set is not reused for another user.
+    ex = "" if actor_id is None else str(actor_id)
+    key = _search_key(f"{keyword}-{skill}-{location}-{page}-ex:{ex}")
     cached = await cache_get(key)
     if cached:
         await _emit_search_appearance_events(actor_id, cached.get("members") or [], keyword, skill, location)
         return cached
-    rows, total = await search_members(keyword, skill, location, page)
+    rows, total = await search_members(keyword, skill, location, page, exclude_member_id=actor_id)
     result = {"members": rows, "total": total, "page": page, "page_size": PAGE_SIZE}
     await cache_set(key, result, SEARCH_TTL)
     await _emit_search_appearance_events(actor_id, rows, keyword, skill, location)

@@ -195,10 +195,19 @@ export function SearchResultsPage() {
     };
   }, [userId, debounced]);
 
-  const filteredMembers = useMemo(() => members.filter((m) => memberMatchesFilters(m, filters)), [members, filters]);
+  const filteredMembers = useMemo(
+    () =>
+      members
+        .filter((m) => userId == null || m.member_id !== userId)
+        .filter((m) => memberMatchesFilters(m, filters)),
+    [members, filters, userId]
+  );
   const filteredRecruiters = useMemo(
-    () => recruiters.filter((r) => recruiterMatchesFilters(r, filters)),
-    [recruiters, filters]
+    () =>
+      recruiters
+        .filter((r) => userId == null || r.recruiter_id !== userId)
+        .filter((r) => recruiterMatchesFilters(r, filters)),
+    [recruiters, filters, userId]
   );
   const filteredJobs = useMemo(() => jobs.filter((j) => jobMatchesFilters(j, filters)), [jobs, filters]);
 

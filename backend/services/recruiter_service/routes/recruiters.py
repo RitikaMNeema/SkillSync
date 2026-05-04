@@ -5,6 +5,7 @@ from fastapi.encoders import jsonable_encoder
 from schemas.recruiters import (
     CreateRecruiterRequest,
     GetRecruiterRequest,
+    RecordRecruiterProfileViewRequest,
     UpdateRecruiterRequest,
     DeleteRecruiterRequest,
     SearchRecruitersRequest,
@@ -25,6 +26,13 @@ async def create(body: CreateRecruiterRequest, u=Depends(get_current_user)):
 @router.post("/get")
 async def get(body: GetRecruiterRequest, u=Depends(get_current_user)):
     return {"success": True, "data": await ctrl.get(body.recruiter_id, actor=u)}
+
+
+@router.post("/recordProfileView")
+async def record_profile_view(body: RecordRecruiterProfileViewRequest, u=Depends(get_current_user)):
+    data = await ctrl.record_profile_view(int(u["user_id"]), body.recruiter_id)
+    return {"success": True, "data": data}
+
 
 @router.post("/update")
 async def update(body: UpdateRecruiterRequest, u=Depends(get_current_user)):

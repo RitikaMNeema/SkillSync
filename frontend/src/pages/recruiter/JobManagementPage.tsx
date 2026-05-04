@@ -918,11 +918,11 @@ export function JobManagementPage() {
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-md">
           <div
             className={cn(
-              "w-full rounded-3xl border border-gray-200 bg-white shadow-modal",
+              "flex max-h-[90vh] min-h-0 w-full flex-col overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-modal",
               currentStep === 3 ? "max-w-[min(1120px,calc(100vw-2rem))]" : "max-w-[680px]"
             )}
           >
-            <div className="flex items-center justify-between border-b px-8 py-6">
+            <div className="flex shrink-0 items-center justify-between border-b px-8 py-6">
               <h2 className="text-[28px] font-semibold text-gray-900">{editingJob ? "Update job post" : "Create a job post"}</h2>
               <Button type="button" variant="icon" onClick={closeModal} aria-label="Close job post form">
                 <X className="h-4 w-4" />
@@ -930,7 +930,7 @@ export function JobManagementPage() {
             </div>
 
             {postedSuccess ? (
-              <div className="space-y-6 px-8 py-8">
+              <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-8 py-8">
                 <div className="space-y-3 text-center">
                   <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-green-700">
                     <Check className="h-8 w-8" />
@@ -978,12 +978,13 @@ export function JobManagementPage() {
               </div>
             ) : (
               <form
-                className={cn("space-y-6 px-8 py-6", currentStep === 3 && "max-h-[min(88vh,920px)] overflow-y-auto")}
+                className="flex min-h-0 flex-1 flex-col overflow-hidden"
                 onSubmit={handleSubmit((values) => void onSubmit(values))}
               >
                 <input type="hidden" {...register("company_id", { valueAsNumber: true })} />
                 <input type="hidden" {...register("skills_required")} />
-                <div className="flex items-start justify-between gap-2">
+                <div className="shrink-0 border-b border-gray-100 px-8 pb-4 pt-6">
+                  <div className="flex items-start justify-between gap-2">
                   {["Job details", "Compensation", "Description", "Review"].map((label, index) => {
                     const step = index + 1;
                     const isActive = currentStep === step;
@@ -1014,8 +1015,10 @@ export function JobManagementPage() {
                       </div>
                     );
                   })}
+                  </div>
                 </div>
 
+                <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
                 {currentStep === 1 ? (
                   <div className="space-y-4">
                     <div>
@@ -1067,20 +1070,6 @@ export function JobManagementPage() {
                         Not sure about some details? You can add or edit them later before publishing.
                       </p>
                     </div>
-                    <div className="flex items-center justify-between border-t pt-4">
-                      <Button type="button" variant="ghost" onClick={closeModal}>
-                        Cancel
-                      </Button>
-                      <Button
-                        type="button"
-                        className="border-[#0A66C2] bg-[#0A66C2] hover:bg-[#004182]"
-                        onClick={() => {
-                          if (validateStepOne()) setCurrentStep(2);
-                        }}
-                      >
-                        Continue
-                      </Button>
-                    </div>
                     <p className="text-xs text-gray-400">* Indicates required fields</p>
                   </div>
                 ) : null}
@@ -1126,19 +1115,6 @@ export function JobManagementPage() {
                           </button>
                         ))}
                       </div>
-                    </div>
-                    <div className="flex justify-between border-t pt-4">
-                      <div className="flex items-center gap-2">
-                        <Button type="button" variant="secondary" onClick={() => setCurrentStep(1)}>
-                          Back
-                        </Button>
-                        <Button type="button" variant="ghost" onClick={closeModal}>
-                          Close
-                        </Button>
-                      </div>
-                      <Button type="button" className="border-[#0A66C2] bg-[#0A66C2] hover:bg-[#004182]" onClick={() => setCurrentStep(3)}>
-                        Continue
-                      </Button>
                     </div>
                   </div>
                 ) : null}
@@ -1271,21 +1247,6 @@ export function JobManagementPage() {
                         )}
                       </div>
                     </div>
-
-                    <div className="flex items-center justify-between border-t border-gray-200 pt-5">
-                      <Button type="button" variant="secondary" className="min-w-[96px]" onClick={() => setCurrentStep(2)}>
-                        Back
-                      </Button>
-                      <Button
-                        type="button"
-                        className="min-w-[120px] border-[#0A66C2] bg-[#0A66C2] hover:bg-[#004182]"
-                        onClick={() => {
-                          if (validateStepThree()) setCurrentStep(4);
-                        }}
-                      >
-                        Continue
-                      </Button>
-                    </div>
                   </div>
                 ) : null}
 
@@ -1363,7 +1324,60 @@ export function JobManagementPage() {
                         Looks good! You&apos;re all set to post your job.
                       </p>
                     </div>
-                    <div className="flex justify-between border-t pt-4">
+                  </div>
+                ) : null}
+                </div>
+
+                <div className="shrink-0 border-t border-gray-200 bg-white px-8 py-4 shadow-[0_-8px_24px_-10px_rgba(15,23,42,0.12)]">
+                  {currentStep === 1 ? (
+                    <div className="flex items-center justify-between">
+                      <Button type="button" variant="ghost" onClick={closeModal}>
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        className="border-[#0A66C2] bg-[#0A66C2] hover:bg-[#004182]"
+                        onClick={() => {
+                          if (validateStepOne()) setCurrentStep(2);
+                        }}
+                      >
+                        Continue
+                      </Button>
+                    </div>
+                  ) : null}
+                  {currentStep === 2 ? (
+                    <div className="flex justify-between">
+                      <div className="flex items-center gap-2">
+                        <Button type="button" variant="secondary" onClick={() => setCurrentStep(1)}>
+                          Back
+                        </Button>
+                        <Button type="button" variant="ghost" onClick={closeModal}>
+                          Close
+                        </Button>
+                      </div>
+                      <Button type="button" className="border-[#0A66C2] bg-[#0A66C2] hover:bg-[#004182]" onClick={() => setCurrentStep(3)}>
+                        Continue
+                      </Button>
+                    </div>
+                  ) : null}
+                  {currentStep === 3 ? (
+                    <div className="flex items-center justify-between">
+                      <Button type="button" variant="secondary" className="min-w-[96px]" onClick={() => setCurrentStep(2)}>
+                        Back
+                      </Button>
+                      <Button
+                        type="button"
+                        className="min-w-[120px] border-[#0A66C2] bg-[#0A66C2] hover:bg-[#004182]"
+                        onClick={() => {
+                          if (validateStepThree()) setCurrentStep(4);
+                        }}
+                      >
+                        Continue
+                      </Button>
+                    </div>
+                  ) : null}
+                  {currentStep === 4 ? (
+                    <div className="flex justify-between">
                       <div className="flex items-center gap-2">
                         <Button type="button" variant="secondary" onClick={() => setCurrentStep(3)}>
                           Back
@@ -1376,8 +1390,8 @@ export function JobManagementPage() {
                         {isSubmitting ? "Submitting…" : editingJob ? "Save job" : "Post job"}
                       </Button>
                     </div>
-                  </div>
-                ) : null}
+                  ) : null}
+                </div>
               </form>
             )}
           </div>
