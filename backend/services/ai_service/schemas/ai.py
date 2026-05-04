@@ -55,6 +55,9 @@ class AgentWorkflowRequest(BaseModel):
     idempotency_key: Optional[str] = None
     candidate_display_name: Optional[str] = None
     recruiter_display_name: Optional[str] = None
+    # When set (e.g. same candidate/job was matched in the UI), reuse to avoid a second
+    # non-deterministic match that can dip below the outreach threshold or confuse the user.
+    match_result: Optional[Dict[str, Any]] = None
 
 class ApprovalRequest(BaseModel):
     trace_id: str

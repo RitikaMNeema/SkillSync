@@ -8,6 +8,10 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:1143
 OLLAMA_CHAT_MODEL = os.getenv("OLLAMA_CHAT_MODEL", "llama3.2:3b")
 
 
+class OllamaModelNotFoundError(RuntimeError):
+    """Raised when Ollama responds 404 — model tag isn't pulled locally."""
+
+
 class OllamaClient:
     def __init__(self) -> None:
         self.base_url = OLLAMA_BASE_URL.rstrip("/")
@@ -35,7 +39,7 @@ class OllamaClient:
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(f"{self.base_url}/chat", json=payload)
-            resp.raise_for_status()
+            self._check_response(resp)
             data = resp.json()
 
         content = data["message"]["content"]
@@ -54,10 +58,20 @@ class OllamaClient:
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(f"{self.base_url}/chat", json=payload)
-            resp.raise_for_status()
+            self._check_response(resp)
             data = resp.json()
 
         return data["message"]["content"].strip()
+
+    def _check_response(self, resp: httpx.Response) -> None:
+        if resp.status_code == 404:
+            # Ollama returns 404 when the requested model tag isn't pulled locally.
+            raise OllamaModelNotFoundError(
+                f"Ollama model '{OLLAMA_CHAT_MODEL}' not found at {self.base_url}. "
+                f"Run: `ollama pull {OLLAMA_CHAT_MODEL}` (or set OLLAMA_CHAT_MODEL to a model "
+                f"you already have, e.g. `llama3.2:3b`), then retry."
+            )
+        resp.raise_for_status()
 
 
 ollama_client = OllamaClient()

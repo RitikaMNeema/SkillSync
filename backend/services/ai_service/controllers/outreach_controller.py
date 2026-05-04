@@ -280,6 +280,9 @@ Requirements:
         message = fallback_message
         print("[OUTREACH] generate_outreach completed with fallback")
 
+    if not (message or "").strip():
+        message = fallback_message
+
     return {
         "recruiter_id": payload.recruiter_id,
         "candidate_id": payload.candidate.member_id,
