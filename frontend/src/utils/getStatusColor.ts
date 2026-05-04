@@ -11,6 +11,8 @@ export function getStatusColor(status: ApplicationStatus | JobStatus) {
       return "bg-violet-100 text-interview";
     case "offer":
       return "bg-emerald-100 text-success";
+    case "hired":
+      return "bg-green-100 text-green-900";
     case "rejected":
       return "bg-red-100 text-red-700";
     case "withdrawn":

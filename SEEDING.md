@@ -223,6 +223,8 @@ Unzip into `data/kaggle/downloads/` or `data/kaggle/downloads/jobs/` as you pref
 
 **Prerequisite:** Services up; **`python scripts/seed.py`** has created Dana, Eli, and Acme (for default mode).
 
+Omitting **`--limit`** imports up to **10,000** job CSV rows per run (default cap). Use **`--limit 0`** for the entire file.
+
 ```bash
 cd backend
 pip install httpx
@@ -261,7 +263,7 @@ python scripts/kaggle_jobs_seed.py \
 
 python scripts/kaggle_jobs_seed.py \
   --csv data/kaggle/downloads/jobs/<your-actual-file>.csv \
-  --per-company-recruiters --limit 500
+  --per-company-recruiters --limit 10000
 ```
 
 **Note:** `job_postings.csv` from **LinkedIn Job 2023** often has **no employer name** per row. For that file, omit `--per-company-recruiters` and use Dana/Eli, unless you join another source for `company_name`.
@@ -291,7 +293,7 @@ Job import requires the **job-service** Kafka consumer to process commands (same
 
 ## 9. Related documentation
 
-- **`backend/kaggle.md`** — Original Kaggle-focused notes (DATA236 §9 alignment).
+- **`backend/SEED_INSTRUCTIONS.md`** — Step-by-step order: Docker, unzip, Kaggle imports, optional bulk SQL.
 - **`README.md`** — Quick start including `python scripts/seed.py`.
 - **`backend/backend.md`** — Local Docker setup and seeding snippet.
 

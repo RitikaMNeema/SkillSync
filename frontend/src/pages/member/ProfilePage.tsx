@@ -1,7 +1,7 @@
 import { BriefcaseBusiness, CircleHelp, Eye, EyeOff, FileText, GraduationCap, Lightbulb, Pencil, Plus, Search, Sparkles, Users } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import toast from "react-hot-toast";
-import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { RightSidebar } from "../../components/layout/Sidebar";
 import {
   AddEducationModal,
@@ -26,6 +26,7 @@ import { Card } from "../../components/ui/Card";
 import { CardSkeleton } from "../../components/ui/Skeleton";
 import { Avatar } from "../../components/ui/Avatar";
 import { authStore } from "../../context/AuthContext";
+import type { Application } from "../../types/application";
 import type { EducationEntry, ExperienceEntry, LanguageEntry, MemberProfile, MemberSearchItem } from "../../types/member";
 import { ExperienceCard } from "../../components/profile/ExperienceCard";
 import { ProfileHeader } from "../../components/profile/ProfileHeader";
@@ -34,6 +35,7 @@ import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import { getUnifiedProfile, updateUnifiedProfile } from "../../utils/profileAdapter";
 import { getMemberDashboard, getRecruiterProfileDashboard } from "../../api/analytics";
 import { getMutualConnections, listConnections, listPendingConnections, requestConnection, withdrawConnection } from "../../api/connections";
+import { getAllApplicationsByMember } from "../../api/applications";
 import { deleteCoverPhoto, searchMembers } from "../../api/members";
 import {
   deleteRecruiterCoverPhoto,
@@ -143,6 +145,8 @@ export function ProfilePage() {
   const [publicPeopleYouMayKnow, setPublicPeopleYouMayKnow] = useState<SidebarPersonSuggestion[]>([]);
   const [mutualConnectionsCount, setMutualConnectionsCount] = useState<number>(0);
   const [mutualConnectionPreview, setMutualConnectionPreview] = useState<string>("");
+  /** Own member profile only: applications marked hired (shown under the header). */
+  const [hiredApplications, setHiredApplications] = useState<Application[]>([]);
   const [dismissedCards, setDismissedCards] = useState({
     experience: false,
     education: false,
@@ -221,6 +225,30 @@ export function ProfilePage() {
       cancelled = true;
     };
   }, [parsedMemberId, isRecruiterViewingOwnProfile]);
+
+  useEffect(() => {
+    if (!Number.isFinite(parsedMemberId) || parsedMemberId <= 0 || currentUserId == null) {
+      setHiredApplications([]);
+      return;
+    }
+    if (!sameUserId(parsedMemberId, currentUserId) || profileApiRole !== "member") {
+      setHiredApplications([]);
+      return;
+    }
+    let cancelled = false;
+    void getAllApplicationsByMember(parsedMemberId)
+      .then((apps) => {
+        if (cancelled) return;
+        setHiredApplications(apps.filter((a) => a.status === "hired"));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setHiredApplications([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [parsedMemberId, currentUserId, profileApiRole, location.key]);
 
   useEffect(() => {
     if (!member || !currentUserId) {
@@ -899,6 +927,35 @@ export function ProfilePage() {
           onReportProfile={() => toast("Report submitted. We will review this profile.", { icon: "✅" })}
           onBlockProfile={() => toast("Block user is not implemented yet.", { icon: "ℹ️" })}
         />
+        {isOwnProfile && currentRole === "member" && hiredApplications.length > 0 ? (
+          <Card className="rounded-2xl border border-[#bbf7d0] bg-[#f0fdf4] p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#dcfce7]">
+                <Sparkles className="h-5 w-5 text-[#15803d]" aria-hidden />
+              </span>
+              <div className="min-w-0 space-y-2">
+                <h2 className="text-lg font-semibold text-[#14532d]">You're hired</h2>
+                <p className="text-sm leading-relaxed text-[#166534]">
+                  Recruiters marked these applications as hired. Details stay on{" "}
+                  <Link to="/applications" className="font-semibold text-[#14532d] underline underline-offset-2 hover:text-[#0f5132]">
+                    My applications
+                  </Link>
+                  .
+                </p>
+                <ul className="list-none space-y-2 pt-1">
+                  {hiredApplications.map((app) => (
+                    <li key={app.application_id} className="text-sm text-[#166534]">
+                      <Link to={`/jobs/${app.job_id}`} className="font-semibold text-[#14532d] hover:underline">
+                        {app.job_title?.trim() || "Role"}
+                      </Link>
+                      {app.company_name?.trim() ? <span> · {app.company_name.trim()}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </Card>
+        ) : null}
         <Card ref={aboutRef} className="rounded-2xl border border-[#dde3ea] bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
           <div className="mb-3 flex items-start justify-between gap-3">
             <h2 className="text-[1.55rem] font-semibold tracking-[-0.02em] text-[#1f1f1f]">About</h2>

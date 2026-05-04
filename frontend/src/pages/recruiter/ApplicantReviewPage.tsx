@@ -1,8 +1,9 @@
 import { ArrowLeft, CheckCircle2, ChevronDown, CircleDashed, Clock3, Download, FileText, Mail, MapPin, MoreHorizontal, Sparkles } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { getApplication, getAllApplicationsByJob, updateApplicationStatus } from "../../api/applications";
+import { downloadResumeFile, getResumeMeta, type ResumeMeta } from "../../api/members";
 import { approveAgentWorkflow, getAgentStatus, getAICommandStatus, startAgentWorkflow } from "../../api/ai";
 import { getJob } from "../../api/jobs";
 import { getRecruiter } from "../../api/recruiters";
@@ -15,12 +16,21 @@ import { CardSkeleton } from "../../components/ui/Skeleton";
 import type { Application, ApplicationStatus } from "../../types/application";
 import type { Job } from "../../types/job";
 import type { MemberProfile } from "../../types/member";
-import { selectableApplicationStatuses } from "../../utils/applicationStatus";
+import { applicationStatusSkipsAiShortlist, selectableApplicationStatuses } from "../../utils/applicationStatus";
 import { cn } from "../../utils/cn";
 import { getStatusColor } from "../../utils/getStatusColor";
-import { matchScoreStyles, sanitizeOutreachDraft } from "./aiMatchingUtils";
+import { jobToPayload, matchScoreStyles, memberToCandidateProfile, sanitizeOutreachDraft } from "./aiMatchingUtils";
 
-const STATUS_FILTERS: Array<ApplicationStatus | "all"> = ["all", "submitted", "rejected", "withdrawn"];
+const STATUS_FILTERS: Array<ApplicationStatus | "all"> = [
+  "all",
+  "submitted",
+  "reviewing",
+  "interview",
+  "offer",
+  "hired",
+  "rejected",
+  "withdrawn"
+];
 const AI_TRACE_TERMINAL_STATUSES = new Set(["awaiting_approval", "completed", "failed", "rejected"]);
 
 type AIAssessment = {
@@ -37,18 +47,6 @@ type AIAssessment = {
   outreachSkipped?: boolean;
   outreachSkipReason?: string;
 };
-
-function toExperienceStrings(profile: MemberProfile): string[] {
-  return (profile.experience ?? [])
-    .map((entry) => [entry.title, entry.company, entry.description].filter(Boolean).join(" - ").trim())
-    .filter(Boolean);
-}
-
-function toEducationStrings(profile: MemberProfile): string[] {
-  return (profile.education ?? [])
-    .map((entry) => [entry.school, entry.degree, entry.field ?? entry.field_of_study].filter(Boolean).join(", ").trim())
-    .filter(Boolean);
-}
 
 async function pollAiCommand(commandId: string) {
   for (let attempt = 0; attempt < 24; attempt += 1) {
@@ -73,23 +71,19 @@ async function pollAiTrace(traceId: string) {
   return latest;
 }
 
-function resolveResumeUrl(resumeUrl?: string | null): string | null {
-  if (!resumeUrl) return "/resumes/sample_resume.pdf";
+/** Public HTTPS résumé URL we can open in a new tab (not seed placeholders). */
+function externalResumePreviewUrl(resumeUrl?: string | null): string | null {
+  if (!resumeUrl?.trim()) return null;
   const trimmed = resumeUrl.trim();
-  if (!trimmed) return "/resumes/sample_resume.pdf";
-  if (!trimmed.toLowerCase().endsWith(".pdf")) {
-    return "/resumes/sample_resume.pdf";
-  }
+  if (!trimmed.toLowerCase().endsWith(".pdf")) return null;
   try {
     const parsed = new URL(trimmed);
-    if (parsed.hostname === "example.com") {
-      // Seed data may carry placeholder URLs; point to a real local sample resume.
-      return "/resumes/sample_resume.pdf";
-    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    if (parsed.hostname === "example.com") return null;
+    return trimmed;
   } catch {
-    // Keep non-URL values untouched in case a relative path was stored.
+    return null;
   }
-  return trimmed;
 }
 
 export function ApplicantReviewPage() {
@@ -119,6 +113,8 @@ export function ApplicantReviewPage() {
   const appsSignatureRef = useRef<string>("");
   const selectedIdRef = useRef<number | null>(null);
   const memberProfilesRef = useRef<Record<number, MemberProfile>>({});
+  const [resumeMeta, setResumeMeta] = useState<ResumeMeta | null>(null);
+  const [resumeMetaLoading, setResumeMetaLoading] = useState(false);
 
   const buildAppsSignature = (apps: Application[]) =>
     apps
@@ -180,6 +176,30 @@ export function ApplicantReviewPage() {
   useEffect(() => {
     memberProfilesRef.current = memberProfilesById;
   }, [memberProfilesById]);
+
+  useEffect(() => {
+    const memberId = selected?.member_id;
+    if (!memberId) {
+      setResumeMeta(null);
+      setResumeMetaLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setResumeMetaLoading(true);
+    void getResumeMeta(memberId)
+      .then((meta) => {
+        if (!cancelled) setResumeMeta(meta);
+      })
+      .catch(() => {
+        if (!cancelled) setResumeMeta(null);
+      })
+      .finally(() => {
+        if (!cancelled) setResumeMetaLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.member_id, selected?.application_id]);
 
   useEffect(() => {
     if (!job_id) return;
@@ -266,16 +286,71 @@ export function ApplicantReviewPage() {
 
   const statusOptions = selected ? selectableApplicationStatuses(selected.status) : [];
   const jobIsClosed = (job?.status ?? "open") === "closed";
-  const openResumeUrl = resolveResumeUrl(selected?.resume_url);
+  const applicationSettledForAi = selected ? applicationStatusSkipsAiShortlist(selected.status) : false;
+  const aiWorkflowUnavailable = jobIsClosed || applicationSettledForAi;
   const selectedAppliedAt = selected ? new Date(selected.application_datetime) : null;
   const selectedAppliedText =
     selectedAppliedAt && !Number.isNaN(selectedAppliedAt.getTime())
       ? selectedAppliedAt.toLocaleDateString()
       : "Unknown date";
+  const externalResumeUrl = selected ? externalResumePreviewUrl(selected.resume_url) : null;
+  const canPreviewResume = Boolean(resumeMeta?.resume_file_id || externalResumeUrl);
   const resumeFileName =
-    profile && openResumeUrl
-      ? `${profile.first_name.toLowerCase()}_${profile.last_name.toLowerCase()}_resume.pdf`
-      : "resume.pdf";
+    resumeMeta?.resume_file_name ||
+    (profile ? `${profile.first_name.toLowerCase()}_${profile.last_name.toLowerCase()}_resume.pdf` : "resume.pdf");
+  const resumeSubtitle = resumeMetaLoading
+    ? "Checking upload…"
+    : resumeMeta?.resume_file_id
+      ? resumeMeta.resume_content_type?.includes("pdf")
+        ? "PDF · uploaded résumé"
+        : `${resumeMeta.resume_content_type ?? "File"} · uploaded résumé`
+      : externalResumeUrl
+        ? "PDF · external link"
+        : "No résumé file on file";
+
+  const handlePreviewResume = useCallback(async () => {
+    if (!selected) return;
+    try {
+      if (resumeMeta?.resume_file_id) {
+        const { blob } = await downloadResumeFile(selected.member_id);
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank", "noopener,noreferrer");
+        window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
+        return;
+      }
+      if (externalResumeUrl) {
+        window.open(externalResumeUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
+      toast.error("No résumé is available to preview for this candidate.");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Could not load résumé preview.");
+    }
+  }, [selected, resumeMeta?.resume_file_id, externalResumeUrl]);
+
+  const handleDownloadResume = useCallback(async () => {
+    if (!selected) return;
+    try {
+      if (resumeMeta?.resume_file_id) {
+        const { blob, fileName } = await downloadResumeFile(selected.member_id);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        a.rel = "noopener";
+        a.click();
+        URL.revokeObjectURL(url);
+        return;
+      }
+      if (externalResumeUrl) {
+        window.open(externalResumeUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
+      toast.error("No résumé is available to download.");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Could not download résumé.");
+    }
+  }, [selected, resumeMeta?.resume_file_id, externalResumeUrl]);
 
   const activeAi = selected ? aiByApplicationId[selected.application_id] : null;
   const aiScore = activeAi?.matchScore;
@@ -288,42 +363,49 @@ export function ApplicantReviewPage() {
     setIsEditingDraft(false);
     setAiError(null);
     const closed = (job?.status ?? "open") === "closed";
-    setAiLoading(closed ? false : !aiByApplicationId[selected.application_id]);
+    const skipAi = applicationStatusSkipsAiShortlist(selected.status);
+    if (closed || skipAi) {
+      setAiLoading(false);
+    } else {
+      setAiLoading(!aiByApplicationId[selected.application_id]);
+    }
     return undefined;
-  }, [selected?.application_id, profile?.member_id, job?.title, job?.status]);
+  }, [selected?.application_id, selected?.status, profile?.member_id, job?.title, job?.status]);
 
   useEffect(() => {
-    if (!selected || !profile || !job || aiByApplicationId[selected.application_id]) return;
-    if (aiInFlightRef.current[selected.application_id]) return;
+    if (!selected || !profile || !job) return;
+
+    if (applicationStatusSkipsAiShortlist(selected.status)) {
+      setAiLoading(false);
+      setAiError(null);
+      aiInFlightRef.current[selected.application_id] = false;
+      setAiByApplicationId((current) => {
+        if (!(selected.application_id in current)) return current;
+        const next = { ...current };
+        delete next[selected.application_id];
+        return next;
+      });
+      return undefined;
+    }
+
     if ((job.status ?? "open") === "closed") {
       setAiLoading(false);
       setAiError(null);
-      return;
+      return undefined;
     }
+
+    if (aiByApplicationId[selected.application_id]) return;
+    if (aiInFlightRef.current[selected.application_id]) return;
+
     if (!job.recruiter_id) {
       setAiError("Missing recruiter id; unable to request AI workflow.");
       setAiLoading(false);
       return;
     }
     let cancelled = false;
-    const candidatePayload = {
-      member_id: profile.member_id,
-      headline: profile.headline ?? "",
-      summary: profile.summary ?? "",
-      skills: profile.skills ?? [],
-      experiences: toExperienceStrings(profile),
-      location: [profile.location_city, profile.location_state, profile.location_country].filter(Boolean).join(", "),
-      education: toEducationStrings(profile),
-    };
-    const jobPayload = {
-      job_id: job.job_id,
-      title: job.title,
-      description: job.description ?? "",
-      skills_required: job.skills_required ?? [],
-      location: job.location ?? "",
-      seniority_level: job.seniority_level ?? "",
-      employment_type: job.employment_type ?? "",
-    };
+    // Same shapes as AIMatchingFlowPage → identical match_score from ai-service.
+    const candidatePayload = memberToCandidateProfile(profile);
+    const jobPayload = jobToPayload(job);
 
     setAiLoading(true);
     setAiError(null);
@@ -351,6 +433,7 @@ export function ApplicantReviewPage() {
           recruiter_display_name: recruiterDisplayName
         });
         const commandDone = await pollAiCommand(queued.command_id);
+        if (cancelled) return;
         const traceId = commandDone.result?.trace_id as string | undefined;
         if (!traceId) throw new Error("AI trace id was not returned");
         const trace = await pollAiTrace(traceId);
@@ -414,11 +497,14 @@ export function ApplicantReviewPage() {
           outreachSkipped: skipped,
           outreachSkipReason: skipReason || undefined
         };
+        if (cancelled) return;
         setAiByApplicationId((current) => ({ ...current, [selected.application_id]: assessment }));
-        if (outreachMessage) {
-          setDraftMessage(outreachMessage);
-        } else if (skipped) {
-          setDraftMessage("");
+        if (!cancelled) {
+          if (outreachMessage) {
+            setDraftMessage(outreachMessage);
+          } else if (skipped) {
+            setDraftMessage("");
+          }
         }
       } catch (error: unknown) {
         if (!cancelled) {
@@ -442,6 +528,10 @@ export function ApplicantReviewPage() {
 
   const handleRetryAiAnalysis = () => {
     if (!selected) return;
+    if (applicationStatusSkipsAiShortlist(selected.status)) {
+      toast.error("AI matching is not available for rejected, withdrawn, or hired applications.");
+      return;
+    }
     if ((job?.status ?? "open") === "closed") {
       toast.error("AI matching is not available for closed job postings.");
       return;
@@ -658,15 +748,21 @@ export function ApplicantReviewPage() {
             <div className="space-y-4">
               <CandidateHeader profile={profile} selected={selected} appliedText={selectedAppliedText} />
               <AIMatchCard
-                loading={aiLoading && !jobIsClosed}
+                loading={aiLoading && !aiWorkflowUnavailable}
                 score={aiScore}
                 confidence={activeAi?.confidence}
                 strongReasons={activeAi?.strongReasons ?? []}
                 topGaps={activeAi?.topGaps ?? []}
                 reasoning={activeAi?.reasoning ?? ""}
-                error={jobIsClosed ? null : aiError}
+                error={aiWorkflowUnavailable ? null : aiError}
                 onRetry={handleRetryAiAnalysis}
-                aiUnavailable={jobIsClosed ? "AI matching is not available while this job posting is closed." : null}
+                aiUnavailable={
+                  jobIsClosed
+                    ? "AI matching is not available while this job posting is closed."
+                    : applicationSettledForAi
+                      ? "AI matching is not run when this application is rejected, withdrawn, or hired."
+                      : null
+                }
               />
               <Card className="rounded-xl border border-gray-200 p-5 shadow-sm">
                 <label className="text-sm font-semibold text-[#1f2937]" htmlFor="app-status">
@@ -707,7 +803,7 @@ export function ApplicantReviewPage() {
                   <div
                     className={cn(
                       "rounded-xl border px-5 py-4",
-                      jobIsClosed ? "border-[#e5e7eb] bg-[#f9fafb]" : "border-[#f3dfbf] bg-[#fff8ee]"
+                      aiWorkflowUnavailable ? "border-[#e5e7eb] bg-[#f9fafb]" : "border-[#f3dfbf] bg-[#fff8ee]"
                     )}
                   >
                     {jobIsClosed ? (
@@ -717,6 +813,17 @@ export function ApplicantReviewPage() {
                         </p>
                         <p className="mt-2 text-sm leading-relaxed text-[#6b7280]">
                           Reopen the job from Jobs if you need to run AI matching again.
+                        </p>
+                      </>
+                    ) : applicationSettledForAi ? (
+                      <>
+                        <p className="text-[15px] font-semibold text-[#6b7280]">
+                          <Sparkles className="mr-2 inline-block h-4 w-4 align-[-2px] text-[#9ca3af]" />
+                          AI suggestions are not shown for this application status.
+                        </p>
+                        <p className="mt-2 text-sm leading-relaxed text-[#6b7280]">
+                          Matching and outreach drafts are only generated for active pipeline stages. Change the status
+                          back to an in-review stage if you need a fresh AI analysis.
                         </p>
                       </>
                     ) : (
@@ -751,29 +858,27 @@ export function ApplicantReviewPage() {
                       </div>
                       <div>
                         <p className="font-medium text-[#1f2937]">{resumeFileName}</p>
-                        <p className="text-xs text-[#6b7280]">PDF · 245 KB</p>
+                        <p className="text-xs text-[#6b7280]">{resumeSubtitle}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {openResumeUrl ? (
+                      {canPreviewResume ? (
                         <>
-                          <a
-                            href={openResumeUrl}
-                            target="_blank"
-                            rel="noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => void handlePreviewResume()}
                             className="rounded-lg px-2 py-1.5 text-sm font-semibold text-[#2563eb] transition hover:bg-[#eff6ff]"
                           >
                             Preview
-                          </a>
-                          <a
-                            href={openResumeUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            download={resumeFileName}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDownloadResume()}
                             className="rounded-lg p-1.5 text-[#374151] transition hover:bg-gray-100"
+                            aria-label="Download résumé"
                           >
                             <Download className="h-4 w-4" />
-                          </a>
+                          </button>
                           <button type="button" className="rounded-lg p-1.5 text-[#374151] transition hover:bg-gray-100" aria-label="More resume actions">
                             <MoreHorizontal className="h-4 w-4" />
                           </button>
@@ -794,10 +899,16 @@ export function ApplicantReviewPage() {
             </p>
           </Card>
           <AIWorkflowPanel
-            loading={aiLoading && !jobIsClosed}
+            loading={aiLoading && !aiWorkflowUnavailable}
             aiSteps={activeAi?.workflowSteps}
             workflowStatus={activeAi?.workflowStatus}
-            unavailableMessage={jobIsClosed ? "AI hiring assistant is unavailable while this job is closed." : null}
+            unavailableMessage={
+              jobIsClosed
+                ? "AI hiring assistant is unavailable while this job is closed."
+                : applicationSettledForAi
+                  ? "AI hiring assistant does not run for rejected, withdrawn, or hired applications."
+                  : null
+            }
           />
           <OutreachDraftPanel
             subject={draftSubject}
@@ -806,7 +917,7 @@ export function ApplicantReviewPage() {
             isApproving={approvingAi}
             canApprove={
               Boolean(activeAi?.traceId) &&
-              !jobIsClosed &&
+              !aiWorkflowUnavailable &&
               activeAi?.workflowStatus === "awaiting_approval" &&
               !activeAi?.outreachSkipped
             }

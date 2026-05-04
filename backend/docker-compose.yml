@@ -51,6 +51,26 @@ services:
       retries: 10
       start_period: 45s
 
+  # init.sql only runs on empty mysql_data; existing volumes may lack newer ENUM values.
+  # This one-shot extends applications.status with 'hired' when missing (idempotent).
+  mysql-ensure-hired-enum:
+    image: mysql:8.0
+    container_name: linkedin_mysql_ensure_hired_enum
+    restart: "no"
+    env_file: *app-env-files
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-changeme_root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-linkedin_db}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./database/mysql/migrations/003_application_status_hired.sql:/003.sql:ro
+      - ./database/mysql/ensure-hired-enum.sh:/ensure-hired-enum.sh:ro
+    entrypoint: ["/bin/sh", "/ensure-hired-enum.sh"]
+
   mongo:
     image: mongo:7.0
     container_name: linkedin_mongo
@@ -324,6 +344,8 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      mysql-ensure-hired-enum:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       kafka:

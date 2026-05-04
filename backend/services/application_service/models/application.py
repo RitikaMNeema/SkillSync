@@ -4,11 +4,12 @@ from shared.database.mysql import get_pool
 PAGE_SIZE = 20
 
 VALID_TRANSITIONS = {
-    "submitted": ["reviewing", "rejected", "withdrawn"],
-    "reviewing": ["interview", "rejected", "withdrawn"],
-    "interview": ["offer",    "rejected", "withdrawn"],
-    "offer":     ["rejected", "withdrawn"],
-    "rejected":  [],
+    "submitted": ["reviewing", "rejected", "withdrawn", "hired"],
+    "reviewing": ["interview", "rejected", "withdrawn", "hired"],
+    "interview": ["offer", "rejected", "withdrawn", "hired"],
+    "offer": ["rejected", "withdrawn", "hired"],
+    "hired": [],
+    "rejected": [],
     "withdrawn": [],
 }
 
@@ -167,7 +168,7 @@ async def withdraw_application(application_id: int) -> bool:
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "UPDATE applications SET status='withdrawn' WHERE application_id=%s AND status NOT IN ('rejected','withdrawn')",
+                "UPDATE applications SET status='withdrawn' WHERE application_id=%s AND status NOT IN ('rejected','withdrawn','hired')",
                 (application_id,),
             )
             return cur.rowcount > 0

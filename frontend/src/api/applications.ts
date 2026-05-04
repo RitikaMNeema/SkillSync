@@ -52,6 +52,23 @@ export async function getApplicationsByMember(member_id: number, page = 1) {
   return response.data.data;
 }
 
+/** Every page for this member (profile / analytics must not cap at first `page_size`). */
+export async function getAllApplicationsByMember(member_id: number) {
+  const applications: Application[] = [];
+  let page = 1;
+  let total = Infinity;
+  let pageSize = 20;
+  while (applications.length < total) {
+    const data = await getApplicationsByMember(member_id, page);
+    applications.push(...data.applications);
+    total = data.total;
+    pageSize = data.page_size;
+    if (data.applications.length === 0 || data.applications.length < pageSize) break;
+    page += 1;
+  }
+  return applications;
+}
+
 export async function updateApplicationStatus(application_id: number, new_status: ApplicationStatus) {
   const response = await api.post<ApiResponse<{ application_id: number; old_status: ApplicationStatus; new_status: ApplicationStatus }>>(
     "/applications/updateStatus",

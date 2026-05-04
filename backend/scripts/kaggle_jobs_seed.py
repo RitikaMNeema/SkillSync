@@ -3,14 +3,17 @@
 Import Kaggle LinkedIn-style job CSV rows via Job Service APIs (DATA236 §9.1).
 
 Supports:
-  - LinkedIn Job 2023-style files (rajatraj0502): job_postings.csv + optional job_skills.csv
+  - LinkedIn Job 2023-style files (rajatraj0502): job_postings.csv + optional job_skills.csv.
+    Job rows often only have ``company_id``; put ``companies.csv`` from the **same** Kaggle zip next to
+    ``job_postings.csv`` (or pass ``--companies-csv``) so ``--per-company-recruiters`` can resolve names.
   - Generic single-CSV exports (e.g. joykimaiyo18): column names normalized to common aliases
 
 Default mode reuses **Dana / Eli** from `scripts/seed.py` (run `seed.py` once first).
 
 **Per-company recruiters** (`--per-company-recruiters`): for each distinct employer name in the CSV,
-registers a new **recruiter** user, creates a **company** row, and posts that company’s jobs under that
-recruiter — intended for [joykimaiyo18/linkedin-data-jobs-dataset](https://www.kaggle.com/datasets/joykimaiyo18/linkedin-data-jobs-dataset)
+creates a **company** row and **one or more** recruiter users sharing that ``company_id`` (use
+``--recruiters-per-company 6`` for a small hiring team). Jobs for that employer **round-robin** across
+the team. Intended for [joykimaiyo18/linkedin-data-jobs-dataset](https://www.kaggle.com/datasets/joykimaiyo18/linkedin-data-jobs-dataset)
 and similar exports with a **company** column.
 
 Login pattern: **`{company_slug}_rec@example.com`** (e.g. `google_rec@example.com`). If two employers slug to the
@@ -25,6 +28,8 @@ Usage (from backend/):
   python scripts/seed.py   # once (optional for per-company mode; still need auth service up)
   python scripts/kaggle_jobs_seed.py --csv data/kaggle/downloads/job_postings.csv
   python scripts/kaggle_jobs_seed.py --csv path/to/linkedin_jobs.csv --per-company-recruiters --limit 200
+
+  python scripts/populate_linkedin_job_2023.py --download   # download Kaggle + import (default --limit 10000)
 """
 
 from __future__ import annotations
@@ -64,7 +69,21 @@ ELI_EMAIL = "eli@acme.com"
 
 
 def normalize_row(row: dict[str, str]) -> dict[str, str]:
-    return {((k or "").strip().lower()): (v or "").strip() for k, v in row.items()}
+    """
+    Lowercase keys and add ``snake_case`` aliases for headers with spaces or hyphens
+    (e.g. ``Company Name`` → also ``company_name``) so ``pick_company_name`` matches exports
+    like LinkedIn Job 2023 on Kaggle.
+    """
+    out: dict[str, str] = {}
+    for k, v in row.items():
+        key = (k or "").strip().lower()
+        val = (v or "").strip()
+        out[key] = val
+        snake = re.sub(r"[\s\-]+", "_", key)
+        snake = re.sub(r"_+", "_", snake).strip("_")
+        if snake and snake != key and (snake not in out or out[snake] == ""):
+            out[snake] = val
+    return out
 
 
 def safe_float(raw: str | None) -> float | None:
@@ -74,6 +93,67 @@ def safe_float(raw: str | None) -> float | None:
         return float(raw)
     except ValueError:
         return None
+
+
+def _company_id_key_variants(raw: str) -> list[str]:
+    """Index variants for matching ``company_id`` across job vs companies CSV (ints, floats as string)."""
+    raw = (raw or "").strip()
+    if not raw:
+        return []
+    keys = [raw]
+    try:
+        if "." in raw or "e" in raw.lower():
+            keys.append(str(int(float(raw))))
+        elif raw.isdigit():
+            keys.append(str(int(raw)))
+    except (ValueError, OverflowError):
+        pass
+    out: list[str] = []
+    seen: set[str] = set()
+    for k in keys:
+        if k and k not in seen:
+            seen.add(k)
+            out.append(k)
+    return out
+
+
+def load_company_id_to_name(companies_path: Path) -> dict[str, str]:
+    """Load ``company_id`` → display name from a LinkedIn-style ``companies.csv`` (or compatible)."""
+    if not companies_path.is_file():
+        return {}
+    out: dict[str, str] = {}
+    with companies_path.open(newline="", encoding="utf-8", errors="replace") as f:
+        for row in csv.DictReader(f):
+            norm = normalize_row(row)
+            cid = (norm.get("company_id") or norm.get("id") or norm.get("organization_id") or "").strip()
+            if not cid:
+                continue
+            name = pick_company_name(norm)
+            if not name:
+                for key in ("name", "company_name", "organization_name", "company"):
+                    v = (norm.get(key) or "").strip()
+                    if v and v.lower() not in ("nan", "none", "null"):
+                        name = v[:500]
+                        break
+            if not name:
+                continue
+            for k in _company_id_key_variants(cid):
+                out[k] = name
+    return out
+
+
+def resolve_job_row_company_name(norm: dict[str, str], company_by_id: dict[str, str]) -> str:
+    """Employer display string from inline columns and/or ``companies.csv`` join on ``company_id``."""
+    direct = pick_company_name(norm)
+    if direct:
+        return direct
+    raw = (norm.get("company_id") or "").strip()
+    if not raw or not company_by_id:
+        return ""
+    for k in _company_id_key_variants(raw):
+        if k in company_by_id:
+            return company_by_id[k]
+    return ""
 
 
 def load_skills_by_job(skills_path: Path) -> dict[str, list[str]]:
@@ -104,10 +184,39 @@ def pick_company_name(norm: dict[str, str]) -> str:
         "organization_name",
         "hiring_organization",
         "hiring_company",
+        "hiring_organization_name",
+        "org_name",
+        "org",
+        "employer_company_name",
+        "company_name_from_job",
     ):
         v = (norm.get(key) or "").strip()
-        if v:
-            return v
+        if v and v.lower() not in ("nan", "none", "null"):
+            return v[:500]
+    # Last resort: any column that looks like an employer label (exclude ids/sizes/urls).
+    _skip_sub = (
+        "company_id",
+        "company_size",
+        "company_type",
+        "company_url",
+        "company_stock",
+        "company_slug",
+        "company_revenue",
+        "companysize",
+    )
+    for key, v in sorted(norm.items()):
+        if not v or len(v) > 400:
+            continue
+        kl = key.lower()
+        if "company" not in kl and "employer" not in kl and "organization" not in kl and "hiring" not in kl:
+            continue
+        if any(s in kl for s in _skip_sub):
+            continue
+        if "url" in kl or "link" in kl or "uri" in kl:
+            continue
+        if v.lower() in ("nan", "none", "null"):
+            continue
+        return v[:500]
     return ""
 
 
@@ -265,73 +374,141 @@ def sync_sparse_recruiter_profile(
     post(client, "recruiter", "/recruiters/update", patch, token=token)
 
 
+def team_recruiter_email(company_display_name: str, slot: int, email_claims: dict[str, str]) -> str:
+    """Slot 0 uses legacy ``{slug}_rec@example.com``; further slots get unique addresses for the same company."""
+    if slot == 0:
+        return company_seed_email(company_display_name, email_claims)
+    base = company_slug_local(company_display_name)
+    digest = hashlib.sha256(company_display_name.strip().lower().encode("utf-8")).hexdigest()[:8]
+    co_key = company_display_name.strip().lower()
+    for n in range(10_000):
+        tail = f"{digest}_r{slot + 1}" if n == 0 else f"{digest}_r{slot + 1}_{n}"
+        candidate = f"{base}_{tail}@example.com"
+        if candidate not in email_claims:
+            email_claims[candidate] = co_key
+            return candidate
+    raise RuntimeError("could not allocate unique recruiter email for team slot")
+
+
+def ensure_company_recruiters_team(
+    client: httpx.Client,
+    company_name: str,
+    industry: str | None,
+    hq: str | None,
+    cache: dict[str, list[tuple[int, str, int, str, str]]],
+    email_claims: dict[str, str],
+    used_recruiter_names: set[str],
+    profile_synced: set[str],
+    team_size: int,
+) -> list[tuple[int, str, int, str, str]]:
+    """
+    Return ``team_size`` recruiters for ``company_name``, all sharing the same ``company_id``.
+    First recruiter creates the company; additional rows use ``company_id`` only (recruiter service API).
+    """
+    if team_size < 1:
+        team_size = 1
+    key = company_name.strip().lower()
+    team = list(cache.get(key, []))
+
+    if len(team) >= team_size:
+        out = team[:team_size]
+        if key not in profile_synced:
+            for uid, tok, _cid, _em, rname in out:
+                sync_sparse_recruiter_profile(client, uid, tok, company_name, industry, hq, rname)
+            profile_synced.add(key)
+        return out
+
+    while len(team) < team_size:
+        slot = len(team)
+        email = team_recruiter_email(company_name, slot, email_claims)
+        recruiter_name = synthetic_recruiter_name(used_recruiter_names)
+        user_id, token = register_or_login_recruiter(client, email)
+        name_parts = recruiter_name.split(None, 1)
+        first_nm = (name_parts[0] if name_parts else recruiter_name)[:120]
+        last_nm = (name_parts[1] if len(name_parts) > 1 else "")[:120]
+        enrich = recruiter_defaults.recruiter_profile_enrichment(
+            company_name,
+            industry=industry,
+            hq=hq,
+            role_label="Recruiter",
+            experience_job_title="Talent Acquisition Partner",
+        )
+        if slot == 0:
+            body: dict[str, Any] = {
+                "recruiter_id": user_id,
+                "name": recruiter_name,
+                "email": email,
+                "role": "Recruiter",
+                "first_name": first_nm,
+                "last_name": last_nm,
+                **enrich,
+                "company": {
+                    "name": company_name[:255],
+                    "industry": (industry or "General")[:255],
+                    "size": "1000-5000",
+                    "location": hq,
+                },
+            }
+        else:
+            company_id_existing = int(team[0][2])
+            body = {
+                "recruiter_id": user_id,
+                "name": recruiter_name,
+                "email": email,
+                "role": "Recruiter",
+                "first_name": first_nm,
+                "last_name": last_nm,
+                "company_id": company_id_existing,
+                **enrich,
+            }
+        result = post(
+            client,
+            "recruiter",
+            "/recruiters/create",
+            body,
+            token=token,
+            ignore=[409, 400],
+            benign_async_fail=BENIGN_DUP_MARKERS,
+        )
+        if result is None:
+            rec = post(client, "recruiter", "/recruiters/get", {"recruiter_id": user_id}, token=token)
+        else:
+            rec = result
+        company_id = int(rec["company_id"])
+        row = (user_id, token, company_id, email, recruiter_name)
+        team.append(row)
+        cache[key] = team
+
+    if key not in profile_synced:
+        for uid, tok, _cid, _em, rname in team:
+            sync_sparse_recruiter_profile(client, uid, tok, company_name, industry, hq, rname)
+        profile_synced.add(key)
+    return team[:team_size]
+
+
 def ensure_company_recruiter(
     client: httpx.Client,
     company_name: str,
     industry: str | None,
     hq: str | None,
-    cache: dict[str, tuple[int, str, int, str, str]],
+    cache: dict[str, list[tuple[int, str, int, str, str]]],
     email_claims: dict[str, str],
     used_recruiter_names: set[str],
     profile_synced: set[str],
 ) -> tuple[int, str, int, str, str]:
-    """Return (recruiter_id, token, company_id, email, recruiter_display_name); create if new."""
-    key = company_name.strip().lower()
-    if key in cache:
-        uid, tok, cid, em, rname = cache[key]
-        if key not in profile_synced:
-            sync_sparse_recruiter_profile(client, uid, tok, company_name, industry, hq, rname)
-            profile_synced.add(key)
-        return cache[key]
-
-    email = company_seed_email(company_name, email_claims)
-    recruiter_name = synthetic_recruiter_name(used_recruiter_names)
-    user_id, token = register_or_login_recruiter(client, email)
-    name_parts = recruiter_name.split(None, 1)
-    first_nm = (name_parts[0] if name_parts else recruiter_name)[:120]
-    last_nm = (name_parts[1] if len(name_parts) > 1 else "")[:120]
-    enrich = recruiter_defaults.recruiter_profile_enrichment(
-        company_name,
-        industry=industry,
-        hq=hq,
-        role_label="Recruiter",
-        experience_job_title="Talent Acquisition Partner",
-    )
-    body = {
-        "recruiter_id": user_id,
-        "name": recruiter_name,
-        "email": email,
-        "role": "Recruiter",
-        "first_name": first_nm,
-        "last_name": last_nm,
-        **enrich,
-        "company": {
-            "name": company_name[:255],
-            "industry": (industry or "General")[:255],
-            "size": "1000-5000",
-            "location": hq,
-        },
-    }
-    result = post(
+    """Return the primary (slot 0) recruiter; same company row as ``ensure_company_recruiters_team(..., 1)[0]``."""
+    team = ensure_company_recruiters_team(
         client,
-        "recruiter",
-        "/recruiters/create",
-        body,
-        token=token,
-        ignore=[409, 400],
-        benign_async_fail=BENIGN_DUP_MARKERS,
+        company_name,
+        industry,
+        hq,
+        cache,
+        email_claims,
+        used_recruiter_names,
+        profile_synced,
+        1,
     )
-    if result is None:
-        rec = post(client, "recruiter", "/recruiters/get", {"recruiter_id": user_id}, token=token)
-    else:
-        rec = result
-    company_id = int(rec["company_id"])
-    row = (user_id, token, company_id, email, recruiter_name)
-    cache[key] = row
-    if key not in profile_synced:
-        sync_sparse_recruiter_profile(client, user_id, token, company_name, industry, hq, recruiter_name)
-        profile_synced.add(key)
-    return row
+    return team[0]
 
 
 def map_employment(wt: str) -> str:
@@ -387,7 +564,11 @@ def infer_work_mode(norm: dict[str, str]) -> str:
     return "onsite"
 
 
-def row_linkedin_2023(norm: dict[str, str], skills_map: dict[str, list[str]]) -> dict[str, Any] | None:
+def row_linkedin_2023(
+    norm: dict[str, str],
+    skills_map: dict[str, list[str]],
+    company_by_id: dict[str, str] | None = None,
+) -> dict[str, Any] | None:
     job_id = norm.get("job_id") or ""
     title_raw = (norm.get("title") or "").strip()
     if not title_raw:
@@ -409,6 +590,7 @@ def row_linkedin_2023(norm: dict[str, str], skills_map: dict[str, list[str]]) ->
         if sd:
             skills = [s.strip() for s in re.split(r"[,;|]", sd) if s.strip()][:30]
 
+    cby = company_by_id or {}
     return {
         "title": title,
         "description": desc,
@@ -420,11 +602,11 @@ def row_linkedin_2023(norm: dict[str, str], skills_map: dict[str, list[str]]) ->
         "salary_min": safe_float(norm.get("min_salary")),
         "salary_max": safe_float(norm.get("max_salary")),
         "_source_job_id": job_id,
-        "_company_name": pick_company_name(norm),
+        "_company_name": resolve_job_row_company_name(norm, cby),
     }
 
 
-def row_generic(norm: dict[str, str]) -> dict[str, Any] | None:
+def row_generic(norm: dict[str, str], company_by_id: dict[str, str] | None = None) -> dict[str, Any] | None:
     job_id = norm.get("job_id") or norm.get("id") or ""
     title_raw = (
         norm.get("title")
@@ -476,7 +658,7 @@ def row_generic(norm: dict[str, str]) -> dict[str, Any] | None:
         "salary_min": smin,
         "salary_max": smax,
         "_source_job_id": job_id,
-        "_company_name": pick_company_name(norm),
+        "_company_name": resolve_job_row_company_name(norm, company_by_id or {}),
     }
 
 
@@ -506,6 +688,13 @@ def default_jobs_csv() -> Path:
         p = base / name
         if p.is_file():
             return p
+    for sub in ("linkedin-job-2023", "jobs"):
+        p = base / sub / "job_postings.csv"
+        if p.is_file():
+            return p
+    if base.is_dir():
+        for p in sorted(base.rglob("job_postings.csv")):
+            return p
     return base / "job_postings.csv"
 
 
@@ -526,7 +715,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Seed jobs from Kaggle LinkedIn-style CSV (DATA236 §9.1)")
     parser.add_argument("--csv", type=Path, default=None, help="job_postings.csv or compatible export")
     parser.add_argument("--skills-csv", type=Path, default=None, help="job_skills.csv (LinkedIn 2023)")
-    parser.add_argument("--limit", type=int, default=500, metavar="N", help="Max rows (default 500; use 0 for all)")
+    parser.add_argument(
+        "--companies-csv",
+        type=Path,
+        default=None,
+        help="companies.csv with company_id + name (LinkedIn 2023; default: next to job CSV if present)",
+    )
+    parser.add_argument("--limit", type=int, default=10000, metavar="N", help="Max rows (default 10000; use 0 for all)")
     parser.add_argument("--offset", type=int, default=0, help="Skip first N CSV data rows")
     parser.add_argument(
         "--recruiter",
@@ -539,8 +734,21 @@ def main() -> None:
         action="store_true",
         help="Create one recruiter user + company per distinct employer name in CSV; jobs attach to that company (joykimaiyo-style).",
     )
+    parser.add_argument(
+        "--recruiters-per-company",
+        type=int,
+        default=1,
+        metavar="N",
+        help="With --per-company-recruiters: create N recruiter accounts per company (shared company_id); jobs round-robin across the team (default 1).",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    if args.recruiters_per_company < 1:
+        print("--recruiters-per-company must be >= 1", file=sys.stderr)
+        sys.exit(2)
+    if args.recruiters_per_company > 1 and not args.per_company_recruiters:
+        print("--recruiters-per-company requires --per-company-recruiters", file=sys.stderr)
+        sys.exit(2)
 
     csv_path = (args.csv or default_jobs_csv()).resolve()
     if not csv_path.is_file():
@@ -549,6 +757,9 @@ def main() -> None:
 
     skills_path = args.skills_csv.resolve() if args.skills_csv else csv_path.parent / "job_skills.csv"
     skills_map = load_skills_by_job(skills_path)
+
+    companies_path = (args.companies_csv.resolve() if args.companies_csv else csv_path.parent / "companies.csv")
+    company_by_id = load_company_id_to_name(companies_path)
 
     limit = None if args.limit == 0 else args.limit
     rows = load_job_rows(csv_path, args.offset, limit)
@@ -559,14 +770,49 @@ def main() -> None:
     sample_norm = normalize_row(rows[0][1])
     use_li2023 = detect_linkedin_job_2023(set(sample_norm.keys()))
     fmt = "linkedin-job-2023" if use_li2023 else "generic"
+
+    company_probe = ""
+    if args.per_company_recruiters:
+        for _ln, r in rows[: min(len(rows), 2000)]:
+            company_probe = resolve_job_row_company_name(normalize_row(r), company_by_id)
+            if company_probe:
+                break
+        if not company_probe:
+            sample_keys = sorted(
+                set().union(*(set(normalize_row(r).keys()) for _, r in rows[: min(len(rows), 30)]))
+            )
+            hints = [k for k in sample_keys if any(x in k for x in ("comp", "org", "employ", "hir"))]
+            _cstat = f"loaded {len(company_by_id)} ids" if companies_path.is_file() else "file not found"
+            companies_hint = f"\n  Looked for companies sidecar: {companies_path} ({_cstat})"
+            li_hint = ""
+            if use_li2023 and "company_id" in sample_norm:
+                li_hint = (
+                    "\n  LinkedIn Job 2023: unzip ``companies.csv`` from the same Kaggle archive into the same "
+                    "folder as ``job_postings.csv``, or pass ``--companies-csv /path/to/companies.csv``."
+                )
+            print(
+                "Error: --per-company-recruiters needs a resolvable employer name for each job row.\n"
+                "  No company name was found in the first 2000 rows (inline columns or companies.csv join)."
+                f"{companies_hint}{li_hint}\n"
+                "  Alternatively use a jobs CSV that includes a company/employer column, or omit "
+                "--per-company-recruiters and use Dana/Eli (run seed.py first).\n"
+                f"  Columns matching comp/org/employ/hir (sample): {hints[:45]}\n"
+                f"  First row keys: {sorted(sample_norm.keys())[:55]}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
     print(
         json.dumps(
             {
                 "csv": str(csv_path),
                 "skills_csv": str(skills_path) if skills_path.is_file() else None,
+                "companies_csv": str(companies_path) if companies_path.is_file() else None,
+                "company_id_map_size": len(company_by_id),
                 "detected_format": fmt,
                 "rows": len(rows),
                 "per_company_recruiters": args.per_company_recruiters,
+                "sample_company": company_probe[:120] if company_probe else None,
             },
             indent=2,
         )
@@ -575,14 +821,22 @@ def main() -> None:
     if args.dry_run:
         for line_no, row in rows[:5]:
             norm = normalize_row(row)
-            body = row_linkedin_2023(norm, skills_map) if use_li2023 else row_generic(norm)
+            body = (
+                row_linkedin_2023(norm, skills_map, company_by_id)
+                if use_li2023
+                else row_generic(norm, company_by_id)
+            )
             print(f"line {line_no} →", json.dumps(body, indent=2)[:800] if body else "skip")
         if args.per_company_recruiters:
             seen: set[str] = set()
             order: list[str] = []
             for line_no, row in rows:
                 norm = normalize_row(row)
-                m = row_linkedin_2023(norm, skills_map) if use_li2023 else row_generic(norm)
+                m = (
+                    row_linkedin_2023(norm, skills_map, company_by_id)
+                    if use_li2023
+                    else row_generic(norm, company_by_id)
+                )
                 if not m:
                     continue
                 c = (m.get("_company_name") or "").strip()
@@ -596,10 +850,11 @@ def main() -> None:
             print(f"  password (all): {SEED_USER_PASSWORD!r}")
             dry_claims: dict[str, str] = {}
             dry_names: set[str] = set()
+            n_team = max(1, args.recruiters_per_company)
             for c in order[:15]:
-                login = company_seed_email(c, dry_claims)
-                rname = synthetic_recruiter_name(dry_names)
-                print(f"  company → {c[:100]!r} ; login → {login!r} ; recruiter name → {rname!r}")
+                logins = [company_seed_email(c, dry_claims) if s == 0 else team_recruiter_email(c, s, dry_claims) for s in range(n_team)]
+                names = [synthetic_recruiter_name(dry_names) for _ in range(n_team)]
+                print(f"  company → {c[:100]!r} ; recruiters={n_team} ; logins → {logins!r} ; names → {names!r}")
         print("Dry run OK.")
         return
 
@@ -607,18 +862,24 @@ def main() -> None:
         wait_for_services(client)
         section("Kaggle jobs → Job Service")
 
-        company_cache: dict[str, tuple[int, str, int, str, str]] = {}
+        company_cache: dict[str, list[tuple[int, str, int, str, str]]] = {}
         email_claims: dict[str, str] = {}
         used_recruiter_names: set[str] = set()
         profile_synced_keys: set[str] = set()
         existing: set[str] = set()
+        company_job_rr: dict[str, int] = {}
+        skip_no_company_shown = 0
 
         if args.per_company_recruiters:
             company_order: list[tuple[str, str | None, str | None]] = []
             seen_co: set[str] = set()
             for line_no, row in rows:
                 norm = normalize_row(row)
-                mapped = row_linkedin_2023(norm, skills_map) if use_li2023 else row_generic(norm)
+                mapped = (
+                    row_linkedin_2023(norm, skills_map, company_by_id)
+                    if use_li2023
+                    else row_generic(norm, company_by_id)
+                )
                 if not mapped:
                     continue
                 display = (mapped.get("_company_name") or "").strip()
@@ -631,10 +892,10 @@ def main() -> None:
                         (display, pick_company_industry(norm), pick_company_hq(norm)),
                     )
 
-            section(f"Per-company recruiters ({len(company_order)} employers)")
+            section(f"Per-company recruiters ({len(company_order)} employers, {args.recruiters_per_company} per company)")
             print(f"  Password for every imported recruiter account: {SEED_USER_PASSWORD!r}")
             for display, ind, hq in company_order:
-                _uid, _tok, _cid, em, rname = ensure_company_recruiter(
+                team = ensure_company_recruiters_team(
                     client,
                     display,
                     ind,
@@ -643,14 +904,23 @@ def main() -> None:
                     email_claims,
                     used_recruiter_names,
                     profile_synced_keys,
+                    args.recruiters_per_company,
                 )
-                ok("employer", {"company": display[:80], "login": em, "recruiter": rname})
+                ok(
+                    "employer",
+                    {
+                        "company": display[:80],
+                        "recruiters": len(team),
+                        "logins": [t[3] for t in team],
+                    },
+                )
 
-            for rid, tok, _cid, _em, _rn in company_cache.values():
-                for j in fetch_all_jobs_by_recruiter(client, rid, tok):
-                    t = (j.get("title") or "").strip()
-                    if t:
-                        existing.add(t)
+            for team in company_cache.values():
+                for rid, tok, _cid, _em, _rn in team:
+                    for j in fetch_all_jobs_by_recruiter(client, rid, tok):
+                        t = (j.get("title") or "").strip()
+                        if t:
+                            existing.add(t)
 
             dana_id = eli_id = 0
             dana_tok = eli_tok = ""
@@ -665,7 +935,11 @@ def main() -> None:
         skipped = 0
         for i, (line_no, row) in enumerate(rows):
             norm = normalize_row(row)
-            mapped = row_linkedin_2023(norm, skills_map) if use_li2023 else row_generic(norm)
+            mapped = (
+                row_linkedin_2023(norm, skills_map, company_by_id)
+                if use_li2023
+                else row_generic(norm, company_by_id)
+            )
             if not mapped:
                 print(f"  skip line {line_no}: empty title")
                 skipped += 1
@@ -679,10 +953,16 @@ def main() -> None:
 
             if args.per_company_recruiters:
                 if not company_name:
-                    print(f"  skip line {line_no}: no company column (need employer name for --per-company-recruiters)")
+                    skip_no_company_shown += 1
+                    if skip_no_company_shown <= 5:
+                        print(
+                            f"  skip line {line_no}: no employer/company value "
+                            f"(need employer name for --per-company-recruiters)"
+                        )
                     skipped += 1
                     continue
-                rid, rtok, cid, _, _ = ensure_company_recruiter(
+                ck = company_name.strip().lower()
+                team = ensure_company_recruiters_team(
                     client,
                     company_name,
                     pick_company_industry(norm),
@@ -691,7 +971,11 @@ def main() -> None:
                     email_claims,
                     used_recruiter_names,
                     profile_synced_keys,
+                    args.recruiters_per_company,
                 )
+                rr = company_job_rr.get(ck, 0)
+                company_job_rr[ck] = rr + 1
+                rid, rtok, cid, _, _ = team[rr % len(team)]
             elif args.recruiter == "dana":
                 rid, rtok, cid = dana_id, dana_tok, company_id
             elif args.recruiter == "eli":
@@ -727,6 +1011,8 @@ def main() -> None:
 
         section("Done")
         print(json.dumps({"created": created, "skipped_existing_or_bad": skipped}, indent=2))
+        if args.per_company_recruiters and skip_no_company_shown > 5:
+            print(f"  ({skip_no_company_shown - 5} additional rows skipped for the same reason; only first 5 shown.)")
         if args.per_company_recruiters:
             print(f"  Recruiter password for all new accounts: {SEED_USER_PASSWORD!r}")
 

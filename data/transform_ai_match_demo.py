@@ -2,6 +2,10 @@
 """
 transform_ai_match_demo.py — ~100 seed records tuned for SkillSync AI match (≈60–85%).
 
+For **real résumé-backed members** mapped from the Kaggle resume dataset (one pipeline, all
+domains/categories in the CSV), use ``backend/scripts/kaggle_resume_seed.py`` + Resume.csv
+instead of growing new per-domain generators.
+
 The AI service blends skill overlap and embedding similarity:
   final_score ≈ 0.5 * overlap_score + 0.4 * embedding_score + location_bonus
   overlap = |candidate ∩ job_skills| / |job_skills|
@@ -28,6 +32,9 @@ Environment (optional):
     AI_DEMO_COMPACT=1      # default 1 → ~6 jobs × 1 applicant ≈ ~100 rows total
     AI_DEMO_COMPACT=0    # richer demo: 12 jobs × 3 applicants (~390 rows)
     AI_DEMO_N_JOBS=7     # max jobs in compact mode (default 7 → ~100 total rows)
+    AI_DEMO_TECH_JOBS_ONLY=1   # default 1 → when using job_postings.csv, keep rows that look tech;
+                               # if too few remain, falls back to built-in CANONICAL_JOBS (all tech).
+                               # Set to 0 to use the first CSV rows without a tech filter.
 """
 
 from __future__ import annotations
@@ -60,6 +67,18 @@ fake = Faker()
 COMPACT = os.environ.get("AI_DEMO_COMPACT", "1").strip() not in ("0", "false", "no")
 N_JOBS_CAP = int(os.environ.get("AI_DEMO_N_JOBS", "7"))
 N_MEMBERS = int(os.environ.get("AI_DEMO_N_MEMBERS", "0"))  # 0 = derive from compact mode
+TECH_JOBS_ONLY = os.environ.get("AI_DEMO_TECH_JOBS_ONLY", "1").strip() not in ("0", "false", "no")
+
+# Heuristic: tech / software / data roles (used only when filtering Kaggle job CSV).
+_TECH_JOB_RE = re.compile(
+    r"\b(engineer|engineering|developer|development|software|programmer|architect|devops|sre\b|sysadmin|"
+    r"data\s+scientist|data\s+science|data\s+analyst|data\s+engineer|machine\s+learning|ml\s+engineer|\bml\b|"
+    r"cloud|kubernetes|docker|aws|azure|gcp|backend|front[\s-]?end|full[\s-]?stack|web\s+developer|"
+    r"mobile|ios|android|java|python|react|node\.?js|typescript|sql|security\s+engineer|network\s+engineer|"
+    r"qa\s+engineer|test\s+automation|dba\b|database\s+admin|platform\s+engineer|site\s+reliability|"
+    r"analytics\s+engineer|embedded|firmware|blockchain)\b",
+    re.I,
+)
 
 # ── Canonical jobs (used when CSV missing or exhausted) ─────────────────────
 CANONICAL_JOBS: list[dict] = [
@@ -309,6 +328,11 @@ def build_resume_plaintext(job: dict, member_skills: list[str], exp: list[dict])
     return "\n".join(lines)[:8000]
 
 
+def _row_looks_tech(title: str, description: str, skills_desc: str) -> bool:
+    blob = f"{title} {description} {skills_desc}"
+    return _TECH_JOB_RE.search(blob) is not None
+
+
 def load_jobs_from_csv(max_rows: int) -> list[dict]:
     path = RAW / "job_postings.csv"
     if pd is None or not path.exists():
@@ -318,11 +342,24 @@ def load_jobs_from_csv(max_rows: int) -> list[dict]:
     df["title"] = df["title"].apply(clean_text)
     df["description"] = df["description"].apply(clean_text)
     df["location"] = df["location"].apply(clean_text) if "location" in df.columns else ""
+    if "skills_desc" in df.columns:
+        df["_skills_desc"] = df["skills_desc"].apply(lambda x: clean_text(x))
+    else:
+        df["_skills_desc"] = ""
     df = df[df["title"].str.len() > 2]
-    df = df.drop_duplicates(subset=["description"]).head(max_rows)
+    df = df.drop_duplicates(subset=["description"])
+    if TECH_JOBS_ONLY:
+        pool = df[df.apply(lambda r: _row_looks_tech(r["title"], r["description"], r["_skills_desc"]), axis=1)]
+        if len(pool) < 6:
+            return []
+        df = pool.head(max(max_rows * 8, 80))
+    else:
+        df = df.head(max(max_rows * 4, 40))
     out: list[dict] = []
     for _, row in df.iterrows():
-        skills_desc = clean_text(row.get("skills_desc", ""))
+        if len(out) >= max_rows:
+            break
+        skills_desc = row["_skills_desc"]
         raw_skills = [s.strip() for s in skills_desc.split(",") if s.strip()][:12]
         if len(raw_skills) < 3:
             raw_skills = (raw_skills + ["Python", "SQL", "Communication"])[:6]
@@ -346,6 +383,10 @@ def main() -> None:
     print("=" * 60)
 
     jobs_source = load_jobs_from_csv(24)
+    if jobs_source:
+        print(f"  Jobs from CSV: {len(jobs_source)} rows" + (" (tech-filtered)" if TECH_JOBS_ONLY else ""))
+    elif TECH_JOBS_ONLY and (RAW / "job_postings.csv").exists():
+        print("  Jobs from CSV: tech filter left <6 rows — using built-in CANONICAL_JOBS")
     jobs_tpl = jobs_source if len(jobs_source) >= 6 else CANONICAL_JOBS
     target_job_count = N_JOBS_CAP if COMPACT else 12
     while len(jobs_tpl) < target_job_count:

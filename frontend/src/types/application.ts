@@ -3,6 +3,7 @@ export type ApplicationStatus =
   | "reviewing"
   | "interview"
   | "offer"
+  | "hired"
   | "rejected"
   | "withdrawn";
 

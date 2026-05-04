@@ -2,9 +2,15 @@
 """
 Load Kaggle resume CSV rows into SkillSync as member accounts.
 
+**Canonical bulk résumé + profile pipeline** — use this script + Resume.csv (and optional PDF
+tree) instead of maintaining separate per-domain JSON generators for the same purpose.
+`data/transform_ai_match_demo.py` remains useful for synthetic AI-matching demos, but
+realistic member bodies and file mapping should come from Kaggle here.
+
 Uses fields present in the CSV / bundled Kaggle files:
   - Resume file upload: prefers the PDF at data/data/<Category>/<ID>.pdf from the full dataset
-    (same IDs as the CSV). Falls back to the resume HTML/text cell if the PDF is missing.
+    (same IDs as the CSV). If missing, default ``pdf-prefer`` **builds a real PDF** from the CSV
+    cell (HTML stripped to text) using ``fpdf2`` — no HTML file upload.
   - Summary / headline from resume_str / resume text plus Category when present.
   - Skills from Category plus any skills/technologies columns (comma-/pipe-separated cells).
   - Phone, location, website: common column name aliases mapped to profile fields.
@@ -21,7 +27,11 @@ Usage (from backend/):
   python scripts/kaggle_resume_seed.py --csv path/to.csv --limit 100   # cap rows
   python scripts/kaggle_resume_seed.py --csv path/to.csv --offset 500  # resume a batch
   python scripts/kaggle_resume_seed.py --resume-upload csv-only        # HTML/text cell only (no PDF tree)
+  python scripts/kaggle_resume_seed.py --resume-upload pdf-prefer-html # legacy: HTML upload when no file PDF
   python scripts/kaggle_resume_seed.py --names-only                    # refresh names only (existing accounts)
+  python scripts/kaggle_resume_seed.py --csv …/Resume.csv --include-flexible --limit 200
+
+Requires ``fpdf2`` for default ``pdf-prefer`` when no file PDF exists (``pip install -r requirements-dev.txt``).
 """
 
 from __future__ import annotations
@@ -178,7 +188,11 @@ def choose_resume_upload(
 ) -> tuple[bytes, str, str, str] | None:
     """
     Returns (body_bytes, filename, content_type, source_label) or None if this row cannot be uploaded.
-    source_label is 'pdf' or 'csv'.
+
+    source_label:
+      - ``pdf`` — bytes read from Kaggle ``data/data/<Category>/<id>.pdf``
+      - ``pdf-generated`` — PDF built in-process from the CSV résumé cell (HTML stripped to text)
+      - ``csv`` — raw HTML or .txt upload (``csv-only`` or ``pdf-prefer-html`` fallback only)
     """
     pdf_path = resolve_kaggle_pdf(pdf_root, category, row_id) if pdf_root else None
 
@@ -194,13 +208,25 @@ def choose_resume_upload(
         data = pdf_path.read_bytes()
         return data, f"resume_{row_id}.pdf", "application/pdf", "pdf"
 
-    # pdf-prefer
+    # Legacy: same as old pdf-prefer when no file PDF — upload HTML/text cell.
+    if mode == "pdf-prefer-html":
+        if pdf_path:
+            data = pdf_path.read_bytes()
+            return data, f"resume_{row_id}.pdf", "application/pdf", "pdf"
+        if raw_resume.strip():
+            suffix, mime = upload_kind(raw_resume)
+            return raw_resume.encode("utf-8"), f"resume_{row_id}{suffix}", mime, "csv"
+        return None
+
+    # pdf-prefer (default): file PDF, else synthesized PDF (always application/pdf).
+    if mode != "pdf-prefer":
+        return None
     if pdf_path:
         data = pdf_path.read_bytes()
         return data, f"resume_{row_id}.pdf", "application/pdf", "pdf"
     if raw_resume.strip():
-        suffix, mime = upload_kind(raw_resume)
-        return raw_resume.encode("utf-8"), f"resume_{row_id}{suffix}", mime, "csv"
+        data = synthesize_resume_pdf_bytes(raw_resume, row_id=row_id)
+        return data, f"resume_{row_id}.pdf", "application/pdf", "pdf-generated"
     return None
 
 
@@ -370,6 +396,80 @@ def build_about_from_extra_columns(norm: dict[str, str], max_chars: int = 32000)
     return text[:max_chars] if len(text) > max_chars else text
 
 
+def merge_profile_with_parser(
+    *,
+    plain_blob: str,
+    summary: str | None,
+    headline: str,
+    about: str | None,
+    skills: list[str],
+    extras: dict[str, Any],
+    include_flexible: bool,
+) -> tuple[str | None, str, str | None, list[str], dict[str, Any], list | None, bool]:
+    """
+    Enrich headline/summary/about/skills and optionally experience/education from résumé text.
+
+    - If CSV JSON already has both experience and education, parser still upgrades
+      headline/summary/skills/languages but does not replace structured rows.
+    - If either side is missing, parser rows are used to fill gaps.
+    - When ``include_flexible`` is True, runs second-tier parser after strict gate fails.
+    """
+    exp_rows = extras.get("experience") or []
+    edu_rows = extras.get("education") or []
+    have_csv_exp = bool(exp_rows)
+    have_csv_edu = bool(edu_rows)
+    need_structure_fill = not have_csv_exp or not have_csv_edu
+
+    blob = (plain_blob or "").strip()
+    if not blob:
+        return summary, headline, about, skills, extras, None, False
+
+    structured: dict[str, Any] | None = None
+    used_flex = False
+
+    if resume_parser.looks_parseable_resume_blob(blob):
+        structured = resume_parser.parse_resume_profile_blob(blob)
+    elif include_flexible and resume_parser.looks_flexible_parseable_resume_blob(blob):
+        structured = resume_parser.parse_resume_profile_flexible(blob)
+        used_flex = True
+        if need_structure_fill and structured:
+            exp_n = len(structured.get("experience") or [])
+            edu_n = len(structured.get("education") or [])
+            sk_n = len(structured.get("skills") or [])
+            if exp_n == 0 and edu_n == 0 and sk_n < 3:
+                return summary, headline, about, skills, extras, None, False
+
+    if not structured:
+        return summary, headline, about, skills, extras, None, False
+
+    summary = structured.get("summary") or summary
+    hl_struct = structured.get("headline")
+    if hl_struct:
+        headline = hl_struct[:220]
+    skills = resume_parser.merge_skill_lists(skills, structured.get("skills"))
+
+    csv_about = about
+    base_about = (structured.get("about") or "").strip()
+    if csv_about and str(csv_about).strip():
+        about = (
+            f"{base_about}\n\n{str(csv_about).strip()}".strip()
+            if base_about
+            else str(csv_about).strip()
+        )
+    else:
+        about = base_about if base_about else about
+
+    languages = structured.get("languages")
+
+    if need_structure_fill:
+        if not have_csv_exp and structured.get("experience"):
+            extras["experience"] = structured.get("experience") or []
+        if not have_csv_edu and structured.get("education"):
+            extras["education"] = structured.get("education") or []
+
+    return summary, headline, about, skills, extras, languages, True
+
+
 def pick_row_id(norm: dict[str, str], line_no: int) -> str:
     for key in ("id", "resume_id", "candidate_id", "index"):
         if norm.get(key):
@@ -383,6 +483,65 @@ def upload_kind(raw: str) -> tuple[str, str]:
     if "<html" in sample or "<body" in sample or "<div" in sample or raw.strip().startswith("<"):
         return ".html", "text/html; charset=utf-8"
     return ".txt", "text/plain; charset=utf-8"
+
+
+def synthesize_resume_pdf_bytes(raw_resume: str, *, row_id: str) -> bytes:
+    """
+    Build a minimal multi-page PDF from the Kaggle HTML/text cell (plain text after html_to_text).
+
+    Used when ``data/data/<Category>/<id>.pdf`` is missing so uploads stay ``application/pdf``.
+    """
+    try:
+        from fpdf import FPDF
+    except ImportError as e:
+        exe = sys.executable
+        raise RuntimeError(
+            "PDF synthesis needs the fpdf2 package (import name: fpdf).\n"
+            f"  This script is running: {exe}\n"
+            "  Install into the SAME interpreter (pip alone may target a different Python):\n"
+            f"    {exe} -m pip install fpdf2\n"
+            "  Or from backend/: python3 -m pip install -r requirements-dev.txt"
+        ) from e
+
+    text = html_to_text(raw_resume)
+    text = (text or "").strip()
+    if len(text) < 40:
+        text = re.sub(r"\s+", " ", (raw_resume or "").replace("\r", "")).strip()
+    if not text:
+        text = f"(Empty résumé cell; id={row_id})"
+    if len(text) > 100_000:
+        text = text[:100_000] + "\n\n[truncated for PDF generation]"
+
+    import fpdf as fpdf_pkg
+
+    pkg = Path(fpdf_pkg.__file__).resolve().parent
+    font_path = None
+    for name in ("DejaVuSans.ttf", "DejaVuSansCondensed.ttf"):
+        candidate = pkg / "font" / name
+        if candidate.is_file():
+            font_path = candidate
+            break
+
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=14)
+    pdf.set_margins(18, 18, 18)
+    pdf.add_page()
+    if font_path:
+        pdf.add_font("DejaVu", "", str(font_path))
+        pdf.set_font("DejaVu", "", 10)
+    else:
+        pdf.set_font("Helvetica", "", 10)
+        text = text.encode("latin-1", errors="replace").decode("latin-1")
+
+    pdf.multi_cell(0, 5, text)
+
+    # fpdf2 ≥2.2: call output() with no path to get PDF bytes (avoid deprecated dest=).
+    out = pdf.output()
+    if isinstance(out, (bytes, bytearray)):
+        return bytes(out)
+    if isinstance(out, str):
+        return out.encode("latin-1")
+    raise RuntimeError("fpdf2 PDF output returned unexpected type")
 
 
 def register_or_login(client: httpx.Client, email: str) -> tuple[int, str]:
@@ -453,6 +612,9 @@ def ensure_profile(
     about: str | None = None,
     experience: list | None = None,
     education: list | None = None,
+    languages: list | None = None,
+    open_to: str | None = None,
+    profile_status: str | None = None,
 ) -> None:
     exp = experience or []
     edu = education or []
@@ -474,6 +636,12 @@ def ensure_profile(
     }
     if about:
         body["about"] = about
+    if languages:
+        body["languages"] = languages
+    if open_to is not None:
+        body["open_to"] = open_to
+    if profile_status is not None:
+        body["profile_status"] = profile_status
     result = post(
         client,
         "profile",
@@ -501,6 +669,12 @@ def ensure_profile(
         }
         if about:
             upd["about"] = about
+        if languages:
+            upd["languages"] = languages
+        if open_to is not None:
+            upd["open_to"] = open_to
+        if profile_status is not None:
+            upd["profile_status"] = profile_status
         pdata = post(client, "profile", "/members/update", upd, token=token)
         if isinstance(pdata, dict) and pdata.get("command_id"):
             polled = poll_command(client, "profile", pdata["command_id"], token=token)
@@ -556,10 +730,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--resume-upload",
-        choices=("pdf-prefer", "pdf-only", "csv-only"),
+        choices=("pdf-prefer", "pdf-prefer-html", "pdf-only", "csv-only"),
         default="pdf-prefer",
-        help="pdf-prefer: PDF from data/data/<Category>/<ID>.pdf when present, else CSV cell (default). "
-        "pdf-only: skip rows with no PDF. csv-only: legacy HTML/text cell upload.",
+        help="pdf-prefer: Kaggle file PDF when present, else generate PDF from CSV cell via fpdf2 (default). "
+        "pdf-prefer-html: if no file PDF, upload raw HTML/text cell as before. "
+        "pdf-only: skip rows with no file PDF. csv-only: HTML/text only.",
     )
     parser.add_argument(
         "--pdf-root",
@@ -573,6 +748,16 @@ def main() -> None:
         "--names-only",
         action="store_true",
         help="Only update first_name/last_name for existing kaggle_resume_*@example.com accounts (no uploads/register)",
+    )
+    parser.add_argument(
+        "--include-flexible",
+        action="store_true",
+        help="When strict résumé gate fails, try parse_resume_profile_flexible (more coverage on messy Kaggle text)",
+    )
+    parser.add_argument(
+        "--no-job-seeker-defaults",
+        action="store_true",
+        help="Do not set open_to=job and profile_status=open_to_work (defaults favor job-matching UIs)",
     )
     args = parser.parse_args()
 
@@ -605,7 +790,15 @@ def main() -> None:
             print(f"PDF tree not found at {root}. Unzip the full Kaggle dataset so data/data/<Category>/ exists.")
             sys.exit(1)
         else:
-            print(f"  (no PDF tree at {root} — using CSV resume cells only; unzip full dataset for PDF uploads)")
+            print(
+                f"  (no PDF tree at {root} — "
+                + (
+                    "CSV résumé cells will be converted to PDF via fpdf2 (pip install fpdf2)"
+                    if args.resume_upload == "pdf-prefer"
+                    else "using CSV resume bytes as HTML/text when no file PDF"
+                )
+                + ")"
+            )
 
     meta = {"csv": str(csv_path), "rows": len(rows), "names_only": args.names_only}
     if not args.names_only:
@@ -686,7 +879,7 @@ def main() -> None:
             print("  Updated first_name/last_name only. Password unchanged (scripts/seed.py default).")
             return
 
-        section("Kaggle resume → members (PDF or CSV cell upload)")
+        section("Kaggle resume → members (PDF upload: file or generated from CSV)")
 
         synthetic_names_used: set[tuple[str, str]] = set()
         for line_no, row in rows:
@@ -708,8 +901,10 @@ def main() -> None:
                     print(f"  skip line {line_no}: missing PDF (expected …/data/data/{category}/{rid}.pdf)")
                 elif args.resume_upload == "csv-only":
                     print(f"  skip line {line_no}: empty resume cell")
-                else:
+                elif args.resume_upload == "pdf-prefer-html":
                     print(f"  skip line {line_no}: no PDF and empty CSV resume cell")
+                else:
+                    print(f"  skip line {line_no}: empty CSV resume cell (cannot synthesize PDF)")
                 continue
 
             body, filename, mime, upload_src = upload_payload
@@ -734,32 +929,21 @@ def main() -> None:
             about = build_about_from_extra_columns(norm)
 
             plain_blob = (plain or "").strip()
-            exp_rows = extras.get("experience") or []
-            edu_rows = extras.get("education") or []
-            if (
-                plain_blob
-                and resume_parser.looks_parseable_resume_blob(plain_blob)
-                and not exp_rows
-                and not edu_rows
-            ):
-                structured = resume_parser.parse_resume_profile_blob(plain_blob)
-                summary = structured.get("summary") or summary
-                csv_about = about
-                base_about = (structured.get("about") or "").strip()
-                if csv_about and str(csv_about).strip():
-                    about = (
-                        f"{base_about}\n\n{str(csv_about).strip()}".strip()
-                        if base_about
-                        else str(csv_about).strip()
-                    )
-                else:
-                    about = base_about if base_about else None
-                hl_struct = structured.get("headline")
-                if hl_struct:
-                    headline = hl_struct[:220]
-                skills = resume_parser.merge_skill_lists(skills, structured.get("skills"))
-                extras["experience"] = structured.get("experience") or []
-                extras["education"] = structured.get("education") or []
+            summary, headline, about, skills, extras, languages_out, _pused = merge_profile_with_parser(
+                plain_blob=plain_blob,
+                summary=summary,
+                headline=headline,
+                about=about,
+                skills=skills,
+                extras=extras,
+                include_flexible=args.include_flexible,
+            )
+
+            open_to = None
+            profile_status = None
+            if not args.no_job_seeker_defaults:
+                open_to = "job"
+                profile_status = "open_to_work"
 
             email = f"kaggle_resume_{rid}@example.com"
 
@@ -787,16 +971,43 @@ def main() -> None:
                     about=about,
                     experience=extras["experience"],
                     education=extras["education"],
+                    languages=languages_out if isinstance(languages_out, list) else None,
+                    open_to=open_to,
+                    profile_status=profile_status,
                 )
                 upload_resume_bytes(client, user_id, token, filename, body, mime)
-                ok(f"line {line_no}", {"email": email, "member_id": user_id, "file": filename, "upload": upload_src})
+                cat_slug = re.sub(r"[^\w-]+", "_", (category or "misc").strip())[:48] or "misc"
+                ext = Path(filename).suffix if filename.lower().endswith((".pdf", ".html", ".htm", ".txt")) else ".pdf"
+                resume_url = f"https://example.com/kaggle-resumes/{cat_slug}/{rid}{ext}"
+                post(
+                    client,
+                    "profile",
+                    "/members/uploadResume",
+                    {"member_id": user_id, "resume_url": resume_url},
+                    token=token,
+                )
+                ok(
+                    f"line {line_no}",
+                    {
+                        "email": email,
+                        "member_id": user_id,
+                        "file": filename,
+                        "upload": upload_src,
+                        "resume_url": resume_url,
+                    },
+                )
             except Exception as exc:
                 print(f"  ✗ line {line_no} profile/upload failed: {exc}")
                 continue
 
         section("Done")
-        print("  Uploads: PDF from data/data/<Category>/<ID>.pdf when present (pdf-prefer), else CSV resume cell.")
+        print(
+            "  Uploads: PDF from data/data/<Category>/<ID>.pdf when present; "
+            "else pdf-prefer builds PDF from CSV cell (fpdf2). Use --resume-upload pdf-prefer-html for old HTML uploads."
+        )
         print("  Extra CSV columns → profile fields + Mongo `about` where applicable.")
+        print("  Each member gets resume_url https://example.com/kaggle-resumes/<Category>/<id> (stable map).")
+        print("  Parser enriches profiles from plain résumé text; use --include-flexible for harder rows.")
         print("  Password: same as scripts/seed.py (SkillSync1!).")
 
 
