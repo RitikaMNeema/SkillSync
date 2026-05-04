@@ -4,6 +4,7 @@ import { Eye, FileText, Lightbulb, Search } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { getMemberDashboard } from "../../api/analytics";
 import { getApplicationsByMember } from "../../api/applications";
+import { ProfileViewersList } from "../../components/analytics/ProfileViewersList";
 import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
 import type { MemberDashboard } from "../../types/analytics";
@@ -205,6 +206,8 @@ export function MemberDashboardPage() {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
+
+            <ProfileViewersList rows={dashboard.profile_viewers_recent} />
 
             <button type="button" className="mt-2 text-sm font-semibold text-[#0a66c2] hover:underline">
               View all profile views →
