@@ -12,6 +12,14 @@ async def emit_profile_updated(actor_id, member_id, updated_fields: list) -> Non
 
 
 async def emit_profile_viewed(actor_id, member_id) -> None:
+    if actor_id is None:
+        return
+    try:
+        if int(actor_id) == int(member_id):
+            return
+    except (TypeError, ValueError):
+        if str(actor_id).strip() == str(member_id).strip():
+            return
     envelope = build_envelope(
         topics.PROFILE_VIEWED, str(actor_id), "profile", str(member_id),
         {"member_id": str(member_id)},

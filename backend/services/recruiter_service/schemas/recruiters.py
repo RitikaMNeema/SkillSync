@@ -45,6 +45,10 @@ class GetRecruiterRequest(BaseModel):
     recruiter_id: int
 
 
+class RecordRecruiterProfileViewRequest(BaseModel):
+    recruiter_id: int
+
+
 class UpdateRecruiterRequest(BaseModel):
     model_config = {"extra": "ignore"}
 

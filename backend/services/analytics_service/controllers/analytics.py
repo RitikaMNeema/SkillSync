@@ -95,7 +95,7 @@ async def get_geo(month: str | None = None, recruiter_id: int | None = None, job
 
 async def get_member_dashboard(member_id: int) -> dict:
     # Version cache key so old dashboard shape/count logic does not keep stale zeros.
-    ck = f"analytics:member:v2:{member_id}"
+    ck = f"analytics:member:v3:{member_id}"
     hit = await cache_get(ck)
     if hit is not None:
         return hit

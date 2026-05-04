@@ -46,6 +46,7 @@ def test_get_member_dashboard_shapes_search_and_status_fields():
     dashboard = {
         "profile_views_30d": 8,
         "search_appearances_30d": 5,
+        "profile_viewers_recent": [],
         "application_status_breakdown": [
             {"_id": "submitted", "count": 3},
             {"_id": "reviewing", "count": 2},

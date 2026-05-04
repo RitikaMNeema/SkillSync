@@ -33,6 +33,7 @@ import { ExperienceCard } from "../../components/profile/ExperienceCard";
 import { ProfileHeader } from "../../components/profile/ProfileHeader";
 import { ResumeUpload } from "../../components/profile/ResumeUpload";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import { formatRelativeDate } from "../../utils/formatDate";
 import {
   getUnifiedProfile,
   updateUnifiedProfile,
@@ -40,9 +41,10 @@ import {
 } from "../../utils/profileAdapter";
 import { getMemberDashboard, getRecruiterProfileDashboard } from "../../api/analytics";
 import { getMutualConnections, listConnections, listPendingConnections, requestConnection, withdrawConnection } from "../../api/connections";
-import { deleteCoverPhoto, searchMembers } from "../../api/members";
+import { deleteCoverPhoto, recordMemberProfileView, searchMembers } from "../../api/members";
 import {
   deleteRecruiterCoverPhoto,
+  recordRecruiterProfileView,
   searchRecruiters,
   uploadRecruiterCoverPhoto,
   uploadRecruiterProfilePhoto,
@@ -146,9 +148,23 @@ export function ProfilePage() {
   const [pendingIsOutgoing, setPendingIsOutgoing] = useState(false);
   const [sendingConnection, setSendingConnection] = useState(false);
   const [resolvedConnectionsCount, setResolvedConnectionsCount] = useState<number | null>(null);
+  type ProfileViewerRow = { viewer_user_id: string | number; last_viewed_at: string };
+
   type ProfileActivityStats =
-    | { variant: "member"; profileViews: number; searchAppearances: number; profileViewsTrend: number }
-    | { variant: "recruiter"; profileViews: number; applicants30d: number; profileViewsTrend: number };
+    | {
+        variant: "member";
+        profileViews: number;
+        searchAppearances: number;
+        profileViewsTrend: number;
+        profileViewersRecent: ProfileViewerRow[];
+      }
+    | {
+        variant: "recruiter";
+        profileViews: number;
+        applicants30d: number;
+        profileViewsTrend: number;
+        profileViewersRecent: ProfileViewerRow[];
+      };
 
   const [activityStats, setActivityStats] = useState<ProfileActivityStats | null>(null);
   const [activeModal, setActiveModal] = useState<ProfileActiveModal | null>(null);
@@ -163,6 +179,7 @@ export function ProfilePage() {
     education: false,
     skills: false
   });
+  const recordedProfileViewKeyRef = useRef<string | null>(null);
   const aboutRef = useRef<HTMLDivElement | null>(null);
   const experienceRef = useRef<HTMLDivElement | null>(null);
   const educationRef = useRef<HTMLDivElement | null>(null);
@@ -196,6 +213,24 @@ export function ProfilePage() {
     void loadMemberProfile();
   }, [member_id, profileApiRole, authHydrated]);
 
+  /** Intentional profile visit only: one record per (resolution, profile id, viewer) per mount; not on GET /members/get. */
+  useEffect(() => {
+    if (!authHydrated || !member || loading || currentUserId == null || profileResolvedAs == null) return;
+    if (sameUserId(member.member_id, currentUserId)) return;
+    const key = `${profileResolvedAs}:${parsedMemberId}:${currentUserId}`;
+    if (recordedProfileViewKeyRef.current === key) return;
+    recordedProfileViewKeyRef.current = key;
+    if (profileResolvedAs === "member") {
+      void recordMemberProfileView(parsedMemberId).catch(() => {
+        recordedProfileViewKeyRef.current = null;
+      });
+    } else if (profileResolvedAs === "recruiter") {
+      void recordRecruiterProfileView(parsedMemberId).catch(() => {
+        recordedProfileViewKeyRef.current = null;
+      });
+    }
+  }, [authHydrated, member, loading, currentUserId, parsedMemberId, profileResolvedAs]);
+
   useEffect(() => {
     if (!Number.isFinite(parsedMemberId) || parsedMemberId <= 0) {
       setActivityStats(null);
@@ -223,7 +258,8 @@ export function ProfilePage() {
             variant: "recruiter",
             profileViews: d.profile_views_30d ?? 0,
             applicants30d: d.applicants_30d ?? 0,
-            profileViewsTrend: viewsTrendFromDaily(d.profile_views_daily_30d ?? [])
+            profileViewsTrend: viewsTrendFromDaily(d.profile_views_daily_30d ?? []),
+            profileViewersRecent: d.profile_viewers_recent ?? []
           });
         })
         .catch(() => {
@@ -248,7 +284,8 @@ export function ProfilePage() {
           variant: "member",
           profileViews: dashboard.profile_views_30d ?? 0,
           searchAppearances: dashboard.search_appearances_30d ?? 0,
-          profileViewsTrend: viewsTrendFromDaily(dashboard.profile_views_daily_30d ?? [])
+          profileViewsTrend: viewsTrendFromDaily(dashboard.profile_views_daily_30d ?? []),
+          profileViewersRecent: dashboard.profile_viewers_recent ?? []
         });
       })
       .catch(() => {
@@ -1189,6 +1226,25 @@ export function ProfilePage() {
                       </p>
                     </div>
                   </div>
+                  {activityStats && (activityStats.profileViewersRecent?.length ?? 0) > 0 ? (
+                    <div className="mt-4 border-t border-[#e6eaef] pt-4">
+                      <p className="text-sm font-semibold text-[#1f1f1f]">Who viewed your profile</p>
+                      <ul className="mt-2 max-h-40 space-y-2 overflow-y-auto">
+                        {(activityStats.profileViewersRecent ?? []).map((row, idx) => (
+                          <li key={`${String(row.viewer_user_id)}-${idx}`} className="flex items-center justify-between gap-2 text-xs">
+                            <button
+                              type="button"
+                              className="min-w-0 truncate text-left font-medium text-[#0a66c2] hover:underline"
+                              onClick={() => navigate(`/profile/${row.viewer_user_id}`)}
+                            >
+                              User {row.viewer_user_id}
+                            </button>
+                            <span className="shrink-0 tabular-nums text-[#6b7280]">{formatRelativeDate(row.last_viewed_at)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
                   <div className="border-t border-[#e6eaef] pt-4">
                     <div className="flex items-start gap-3">
                       <span
@@ -1230,26 +1286,31 @@ export function ProfilePage() {
                 <h3 className="text-lg font-semibold text-[#1f1f1f]">People you may know</h3>
                 <div className="mt-4 space-y-4">
                   {publicPeopleYouMayKnow.length ? publicPeopleYouMayKnow.map((person) => (
-                    <div key={person.id} className="flex items-start gap-3">
-                      <Avatar src={person.avatarUrl ?? undefined} name={person.name} alt={person.name} size="md" />
-                      <div className="min-w-0 flex-1">
-                        <button type="button" className="block text-left hover:underline" onClick={() => navigate(person.to)}>
-                          <p className="truncate text-base font-semibold text-[#1f1f1f]">{person.name}</p>
-                        </button>
-                        <p className="text-sm text-[#555]">{person.subtitle}</p>
-                        <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-[#6b7280]">
-                          <Users className="h-3 w-3" />
-                          {person.mutual}
-                        </p>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          className="mt-2 h-9 rounded-full border-[#0a66c2] px-4 text-sm font-semibold text-[#0a66c2] hover:bg-[#eef3f8]"
-                          onClick={() => navigate(person.to)}
-                        >
-                          View profile
-                        </Button>
+                    <div
+                      key={person.id}
+                      className="flex w-full min-w-0 items-start justify-between gap-3"
+                    >
+                      <div className="flex min-w-0 flex-1 items-start gap-3">
+                        <Avatar src={person.avatarUrl ?? undefined} name={person.name} alt={person.name} size="md" />
+                        <div className="min-w-0 flex-1">
+                          <button type="button" className="block w-full min-w-0 text-left hover:underline" onClick={() => navigate(person.to)}>
+                            <p className="truncate text-base font-semibold text-[#1f1f1f]">{person.name}</p>
+                          </button>
+                          <p className="break-words text-sm text-[#555]">{person.subtitle}</p>
+                          <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-[#6b7280]">
+                            <Users className="h-3 w-3 shrink-0" />
+                            {person.mutual}
+                          </p>
+                        </div>
                       </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="h-9 shrink-0 self-start rounded-full border-[#0a66c2] px-4 text-sm font-semibold text-[#0a66c2] hover:bg-[#eef3f8]"
+                        onClick={() => navigate(person.to)}
+                      >
+                        View profile
+                      </Button>
                     </div>
                   )) : (
                     <p className="text-sm text-[#6b7280]">No people suggestions available yet.</p>

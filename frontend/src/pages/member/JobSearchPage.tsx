@@ -19,7 +19,6 @@ const initialFilters: JobFilterState = {
   location: "",
   employment_type: "",
   work_mode: "",
-  industry: "",
   seniority_level: ""
 };
 
@@ -42,7 +41,6 @@ export function JobSearchPage() {
       location: searchParams.get("location") ?? "",
       employment_type: searchParams.get("employment_type") ?? "",
       work_mode: searchParams.get("work_mode") ?? "",
-      industry: searchParams.get("industry") ?? "",
       seniority_level: searchParams.get("seniority_level") ?? ""
     };
     const nextPage = Number(searchParams.get("page") ?? "1");
@@ -89,7 +87,7 @@ export function JobSearchPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [debounced.keyword, debounced.location, debounced.employment_type, debounced.work_mode, debounced.industry, debounced.seniority_level]);
+  }, [debounced.keyword, debounced.location, debounced.employment_type, debounced.work_mode, debounced.seniority_level]);
 
   useEffect(() => {
     if (!userId) return;
