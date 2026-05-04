@@ -43,7 +43,6 @@ import {
 import { getMemberDashboard, getRecruiterProfileDashboard } from "../../api/analytics";
 import { getMutualConnections, listConnections, listPendingConnections, requestConnection, withdrawConnection } from "../../api/connections";
 import { getAllApplicationsByMember } from "../../api/applications";
-import { deleteCoverPhoto, searchMembers } from "../../api/members";
 import { deleteCoverPhoto, recordMemberProfileView, searchMembers } from "../../api/members";
 import {
   deleteRecruiterCoverPhoto,
@@ -312,9 +311,9 @@ export function ProfilePage() {
     }
     let cancelled = false;
     void getAllApplicationsByMember(parsedMemberId)
-      .then((apps) => {
+      .then(({ applications }) => {
         if (cancelled) return;
-        setHiredApplications(apps.filter((a) => a.status === "hired"));
+        setHiredApplications(applications.filter((a) => a.status === "hired"));
       })
       .catch(() => {
         if (cancelled) return;
