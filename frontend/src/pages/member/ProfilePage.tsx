@@ -351,7 +351,7 @@ export function ProfilePage() {
     void getAllApplicationsByMember(parsedMemberId)
       .then(({ applications: apps }) => {
         if (cancelled) return;
-        setHiredApplications(apps.filter((a) => a.status === "hired"));
+        setHiredApplications(applications.filter((a) => a.status === "hired"));
       })
       .catch(() => {
         if (cancelled) return;
