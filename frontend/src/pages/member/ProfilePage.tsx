@@ -1,5 +1,5 @@
 import { BriefcaseBusiness, CircleHelp, Eye, EyeOff, FileText, GraduationCap, Lightbulb, Pencil, Plus, Search, Sparkles, Users } from "lucide-react";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import toast from "react-hot-toast";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { RightSidebar } from "../../components/layout/Sidebar";
@@ -26,13 +26,22 @@ import { Card } from "../../components/ui/Card";
 import { CardSkeleton } from "../../components/ui/Skeleton";
 import { Avatar } from "../../components/ui/Avatar";
 import { authStore } from "../../context/AuthContext";
+<<<<<<< HEAD
 import type { Application } from "../../types/application";
+=======
+import { useAuthHydrated } from "../../hooks/useAuthHydrated";
+import type { UserRole } from "../../types/common";
+>>>>>>> 8a38c78b6499a77f1b43c41101e1d1d6ceaec3a0
 import type { EducationEntry, ExperienceEntry, LanguageEntry, MemberProfile, MemberSearchItem } from "../../types/member";
 import { ExperienceCard } from "../../components/profile/ExperienceCard";
 import { ProfileHeader } from "../../components/profile/ProfileHeader";
 import { ResumeUpload } from "../../components/profile/ResumeUpload";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
-import { getUnifiedProfile, updateUnifiedProfile } from "../../utils/profileAdapter";
+import {
+  getUnifiedProfile,
+  updateUnifiedProfile,
+  type UnifiedProfileResolution
+} from "../../utils/profileAdapter";
 import { getMemberDashboard, getRecruiterProfileDashboard } from "../../api/analytics";
 import { getMutualConnections, listConnections, listPendingConnections, requestConnection, withdrawConnection } from "../../api/connections";
 import { getAllApplicationsByMember } from "../../api/applications";
@@ -125,7 +134,16 @@ export function ProfilePage() {
     Number.isFinite(parsedMemberId) &&
     sameUserId(parsedMemberId, currentUserId);
   const profileApiRole = isRecruiterViewingOwnProfile || isForcedRecruiterProfile ? "recruiter" : "member";
+  const authHydrated = useAuthHydrated();
   const [member, setMember] = useState<MemberProfile | null>(null);
+  /** Whether `member_id` resolved from recruiters vs members table — drives analytics API choice. */
+  const [profileResolvedAs, setProfileResolvedAs] = useState<UnifiedProfileResolution | null>(null);
+  /** Mutations must follow the loaded row (recruiters table vs members), not only URL hints / hydration race. */
+  const writeRole = useMemo((): UserRole => {
+    if (profileResolvedAs === "recruiter") return "recruiter";
+    if (profileResolvedAs === "member") return "member";
+    return profileApiRole;
+  }, [profileResolvedAs, profileApiRole]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [connectionStatus, setConnectionStatus] = useState<"none" | "pending" | "connected">("none");
@@ -167,23 +185,30 @@ export function ProfilePage() {
     }
     setLoading(true);
     setError("");
+    setProfileResolvedAs(null);
     try {
-      const data = await getUnifiedProfile(parsedMemberId, profileApiRole);
+      const { profile: data, resolvedAs } = await getUnifiedProfile(parsedMemberId, profileApiRole);
       setMember(data);
+      setProfileResolvedAs(resolvedAs);
     } catch {
       setError("Could not load member profile.");
+      setProfileResolvedAs(null);
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
+    if (!authHydrated) return;
     void loadMemberProfile();
-  }, [member_id, profileApiRole]);
+  }, [member_id, profileApiRole, authHydrated]);
 
   useEffect(() => {
     if (!Number.isFinite(parsedMemberId) || parsedMemberId <= 0) {
       setActivityStats(null);
+      return;
+    }
+    if (profileResolvedAs === null) {
       return;
     }
     let cancelled = false;
@@ -197,8 +222,9 @@ export function ProfilePage() {
       return ((recent - previous) / previous) * 100;
     }
 
-    const promise = isRecruiterViewingOwnProfile
-      ? getRecruiterProfileDashboard(parsedMemberId).then((d) => {
+    if (isRecruiterViewingOwnProfile) {
+      void getRecruiterProfileDashboard(parsedMemberId)
+        .then((d) => {
           if (cancelled) return;
           setActivityStats({
             variant: "recruiter",
@@ -207,24 +233,38 @@ export function ProfilePage() {
             profileViewsTrend: viewsTrendFromDaily(d.profile_views_daily_30d ?? [])
           });
         })
-      : getMemberDashboard(parsedMemberId).then((dashboard) => {
-          if (cancelled) return;
-          setActivityStats({
-            variant: "member",
-            profileViews: dashboard.profile_views_30d ?? 0,
-            searchAppearances: dashboard.search_appearances_30d ?? 0,
-            profileViewsTrend: viewsTrendFromDaily(dashboard.profile_views_daily_30d ?? [])
-          });
+        .catch(() => {
+          if (!cancelled) setActivityStats(null);
         });
+      return () => {
+        cancelled = true;
+      };
+    }
 
-    promise.catch(() => {
-      if (cancelled) return;
+    if (profileResolvedAs === "recruiter") {
       setActivityStats(null);
-    });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void getMemberDashboard(parsedMemberId)
+      .then((dashboard) => {
+        if (cancelled) return;
+        setActivityStats({
+          variant: "member",
+          profileViews: dashboard.profile_views_30d ?? 0,
+          searchAppearances: dashboard.search_appearances_30d ?? 0,
+          profileViewsTrend: viewsTrendFromDaily(dashboard.profile_views_daily_30d ?? [])
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setActivityStats(null);
+      });
     return () => {
       cancelled = true;
     };
-  }, [parsedMemberId, isRecruiterViewingOwnProfile]);
+  }, [parsedMemberId, isRecruiterViewingOwnProfile, profileResolvedAs]);
 
   useEffect(() => {
     if (!Number.isFinite(parsedMemberId) || parsedMemberId <= 0 || currentUserId == null) {
@@ -445,7 +485,7 @@ export function ProfilePage() {
       await updateUnifiedProfile({
         member_id: member.member_id,
         experience: currentItems
-      }, profileApiRole);
+      }, writeRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success(editIndex !== undefined ? "Experience updated" : "Experience added", { id: loadingToast });
@@ -467,7 +507,7 @@ export function ProfilePage() {
       await updateUnifiedProfile({
         member_id: member.member_id,
         education: currentItems
-      }, profileApiRole);
+      }, writeRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success(editIndex !== undefined ? "Education updated" : "Education added", { id: loadingToast });
@@ -484,7 +524,7 @@ export function ProfilePage() {
         member_id: member.member_id,
         about,
         summary: about
-      }, profileApiRole);
+      }, writeRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("About updated", { id: loadingToast });
@@ -505,12 +545,7 @@ export function ProfilePage() {
     }
     const loadingToast = toast.loading("Saving language...");
     try {
-      try {
-        await updateUnifiedProfile({ member_id: member.member_id, languages: nextLanguages }, profileApiRole);
-      } catch (err) {
-        if (profileApiRole !== "recruiter") throw err;
-        await updateUnifiedProfile({ member_id: member.member_id, languages: nextLanguages }, "member");
-      }
+      await updateUnifiedProfile({ member_id: member.member_id, languages: nextLanguages }, writeRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success(editIndex !== undefined ? "Language updated" : "Language added", { id: loadingToast });
@@ -531,7 +566,7 @@ export function ProfilePage() {
       await updateUnifiedProfile({
         member_id: member.member_id,
         headline: trimmed
-      }, profileApiRole);
+      }, writeRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Headline updated", { id: loadingToast });
@@ -552,7 +587,7 @@ export function ProfilePage() {
         location_city: values.location_city.trim() || null,
         location_state: values.location_state.trim() || null,
         location_country: values.location_country.trim() || null
-      }, profileApiRole);
+      }, writeRole);
       await loadMemberProfile();
       setActiveModal({ type: "contact_info" });
       toast.success("Contact info updated", { id: loadingToast });
@@ -570,12 +605,7 @@ export function ProfilePage() {
     }
     const loadingToast = toast.loading("Saving profile language...");
     try {
-      try {
-        await updateUnifiedProfile({ member_id: member.member_id, profile_language: value }, profileApiRole);
-      } catch (err) {
-        if (profileApiRole !== "recruiter") throw err;
-        await updateUnifiedProfile({ member_id: member.member_id, profile_language: value }, "member");
-      }
+      await updateUnifiedProfile({ member_id: member.member_id, profile_language: value }, writeRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Profile language updated", { id: loadingToast });
@@ -600,7 +630,7 @@ export function ProfilePage() {
     const nextSlug = normalized.endsWith(memberSuffix) ? normalized : `${normalized}${memberSuffix}`;
     const loadingToast = toast.loading("Saving profile URL...");
     try {
-      await updateUnifiedProfile({ member_id: member.member_id, profile_slug: nextSlug }, profileApiRole);
+      await updateUnifiedProfile({ member_id: member.member_id, profile_slug: nextSlug }, writeRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Public profile URL updated", { id: loadingToast });
@@ -670,7 +700,7 @@ export function ProfilePage() {
         education,
         skills,
         ...(nextFollowed ? { followed_skills: nextFollowed } : {})
-      }, profileApiRole);
+      }, writeRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Skill added", { id: loadingToast });
@@ -702,7 +732,7 @@ export function ProfilePage() {
         education,
         skills: [...(member.skills ?? [])],
         followed_skills: nextFollowed
-      }, profileApiRole);
+      }, writeRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Skill updated", { id: loadingToast });
@@ -736,7 +766,7 @@ export function ProfilePage() {
         experience,
         education,
         followed_skills
-      }, profileApiRole);
+      }, writeRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Skill removed", { id: loadingToast });
@@ -755,7 +785,7 @@ export function ProfilePage() {
       await updateUnifiedProfile({
         member_id: member.member_id,
         experience: currentItems
-      }, profileApiRole);
+      }, writeRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Experience deleted", { id: loadingToast });
@@ -774,7 +804,7 @@ export function ProfilePage() {
       await updateUnifiedProfile({
         member_id: member.member_id,
         education: currentItems
-      }, profileApiRole);
+      }, writeRole);
       await loadMemberProfile();
       setActiveModal(null);
       toast.success("Education deleted", { id: loadingToast });
@@ -783,7 +813,7 @@ export function ProfilePage() {
     }
   }
 
-  if (loading) {
+  if (loading || !authHydrated) {
     return (
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <CardSkeleton />
@@ -905,7 +935,7 @@ export function ProfilePage() {
                 profile_status: next,
                 open_to: next === "open_to_work" ? "job" : next === "hiring" ? "hiring" : null
               },
-              profileApiRole
+              writeRole
             );
             await loadMemberProfile();
           }}
@@ -922,10 +952,6 @@ export function ProfilePage() {
           connectDisabled={sendingConnection || connectionStatus === "connected" || (connectionStatus === "pending" && !pendingIsOutgoing)}
           onConnect={() => void handleConnect()}
           onMessage={handleMessage}
-          canRemoveConnection={connectionStatus === "connected"}
-          onRemoveConnection={() => toast("Remove connection is not implemented yet.", { icon: "ℹ️" })}
-          onReportProfile={() => toast("Report submitted. We will review this profile.", { icon: "✅" })}
-          onBlockProfile={() => toast("Block user is not implemented yet.", { icon: "ℹ️" })}
         />
         {isOwnProfile && currentRole === "member" && hiredApplications.length > 0 ? (
           <Card className="rounded-2xl border border-[#bbf7d0] bg-[#f0fdf4] p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">

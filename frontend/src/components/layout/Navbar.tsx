@@ -71,8 +71,12 @@ export function Navbar() {
   const menuRef = useRef<HTMLDivElement>(null);
   const debouncedQuery = useDebounce(query, 220);
   const homePath = getHomePath(role);
-  /** Same full profile shell as members (`ProfilePage`); `/recruiters/:id` only showed a minimal card. */
-  const profileMeHref = userId ? `/profile/${userId}` : "/feed";
+  /** Recruiters use `?type=recruiter` so `ProfilePage` always loads `/recruiters/get` (same id as auth `user_id`). */
+  const profileMeHref = userId
+    ? role === "recruiter"
+      ? `/profile/${userId}?type=recruiter`
+      : `/profile/${userId}`
+    : "/feed";
 
   const jobsNavPath = getJobsNavPath(role);
 

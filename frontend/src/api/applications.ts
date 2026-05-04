@@ -52,7 +52,11 @@ export async function getApplicationsByMember(member_id: number, page = 1) {
   return response.data.data;
 }
 
+<<<<<<< HEAD
 /** Every page for this member (profile / analytics must not cap at first `page_size`). */
+=======
+/** All pages for this member (job detail "Applied" state must not miss a match on page 2+). */
+>>>>>>> 8a38c78b6499a77f1b43c41101e1d1d6ceaec3a0
 export async function getAllApplicationsByMember(member_id: number) {
   const applications: Application[] = [];
   let page = 1;
@@ -66,7 +70,11 @@ export async function getAllApplicationsByMember(member_id: number) {
     if (data.applications.length === 0 || data.applications.length < pageSize) break;
     page += 1;
   }
+<<<<<<< HEAD
   return applications;
+=======
+  return { applications, total };
+>>>>>>> 8a38c78b6499a77f1b43c41101e1d1d6ceaec3a0
 }
 
 export async function updateApplicationStatus(application_id: number, new_status: ApplicationStatus) {

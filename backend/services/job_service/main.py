@@ -8,11 +8,13 @@ from shared.middleware.logger import LoggerMiddleware
 from shared.utils.trace_id import TraceMiddleware
 from routes.jobs import router
 from consumers.job_commands_consumer import start_job_commands_consumer
+from models.job import ensure_jobs_columns
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await get_pool()
+    await ensure_jobs_columns()
     await get_redis()
     await start_job_commands_consumer()
     yield

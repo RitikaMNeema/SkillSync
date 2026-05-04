@@ -1,6 +1,6 @@
 import { ClipboardList } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { getApplication, getApplicationsByMember, withdrawApplication } from "../../api/applications";
 import { Badge } from "../../components/ui/Badge";
@@ -14,6 +14,16 @@ import { formatRelativeDate } from "../../utils/formatDate";
 import { getStatusColor } from "../../utils/getStatusColor";
 
 const tabs: Array<ApplicationStatus | "all"> = ["all", "submitted", "reviewing", "interview", "offer", "hired", "rejected"];
+
+/** Ordered pipeline for progress badges (no duplicate labels). */
+function applicationProgressBadges(status: ApplicationStatus): ApplicationStatus[] {
+  const pipeline: ApplicationStatus[] = ["submitted", "reviewing", "interview", "offer"];
+  if (status === "withdrawn") return ["submitted", "withdrawn"];
+  if (status === "rejected") return [...pipeline, "rejected"];
+  const idx = pipeline.indexOf(status);
+  if (idx >= 0) return pipeline.slice(0, idx + 1);
+  return [status];
+}
 
 export function ApplicationsPage() {
   const navigate = useNavigate();
@@ -99,11 +109,26 @@ export function ApplicationsPage() {
                   {(application.company_name ?? "Co").slice(0, 2).toUpperCase()}
                 </div>
                 <div>
-                  <p className="font-semibold">{application.job_title}</p>
+                  <Link
+                    to={`/jobs/${application.job_id}`}
+                    className="font-semibold text-brand hover:underline"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    {application.job_title}
+                  </Link>
                   <p className="text-sm text-text-secondary">
                     {application.company_name} · {formatRelativeDate(application.application_datetime)}
                   </p>
                   <Badge className={getStatusColor(application.status)}>{application.status}</Badge>
+                  <div className="mt-2">
+                    <Link
+                      to={`/jobs/${application.job_id}`}
+                      className="text-sm font-semibold text-brand hover:underline"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      View job posting
+                    </Link>
+                  </div>
                 </div>
               </div>
               {application.status !== "withdrawn" &&
@@ -132,12 +157,12 @@ export function ApplicationsPage() {
               ) : null}
             </div>
             {expandedId === application.application_id && expandedDetail ? (
-              <div className="mt-4 border-t pt-4 text-sm text-text-secondary">
+              <div className="mt-4 border-t pt-4 text-sm text-text-secondary" onClick={(event) => event.stopPropagation()}>
                 <p>Resume: {expandedDetail.resume_url || "No resume attached"}</p>
                 <p className="mt-2">Cover letter: {expandedDetail.cover_letter || "No cover letter provided"}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {["submitted", "reviewing", "interview", expandedDetail.status].map((step) => (
-                    <Badge key={step} className={getStatusColor(step as ApplicationStatus)}>
+                  {applicationProgressBadges(expandedDetail.status).map((step) => (
+                    <Badge key={step} className={getStatusColor(step)}>
                       {step}
                     </Badge>
                   ))}

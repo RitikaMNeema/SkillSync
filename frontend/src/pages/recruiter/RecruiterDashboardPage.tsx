@@ -10,11 +10,10 @@ import {
   YAxis,
   LabelList
 } from "recharts";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   BriefcaseBusiness,
-  CalendarDays,
   ChevronRight,
   Info,
   MoreHorizontal,
@@ -37,6 +36,7 @@ import {
 import { getAllApplicationsByJob, getApplicationsByJob } from "../../api/applications";
 import { getAllJobsByRecruiter } from "../../api/jobs";
 import { authStore } from "../../context/AuthContext";
+import { useAuthHydrated } from "../../hooks/useAuthHydrated";
 import { ChartCard } from "../../components/analytics/ChartCard";
 import { CardSkeleton } from "../../components/ui/Skeleton";
 import type { Application } from "../../types/application";
@@ -55,16 +55,6 @@ function formatMonthYearUtc(yearMonth: string) {
   const [y, m] = yearMonth.split("-").map((x) => parseInt(x, 10));
   if (!y || !m) return yearMonth;
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleString(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
-}
-
-/** e.g. "May 1, 2026 – May 31, 2026" — commas match dashboard reference; UTC calendar month. */
-function formatMonthRangeUtc(yearMonth: string) {
-  const [y, m] = yearMonth.split("-").map((x) => parseInt(x, 10));
-  if (!y || !m) return yearMonth;
-  const start = new Date(Date.UTC(y, m - 1, 1));
-  const end = new Date(Date.UTC(y, m, 0));
-  const opts: Intl.DateTimeFormatOptions = { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" };
-  return `${start.toLocaleDateString("en-US", opts)} – ${end.toLocaleDateString("en-US", opts)}`;
 }
 
 /** Inclusive start, exclusive end (ms) — aligned with analytics `_month_window` (UTC). */
@@ -197,6 +187,7 @@ async function aggregateApplicationsFromJobs(
 export function RecruiterDashboardPage() {
   const navigate = useNavigate();
   const recruiterId = authStore((state) => state.userId);
+  const authHydrated = useAuthHydrated();
   const [loading, setLoading] = useState(true);
   const [bootstrapped, setBootstrapped] = useState(false);
   const [topJobs, setTopJobs] = useState<Array<{ job_id: string; applications: number }>>([]);
@@ -219,13 +210,16 @@ export function RecruiterDashboardPage() {
   /** Real WoW trend from application timestamps (set with pipeline). */
   const [applicationsWeekTrend, setApplicationsWeekTrend] = useState<{ text: string; up: boolean } | null>(null);
   const [messagesSent30d, setMessagesSent30d] = useState(0);
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  /** Reporting window: current calendar month (no UI picker). */
+  const selectedMonth = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }, []);
   const [savedPeriod, setSavedPeriod] = useState<"day" | "week">("day");
   const [selectedGeoJobId, setSelectedGeoJobId] = useState<string>("all");
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
   const selectedMonthStart = `${selectedMonth}-01`;
   const monthWindowLabel = formatMonthYearUtc(selectedMonth);
-  const monthRangeLabel = formatMonthRangeUtc(selectedMonth);
   const normalizeTitle = (title: string) => title.trim().replace(/\s+/g, " ").toLowerCase();
   const getJobLabel = (jobId: string | number) => {
     const id = String(jobId);
@@ -308,6 +302,7 @@ export function RecruiterDashboardPage() {
   const monthPickerId = useId();
 
   useEffect(() => {
+    if (!authHydrated) return;
     if (!recruiterId) {
       setLoading(false);
       return;
@@ -428,9 +423,9 @@ export function RecruiterDashboardPage() {
         setLoading(false);
         setBootstrapped(true);
       });
-  }, [recruiterId, selectedMonthStart, savedPeriod, selectedGeoJobId]);
+  }, [authHydrated, recruiterId, selectedMonthStart, savedPeriod, selectedGeoJobId]);
 
-  if (loading) {
+  if (loading || !authHydrated) {
     return (
       <div className="mx-auto max-w-[1400px] space-y-6 px-4 pb-10 pt-6" style={{ backgroundColor: R_PAGE_BG }}>
         <CardSkeleton />
@@ -457,7 +452,7 @@ export function RecruiterDashboardPage() {
 
   return (
     <section className="mx-auto max-w-[1400px] space-y-8 px-4 pb-12 pt-6" style={{ backgroundColor: R_PAGE_BG }}>
-      {/* Page header — reference: title, subtitle, actions top-right, date range dropdown below */}
+      {/* Page header */}
       <div className="flex flex-col gap-5 border-b border-[#e5e7eb] pb-8 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="text-[1.75rem] font-bold leading-tight tracking-tight text-[#111827]">Recruiter dashboard</h1>
@@ -494,20 +489,18 @@ export function RecruiterDashboardPage() {
             htmlFor={monthPickerId}
             className="group flex w-full max-w-md cursor-pointer items-center gap-3 rounded-2xl border border-[#e5e7eb] bg-white px-4 py-3 shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition hover:border-[#d1d5db] focus-within:ring-2 focus-within:ring-[#0066ff33] focus-within:ring-offset-2 lg:ml-auto"
           >
-            <CalendarDays className="h-[18px] w-[18px] shrink-0 text-[#9ca3af]" aria-hidden />
-            <span className="min-w-0 flex-1 text-sm font-semibold leading-snug text-[#1f2937] tabular-nums" aria-live="polite">
-              {monthRangeLabel}
-            </span>
-            <input
-              id={monthPickerId}
-              type="month"
-              className="sr-only"
-              value={selectedMonth}
-              onChange={(event) => setSelectedMonth(event.target.value)}
-              aria-label="Select reporting month for dashboard metrics"
-            />
-            <span className="text-xs font-medium text-[#9ca3af] group-hover:text-[#6b7280]">Change</span>
-          </label>
+            <Plus className="h-4 w-4" strokeWidth={2.5} />
+            Post a job
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate(`/ai-test/${firstJobId}`)}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] border-2 bg-white px-4 text-sm font-semibold shadow-sm transition hover:bg-[#f8fafc]"
+            style={{ borderColor: R_PRIMARY, color: R_PRIMARY }}
+          >
+            <Sparkles className="h-4 w-4" />
+            Run AI matching
+          </button>
         </div>
       </div>
 
