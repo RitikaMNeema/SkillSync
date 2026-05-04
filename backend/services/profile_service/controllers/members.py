@@ -15,6 +15,7 @@ from models.member_mysql import (
     get_member_resume_meta,
     set_resume_file,
     clear_resume_file,
+    recruiter_may_access_member_resume,
     get_member_photo_file_id,
     set_photo_file,
     get_member_cover_file_id,
@@ -197,7 +198,17 @@ async def upload_resume(member_id: int, resume_url: str) -> dict:
     return {"member_id": member_id, "resume_url": resume_url}
 
 
-async def get_resume(member_id: int) -> dict:
+async def _assert_can_read_member_resume(member_id: int, actor: dict) -> None:
+    actor_id = int(actor["user_id"])
+    if member_id == actor_id:
+        return
+    if actor.get("role") == "recruiter" and await recruiter_may_access_member_resume(actor_id, member_id):
+        return
+    raise HTTPException(403, "Forbidden")
+
+
+async def get_resume(member_id: int, actor: dict) -> dict:
+    await _assert_can_read_member_resume(member_id, actor)
     member = await get_member_by_id(member_id)
     if not member:
         raise HTTPException(404, "Member not found")
@@ -360,10 +371,8 @@ async def upload_resume_file(
     }
 
 
-async def stream_resume_file(member_id: int, actor_id: int):
-    # Only the owner can download their own resume here.
-    if member_id != actor_id:
-        raise HTTPException(403, "Forbidden")
+async def stream_resume_file(member_id: int, actor: dict):
+    await _assert_can_read_member_resume(member_id, actor)
     meta = await get_member_resume_meta(member_id)
     if not meta or not meta.get("resume_file_id"):
         raise HTTPException(404, "No resume uploaded")
@@ -374,7 +383,8 @@ async def stream_resume_file(member_id: int, actor_id: int):
     return stream, info, meta
 
 
-async def get_resume_meta(member_id: int) -> dict | None:
+async def get_resume_meta(member_id: int, actor: dict) -> dict | None:
+    await _assert_can_read_member_resume(member_id, actor)
     return await get_member_resume_meta(member_id)
 
 

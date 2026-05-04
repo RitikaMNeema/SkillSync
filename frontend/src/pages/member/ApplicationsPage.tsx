@@ -13,7 +13,7 @@ import type { Application, ApplicationStatus } from "../../types/application";
 import { formatRelativeDate } from "../../utils/formatDate";
 import { getStatusColor } from "../../utils/getStatusColor";
 
-const tabs: Array<ApplicationStatus | "all"> = ["all", "submitted", "reviewing", "interview", "offer", "rejected"];
+const tabs: Array<ApplicationStatus | "all"> = ["all", "submitted", "reviewing", "interview", "offer", "hired", "rejected"];
 
 /** Ordered pipeline for progress badges (no duplicate labels). */
 function applicationProgressBadges(status: ApplicationStatus): ApplicationStatus[] {
@@ -131,26 +131,30 @@ export function ApplicationsPage() {
                   </div>
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                className="text-[#cc1016]"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  void withdrawApplication(application.application_id)
-                    .then(() =>
-                      setApplications((current) =>
-                        current.map((item) =>
-                          item.application_id === application.application_id ? { ...item, status: "withdrawn" } : item
+              {application.status !== "withdrawn" &&
+              application.status !== "rejected" &&
+              application.status !== "hired" ? (
+                <Button
+                  variant="ghost"
+                  className="text-[#cc1016]"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void withdrawApplication(application.application_id)
+                      .then(() =>
+                        setApplications((current) =>
+                          current.map((item) =>
+                            item.application_id === application.application_id ? { ...item, status: "withdrawn" } : item
+                          )
                         )
                       )
-                    )
-                    .catch((error: unknown) => {
-                      toast.error(error instanceof Error ? error.message : "Could not withdraw");
-                    });
-                }}
-              >
-                Withdraw
-              </Button>
+                      .catch((error: unknown) => {
+                        toast.error(error instanceof Error ? error.message : "Could not withdraw");
+                      });
+                  }}
+                >
+                  Withdraw
+                </Button>
+              ) : null}
             </div>
             {expandedId === application.application_id && expandedDetail ? (
               <div className="mt-4 border-t pt-4 text-sm text-text-secondary" onClick={(event) => event.stopPropagation()}>

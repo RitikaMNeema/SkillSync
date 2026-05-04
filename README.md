@@ -1,6 +1,6 @@
-# LinkedIn
+# LinkedIn (class project)
 
-A LinkedIn-style professional networking platform built as a distributed systems class project. Members can create profiles, connect with each other, browse and apply to jobs, message recruiters, and track their application pipeline. Recruiters can post listings, manage applicants, and communicate with candidates. An AI layer powered by Ollama provides job-match recommendations and applicant screening. Activity is streamed through Kafka and aggregated into an analytics layer in real time.
+A LinkedIn-style professional networking platform built as a distributed systems class project. This app lets members create profiles, connect with each other, browse and apply to jobs, message recruiters, and track their application pipeline. Recruiters can post listings, manage applicants, and communicate with candidates. Activity is streamed through Kafka and aggregated into an analytics layer in real time.
 
 ---
 
@@ -14,9 +14,7 @@ A LinkedIn-style professional networking platform built as a distributed systems
 | Cache / sessions | Redis 7 |
 | Async events | Apache Kafka |
 | Auth | JWT + bcrypt + Redis blacklist |
-| AI | Ollama (llama3.2:3b + nomic-embed-text) |
 | Containerisation | Docker + Docker Compose |
-| Frontend | React + Vite + TypeScript |
 
 ---
 
@@ -25,14 +23,13 @@ A LinkedIn-style professional networking platform built as a distributed systems
 | Service | Port | Purpose |
 |---|---|---|
 | auth | 3001 | Register, login, JWT tokens |
-| profile | 3002 | Member profiles, posts, resume |
+| profile | 3002 | Member profiles |
 | recruiter | 3003 | Recruiter & company management |
 | connection | 3004 | Connections between members |
-| job | 3005 | Job listings, search, save, benefits |
+| job | 3005 | Job listings, search, save |
 | application | 3006 | Apply, track, status flow |
 | messaging | 3007 | Threads and messages |
 | analytics | 3008 | Event aggregations and dashboards |
-| ai | 3010 | Ollama-powered job match & applicant screening |
 
 ---
 
@@ -40,7 +37,6 @@ A LinkedIn-style professional networking platform built as a distributed systems
 
 - [Backend setup & running locally](backend/backend.md)
 - [Full API reference for frontend](backend/api.md)
-- [Kaggle dataset import (résumés & jobs)](backend/kaggle.md)
 
 ---
 
@@ -49,7 +45,7 @@ A LinkedIn-style professional networking platform built as a distributed systems
 ```bash
 cd backend
 docker compose up --build -d
-python scripts/seed.py          # loads realistic test data
+python scripts/seed.py      # loads realistic test data
 cd ../frontend
 npm install
 npm run dev
@@ -82,79 +78,17 @@ docker compose up --build frontend
 
 ```text
 <repository>/
-├── backend/
-│   ├── services/       # auth, profile, recruiter, connection, job,
-│   │                   # application, messaging, analytics, ai
-│   ├── shared/         # database, kafka_utils, middleware, redis_utils, utils
-│   ├── tests/
-│   │   ├── unit/       # connection controller unit tests
-│   │   ├── api/        # connection route tests
-│   │   └── integration/# end-to-end job-apply and connection flows
-│   ├── scripts/        # seed data, Kaggle import, backfill scripts
-│   ├── database/       # MySQL init SQL + migrations
-│   └── docker-compose.yml
-└── frontend/           # React + Vite + TypeScript
-```
-
----
-
-## Testing
-
-All unit and API tests run offline (no Docker required):
-
-```bash
-cd backend
-
-# Connection service tests
-PYTHONPATH=.:./services/connection_service \
-  python3 -m pytest tests/unit/ tests/api/ services/connection_service/tests/ -v
-
-# Job service tests
-PYTHONPATH=. python3 -m pytest services/job_service/tests/ -v
-
-# Application service tests
-PYTHONPATH=. python3 -m pytest services/application_service/tests/ -v
-
-# Analytics + messaging tests
-PYTHONPATH=. python3 -m pytest services/analytics_service/tests/ services/messaging_service/tests/ -v
-```
-
-Integration tests require all services running (`docker compose up -d`):
-
-```bash
-cd backend
-PYTHONPATH=. python3 -m pytest tests/integration/ -v
+├── backend/    # FastAPI services, Docker Compose, Kafka, DB init, seed script
+└── frontend/   # React + Vite frontend
 ```
 
 ---
 
 ## Environment Setup
 
-Configuration uses a layered `.env` approach — Docker Compose loads all three files in order, later files win:
+The backend `.env` file is committed in `backend/.env` since it only contains local Docker config — no real secrets or API keys. All services read their configuration (database hosts, ports, JWT secret, etc.) from that file at runtime.
 
-| File | Committed | Purpose |
-|---|---|---|
-| `backend/.env.example` | ✅ yes | Safe defaults for every variable — the source of truth |
-| `backend/.env` | optional | Shared overrides for the team (commit only non-secret values) |
-| `backend/.env.local` | ❌ gitignored | Your personal secrets; stable across branch switches |
-
-**First-time setup** — copy the example to your local file once and leave it there:
-
-```bash
-cp backend/.env.example backend/.env.local
-# edit .env.local to set your own passwords if desired
-```
-
-All services read configuration (database hosts, ports, JWT secret, Ollama URL, etc.) from these files at runtime. The infra containers publish on non-default host ports to avoid conflicts with other local stacks:
-
-| Service | Host port | Container port |
-|---|---|---|
-| MySQL | 3310 | 3306 |
-| MongoDB | 27018 | 27017 |
-| Redis | 6380 | 6379 |
-| Kafka | 9094 | 9093 |
-
-If you add a new port or variable, update `backend/.env.example` and commit it so everyone stays in sync. Never commit `backend/.env.local`.
+If the frontend or any service adds a new port or variable, update `backend/.env` and commit it so everyone stays in sync. If you need to override something locally, change your local copy — just don't commit a value that only works on your machine.
 
 ---
 
@@ -165,9 +99,11 @@ If you add a new port or variable, update `backend/.env.example` and commit it s
 Clone the repo over SSH:
 
 ```bash
-git clone git@github.com:KruthikaVirupakshappa/SkillSync.git skillsync
-cd skillsync
+git clone git@github.com:KruthikaVirupakshappa/SkillSync.git linkedin-class-project
+cd linkedin-class-project
 ```
+
+(The remote repository name on GitHub may still be `SkillSync`; cloning into `linkedin-class-project` is optional but keeps your local folder aligned with the product name.)
 
 ### Every development session
 
@@ -231,12 +167,13 @@ git merge main
 
 Resolve any conflicts, then continue.
 
-### Rebuilding a single service
+### Frontend
+```bash
+cd frontend && docker compose up frontend --build --rmi local -d
+```
+
+### Backend service (e.g. job-service)
 
 ```bash
-# Frontend
-cd frontend && docker compose up frontend --build --rmi local -d
-
-# Any backend service (e.g. job-service)
 cd backend && docker compose up job-service --build --rmi local -d
 ```

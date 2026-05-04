@@ -87,7 +87,7 @@ async def upload_resume(body: UploadResumeRequest, u=Depends(get_current_user)):
 
 @router.post("/getResume")
 async def get_resume(body: GetResumeRequest, u=Depends(get_current_user)):
-    data = await ctrl.get_resume(body.member_id)
+    data = await ctrl.get_resume(body.member_id, u)
     return {"success": True, "data": data}
 
 
@@ -209,7 +209,7 @@ async def upload_resume_file(
 
 @router.get("/resume/{member_id}/file")
 async def download_resume(member_id: int, u=Depends(get_current_user)):
-    stream, _info, meta = await ctrl.stream_resume_file(member_id, u["user_id"])
+    stream, _info, meta = await ctrl.stream_resume_file(member_id, u)
     content_type = meta.get("resume_content_type") or "application/octet-stream"
     filename = meta.get("resume_file_name") or f"resume_{member_id}"
     return StreamingResponse(
@@ -221,7 +221,7 @@ async def download_resume(member_id: int, u=Depends(get_current_user)):
 
 @router.post("/resumeMeta")
 async def resume_meta(body: GetResumeRequest, u=Depends(get_current_user)):
-    meta = await ctrl.get_resume_meta(body.member_id)
+    meta = await ctrl.get_resume_meta(body.member_id, u)
     if not meta or not meta.get("resume_file_id"):
         return {"success": True, "data": None}
     return {

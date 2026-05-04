@@ -1,7 +1,7 @@
 [
   {
-    "edu_id": "f5d3675c-3692-4535-b64b-71d87729a698",
-    "member_id": "289efbcb-156b-4cb5-92b1-d3bfb8cbd130",
+    "edu_id": "283f529e-8a77-490d-aab3-a57be65f0004",
+    "member_id": "7a625926-3cf9-48b3-ad15-b1d8a621f558",
     "institution": "Georgia Tech",
     "degree": "MS",
     "field": "Business Analytics",
@@ -9,8 +9,8 @@
     "end_year": 2019
   },
   {
-    "edu_id": "8b79c53d-6729-4da2-a2cf-d962913f4741",
-    "member_id": "61e7f5cd-3d06-4f3c-8955-60a5d6cf4705",
+    "edu_id": "1380a932-1537-4bfc-a3b3-96044d140997",
+    "member_id": "68f7e0ee-fe42-48c1-ba2b-469672cc416e",
     "institution": "Carnegie Mellon",
     "degree": "MBA",
     "field": "Computer Science",
@@ -18,8 +18,8 @@
     "end_year": 2017
   },
   {
-    "edu_id": "c5038210-80fd-4a84-a14c-422b9426bdba",
-    "member_id": "79c9a991-835f-4310-8719-001b4c841db1",
+    "edu_id": "a6f330f7-7a58-41cd-b72d-d9568e57f73f",
+    "member_id": "9de50f99-a264-49ac-b352-7d8e90881048",
     "institution": "Stanford University",
     "degree": "BS",
     "field": "Computer Science",
@@ -27,8 +27,8 @@
     "end_year": 2022
   },
   {
-    "edu_id": "9e786308-3484-4376-bafa-2caf08ea08ce",
-    "member_id": "d9642843-1fbb-4e01-8ec0-c87fe4aa67ef",
+    "edu_id": "3ee36f9e-3766-47a1-8768-9efbe0ced88b",
+    "member_id": "34ccde58-7a89-425e-8857-c55dabe4e0b2",
     "institution": "Georgia Tech",
     "degree": "BS",
     "field": "Computer Science",
@@ -36,8 +36,8 @@
     "end_year": 2021
   },
   {
-    "edu_id": "318b5be9-cd79-41ca-b742-fbcb03260371",
-    "member_id": "204e6833-3c08-40f5-897a-3da20d150f1b",
+    "edu_id": "a0ac2578-ffd6-4550-846b-91338fe345ce",
+    "member_id": "8766cffe-f620-48c0-9366-79e48806b398",
     "institution": "Georgia Tech",
     "degree": "MS",
     "field": "Business Analytics",
@@ -45,8 +45,8 @@
     "end_year": 2019
   },
   {
-    "edu_id": "83083d2a-276b-47d2-9968-5380ebe0e1cc",
-    "member_id": "5eb4b858-9ece-4d1a-aec4-8cf103faa460",
+    "edu_id": "d6878292-84e9-4d42-8cb2-814c45555634",
+    "member_id": "99691966-3433-4989-9fea-067a22de542c",
     "institution": "Georgia Tech",
     "degree": "MBA",
     "field": "Computer Science",
@@ -54,8 +54,8 @@
     "end_year": 2019
   },
   {
-    "edu_id": "9eb37d52-2464-46f0-9f20-1e9dd959fb12",
-    "member_id": "bf757ee3-1a07-4078-9acc-122ab4efbb6b",
+    "edu_id": "b049d5c9-5c19-4b83-a4be-4a3173d6c3ac",
+    "member_id": "3a34c4a8-5843-49f9-915a-6d3e7731cbfa",
     "institution": "UC Berkeley",
     "degree": "MBA",
     "field": "Computer Science",

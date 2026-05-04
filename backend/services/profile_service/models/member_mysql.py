@@ -930,6 +930,25 @@ async def clear_resume_file(member_id: int) -> None:
             )
 
 
+async def recruiter_may_access_member_resume(recruiter_user_id: int, member_id: int) -> bool:
+    """True if this recruiter (user id) owns a job this member has applied to — may stream résumé file."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT 1 AS ok
+                FROM applications a
+                INNER JOIN jobs j ON j.job_id = a.job_id
+                WHERE a.member_id = %s AND j.recruiter_id = %s
+                LIMIT 1
+                """,
+                (member_id, recruiter_user_id),
+            )
+            row = await cur.fetchone()
+            return bool(row)
+
+
 async def get_member_photo_file_id(member_id: int) -> str | None:
     pool = await get_pool()
     async with pool.acquire() as conn:

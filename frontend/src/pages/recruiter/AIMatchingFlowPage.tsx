@@ -26,6 +26,7 @@ import {
 import { getAllApplicationsByJob } from "../../api/applications";
 import { getRecruiter } from "../../api/recruiters";
 import type { Application } from "../../types/application";
+import { applicationStatusSkipsAiShortlist } from "../../utils/applicationStatus";
 import { getAllJobsByRecruiter, getJob } from "../../api/jobs";
 import { getMember } from "../../api/members";
 import { authStore } from "../../context/AuthContext";
@@ -339,7 +340,20 @@ export function AIMatchingFlowPage() {
         return;
       }
 
-      const memberIds = [...new Set(applications.map((a) => a.member_id))];
+      const matchableApplications = applications.filter((a) => !applicationStatusSkipsAiShortlist(a.status));
+      if (matchableApplications.length === 0) {
+        setMatchRows([]);
+        setEmptyMatchMessage(
+          "Every application for this job is rejected, withdrawn, or hired — there are no active applicants to AI-match."
+        );
+        setCompletedSeconds(Math.max(1, Math.round((Date.now() - t0) / 1000)));
+        setPhase("results");
+        setActiveStepIndex(STEP_LABELS.length);
+        toast.error("No active applicants to match.");
+        return;
+      }
+
+      const memberIds = [...new Set(matchableApplications.map((a) => a.member_id))];
 
       const loaded = await mapWithConcurrency(memberIds, 5, async (mid) => {
         try {
@@ -355,9 +369,9 @@ export function AIMatchingFlowPage() {
       const jobPayload = jobToPayload(job);
 
       let done = 0;
-      const total = applications.length || 1;
+      const total = matchableApplications.length || 1;
 
-      const built = await mapWithConcurrency(applications, 3, async (app) => {
+      const built = await mapWithConcurrency(matchableApplications, 3, async (app) => {
         const profile = profileByMember.get(app.member_id) ?? null;
         const candidate = profile ? memberToCandidateProfile(profile) : minimalCandidate(app.member_id);
         const match = await runMatchAndWait({ candidate, job: jobPayload });

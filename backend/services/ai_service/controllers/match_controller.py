@@ -1,10 +1,86 @@
 import asyncio
 import json
-from typing import Dict, List, Any
+import re
+from typing import Dict, List, Any, Tuple
 
 from schemas.ai import AIMatchRequest
 from services.embedding_service import embedding_service
 from services.llm_client import ollama_client
+
+# Common English noise tokens for lexical overlap (not domain skills).
+_SKILL_STOP = frozenset(
+    {
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "that",
+        "this",
+        "have",
+        "has",
+        "was",
+        "were",
+        "into",
+        "over",
+        "such",
+        "also",
+        "any",
+        "all",
+        "are",
+        "been",
+        "being",
+        "both",
+        "but",
+        "not",
+        "you",
+        "our",
+        "will",
+        "can",
+        "may",
+        "via",
+        "using",
+        "including",
+        "other",
+        "each",
+        "their",
+        "more",
+        "than",
+        "year",
+        "years",
+        "work",
+        "team",
+        "role",
+        "job",
+        "your",
+        "what",
+        "how",
+        "who",
+        "its",
+        "about",
+        "well",
+        "make",
+        "made",
+        "like",
+        "just",
+        "one",
+        "two",
+        "new",
+        "old",
+        "high",
+        "low",
+        "best",
+        "must",
+        "able",
+        "need",
+        "required",
+        "preferred",
+        "strong",
+        "good",
+        "great",
+        "excellent",
+    }
+)
 
 
 MATCH_SCHEMA = {
@@ -30,6 +106,95 @@ MATCH_SCHEMA = {
 
 def normalize_skills(skills: List[str]) -> List[str]:
     return [s.strip().lower() for s in skills if s and s.strip()]
+
+
+def _tokenize_skill_phrase(phrase: str) -> List[str]:
+    return [p for p in re.split(r"[^a-z0-9+#.]+", phrase.lower()) if len(p) >= 3]
+
+
+def _blob_tokens(text: str) -> set[str]:
+    return {
+        t
+        for t in re.findall(r"[a-z0-9+#.]{3,}", text.lower())
+        if t not in _SKILL_STOP
+    }
+
+
+def fuzzy_job_skill_coverage(
+    job_skills: List[str],
+    candidate_skills: List[str],
+    candidate_blob: str,
+) -> Tuple[float, List[str], List[str]]:
+    """
+    Share of required job skills that appear in structured skills and/or résumé-style text.
+    Avoids penalizing candidates who express tools only in experience paragraphs.
+    """
+    raw_required = [s.strip() for s in job_skills if s and str(s).strip()]
+    if not raw_required:
+        return 100.0, [], []
+
+    cand_set = set(normalize_skills(candidate_skills))
+    blob = candidate_blob.lower()
+    matched: List[str] = []
+    missing: List[str] = []
+
+    for raw in raw_required:
+        js = raw.lower()
+        ok = False
+        if js in cand_set:
+            ok = True
+        elif js in blob:
+            ok = True
+        else:
+            for cs in cand_set:
+                if len(cs) >= 3 and (js in cs or cs in js):
+                    ok = True
+                    break
+        if not ok:
+            parts = _tokenize_skill_phrase(js)
+            if parts and all(p in blob for p in parts):
+                ok = True
+        (matched if ok else missing).append(raw)
+
+    pct = (len(matched) / len(raw_required)) * 100.0
+    return pct, sorted(matched, key=str.lower), sorted(missing, key=str.lower)
+
+
+def lexical_similarity_score(candidate_text: str, job_text: str) -> float:
+    """
+    Vocabulary recall / F1 proxy when embeddings are unavailable (timeout, outage).
+    """
+    ct = _blob_tokens(candidate_text)
+    jt = _blob_tokens(job_text)
+    if not jt:
+        return 55.0
+    inter = len(ct & jt)
+    recall = inter / len(jt)
+    prec = inter / max(1, len(ct))
+    f1 = (2 * recall * prec) / (recall + prec + 1e-9)
+    return max(0.0, min(100.0, 100.0 * f1))
+
+
+def _blend_match_score(overlap_score: float, embedding_score: float, location_bonus: float) -> float:
+    """
+    Emphasize semantic fit over exact string skill matches so strong profiles are not stuck ~30%.
+    When embeddings and fuzzy skill coverage are both strong, allow scores in the high 90s
+    (closer to how a human or GPT would rate obvious fits).
+    """
+    base = 0.18 * overlap_score + 0.77 * embedding_score + location_bonus
+    base = min(100.0, base)
+    # When both semantic and fuzzy skill coverage are strong, lift toward human/GPT-like ratings.
+    if embedding_score >= 78.0 and overlap_score >= 38.0:
+        boosted = 0.82 * embedding_score + 0.16 * overlap_score + min(location_bonus, 6.0)
+        base = max(base, min(98.0, boosted))
+    if embedding_score >= 85.0 and overlap_score >= 55.0:
+        boosted2 = 0.88 * embedding_score + 0.10 * overlap_score + min(location_bonus, 4.0)
+        base = max(base, min(99.0, boosted2))
+    # Excellent semantic + solid fuzzy overlap: recover "obvious fit" scores (~97–98).
+    if embedding_score >= 80.0 and overlap_score >= 45.0:
+        stretch = embedding_score + min(18.0, (100.0 - embedding_score) * 0.72)
+        base = max(base, min(98.0, stretch + min(4.0, location_bonus)))
+    return round(min(100.0, base), 2)
 
 
 def build_fallback_reasoning(
@@ -119,13 +284,6 @@ async def compute_match(payload: AIMatchRequest):
     candidate_skills = normalize_skills(candidate.skills)
     job_skills = normalize_skills(job.skills_required)
 
-    matched_skills = sorted(list(set(candidate_skills) & set(job_skills)))
-    missing_skills = sorted(list(set(job_skills) - set(candidate_skills)))
-
-    overlap_score = 0.0
-    if job_skills:
-        overlap_score = (len(matched_skills) / len(job_skills)) * 100.0
-
     candidate_text = " ".join([
         candidate.headline or "",
         candidate.summary or "",
@@ -143,31 +301,45 @@ async def compute_match(payload: AIMatchRequest):
         job.employment_type or "",
     ])
 
+    overlap_score, matched_skills, missing_skills = fuzzy_job_skill_coverage(
+        job.skills_required or [],
+        candidate.skills or [],
+        candidate_text,
+    )
+
     # Run embeddings concurrently with timeout protection
     candidate_embedding, job_embedding = await asyncio.gather(
         safe_embed(candidate_text),
         safe_embed(job_text),
     )
 
-    cosine = 0.0
-    if candidate_embedding is not None and job_embedding is not None:
+    embedding_used_lexical_fallback = False
+    if candidate_embedding is None or job_embedding is None:
+        print("[MATCH] embedding unavailable, using lexical similarity fallback")
+        embedding_score = lexical_similarity_score(candidate_text, job_text)
+        embedding_used_lexical_fallback = True
+    else:
         try:
             cosine = embedding_service.cosine_similarity(candidate_embedding, job_embedding)
+            embedding_score = max(0.0, min(100.0, cosine * 100.0))
         except Exception as exc:
-            print(f"[MATCH] cosine similarity failed: {exc}")
-            cosine = 0.0
-    else:
-        print("[MATCH] embedding unavailable, defaulting embedding_score to 0")
-
-    embedding_score = max(0.0, min(100.0, cosine * 100.0))
+            print(f"[MATCH] cosine similarity failed: {exc}, using lexical similarity fallback")
+            embedding_score = lexical_similarity_score(candidate_text, job_text)
+            embedding_used_lexical_fallback = True
 
     location_bonus = 0.0
     if job.location and candidate.location:
         if candidate.location.strip().lower() == job.location.strip().lower():
             location_bonus = 10.0
 
-    final_score = round((0.5 * overlap_score) + (0.4 * embedding_score) + location_bonus, 2)
-    final_score = min(final_score, 100.0)
+    final_score = _blend_match_score(overlap_score, embedding_score, location_bonus)
+
+    # Heuristic confidence: emphasize semantic signal when embeddings ran; lexical fallback is noisier.
+    if embedding_used_lexical_fallback:
+        confidence = round(0.35 * overlap_score + 0.65 * embedding_score, 1)
+    else:
+        confidence = round(0.25 * overlap_score + 0.75 * embedding_score, 1)
+    confidence = max(0.0, min(100.0, confidence))
 
     # Heuristic confidence: average of the two main signals (skill overlap vs semantic similarity), 0–100.
     confidence = round((overlap_score + embedding_score) / 2.0, 1)
@@ -188,8 +360,8 @@ Job:
 {json.dumps(job.model_dump(), indent=2)}
 
 Computed features:
-- overlap_score: {overlap_score}
-- embedding_score: {embedding_score}
+- overlap_score (fuzzy required-skill coverage vs résumé text): {overlap_score}
+- embedding_score (vector similarity, or lexical fallback if embeddings failed): {embedding_score}
 - matched_skills: {matched_skills}
 - missing_skills: {missing_skills}
 - location_bonus: {location_bonus}

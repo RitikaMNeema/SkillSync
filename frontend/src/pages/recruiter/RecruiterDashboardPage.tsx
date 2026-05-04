@@ -92,6 +92,7 @@ type PipelineBuckets = {
   reviewing: number;
   interview: number;
   offer: number;
+  hired: number;
   rejected: number;
 };
 
@@ -129,14 +130,14 @@ async function aggregateApplicationsFromJobs(
 }> {
   if (!jobs.length) {
     return {
-      pipeline: { submitted: 0, reviewing: 0, interview: 0, offer: 0, rejected: 0 },
+      pipeline: { submitted: 0, reviewing: 0, interview: 0, offer: 0, hired: 0, rejected: 0 },
       applicationsWeekTrend: null,
       applicationsInMonthTotal: 0,
       applicationsPerJobInMonth: []
     };
   }
   const results = await Promise.all(jobs.map((job) => getAllApplicationsByJob(job.job_id)));
-  const buckets: PipelineBuckets = { submitted: 0, reviewing: 0, interview: 0, offer: 0, rejected: 0 };
+  const buckets: PipelineBuckets = { submitted: 0, reviewing: 0, interview: 0, offer: 0, hired: 0, rejected: 0 };
   const allAppsForTrend: Application[] = [];
   const applicationsPerJobInMonth: Array<{ job_id: string; applications: number }> = [];
 
@@ -160,6 +161,9 @@ async function aggregateApplicationsFromJobs(
           break;
         case "offer":
           buckets.offer++;
+          break;
+        case "hired":
+          buckets.hired++;
           break;
         case "rejected":
           buckets.rejected++;
@@ -200,6 +204,7 @@ export function RecruiterDashboardPage() {
     reviewing: 0,
     interview: 0,
     offer: 0,
+    hired: 0,
     rejected: 0
   });
   /** Real WoW trend from application timestamps (set with pipeline). */
@@ -248,22 +253,23 @@ export function RecruiterDashboardPage() {
 
   const jobViewsTotal = useMemo(() => clicks.reduce((sum, row) => sum + (row.clicks ?? 0), 0), [clicks]);
 
-  /** Submitted → Reviewing → Offer → Rejected; interview counts still feed conversion below. Data: `getAllApplicationsByJob`, selected month. */
+  /** Submitted → Reviewing → Offer → Hired → Rejected; interview counts still feed conversion below. Data: `getAllApplicationsByJob`, selected month. */
   const pipelineSegments = useMemo(() => {
     const rows = [
       { key: "submitted" as const, label: "Submitted", count: pipeline.submitted, bg: "bg-[#0066FF]", text: "text-white" },
       { key: "reviewing" as const, label: "Reviewing", count: pipeline.reviewing, bg: "bg-[#dbeafe]", text: "text-[#111827]" },
       { key: "offer" as const, label: "Offer", count: pipeline.offer, bg: "bg-[#ffedd5]", text: "text-[#111827]" },
+      { key: "hired" as const, label: "Hired", count: pipeline.hired, bg: "bg-[#dcfce7]", text: "text-[#14532d]" },
       { key: "rejected" as const, label: "Rejected", count: pipeline.rejected, bg: "bg-[#fee2e2]", text: "text-[#991b1b]" }
     ];
     const total = rows.reduce((s, r) => s + r.count, 0);
     return { rows, total };
   }, [pipeline]);
 
-  /** Share of submitted apps that reached offer or interview (excludes rejected). */
+  /** Share of submitted apps that reached interview, offer, or hired (excludes rejected). */
   const conversionRate =
     pipeline.submitted > 0
-      ? (((pipeline.offer + pipeline.interview) / pipeline.submitted) * 100).toFixed(1)
+      ? (((pipeline.offer + pipeline.interview + pipeline.hired) / pipeline.submitted) * 100).toFixed(1)
       : null;
 
   const recentJobsRows = useMemo(() => {
@@ -293,6 +299,7 @@ export function RecruiterDashboardPage() {
     [recruiterJobs]
   );
   const firstJobId = firstOpenJob?.job_id;
+  const monthPickerId = useId();
 
   useEffect(() => {
     if (!authHydrated) return;
@@ -354,7 +361,7 @@ export function RecruiterDashboardPage() {
           agg = await aggregateApplicationsFromJobs(recruiterJobsLocal, selectedYm, includeWeekTrend);
         } catch {
           agg = {
-            pipeline: { submitted: 0, reviewing: 0, interview: 0, offer: 0, rejected: 0 },
+            pipeline: { submitted: 0, reviewing: 0, interview: 0, offer: 0, hired: 0, rejected: 0 },
             applicationsWeekTrend: null,
             applicationsInMonthTotal: 0,
             applicationsPerJobInMonth: []
@@ -478,6 +485,22 @@ export function RecruiterDashboardPage() {
               Run AI matching
             </button>
           </div>
+          <label
+            htmlFor={monthPickerId}
+            className="group flex w-full max-w-md cursor-pointer items-center gap-3 rounded-2xl border border-[#e5e7eb] bg-white px-4 py-3 shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition hover:border-[#d1d5db] focus-within:ring-2 focus-within:ring-[#0066ff33] focus-within:ring-offset-2 lg:ml-auto"
+          >
+            <Plus className="h-4 w-4" strokeWidth={2.5} />
+            Post a job
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate(`/ai-test/${firstJobId}`)}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] border-2 bg-white px-4 text-sm font-semibold shadow-sm transition hover:bg-[#f8fafc]"
+            style={{ borderColor: R_PRIMARY, color: R_PRIMARY }}
+          >
+            <Sparkles className="h-4 w-4" />
+            Run AI matching
+          </button>
         </div>
       </div>
 

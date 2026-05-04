@@ -93,19 +93,24 @@ export function formatMemberLocation(m: Pick<MemberProfile, "location_city" | "l
 }
 
 export function memberToCandidateProfile(m: MemberProfile): CandidateProfile {
+  // Keep in sync with ApplicantReviewPage candidate payload so match scores match
+  // across the shortlist table and per-applicant AI review (embeddings + fuzzy skills use this text).
   const experiences = (m.experience ?? [])
-    .map((e) => [e.title, e.company].filter(Boolean).join(" at "))
+    .map((e) => [e.title, e.company, e.description].filter(Boolean).join(" - ").trim())
     .filter(Boolean) as string[];
   const education = (m.education ?? [])
-    .map((e) => [e.degree, e.school].filter(Boolean).join(" — "))
+    .map((e) => [e.school, e.degree, e.field ?? e.field_of_study].filter(Boolean).join(", ").trim())
     .filter(Boolean) as string[];
+  const location =
+    [m.location_city, m.location_state, m.location_country].filter(Boolean).join(", ") ||
+    formatMemberLocation(m);
   return {
     member_id: m.member_id,
     headline: m.headline ?? "",
     summary: m.summary ?? "",
     skills: m.skills ?? [],
     experiences,
-    location: formatMemberLocation(m),
+    location,
     education
   };
 }

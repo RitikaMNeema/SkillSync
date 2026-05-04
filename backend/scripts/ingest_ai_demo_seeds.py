@@ -3,14 +3,16 @@
 Load AI demo JSON from data/seeds/ into running SkillSync services (same API flow as scripts/seed.py).
 
 Registers members + recruiters with SEED_USER_PASSWORD (SkillSync1!), then:
-  POST /recruiters/create, POST /jobs/create, POST /members/create, POST /applications/submit
+  POST /recruiters/create, POST /jobs/create, POST /members/create,
+  POST /members/uploadResumeFile (PDF from ``resume_plaintext`` when fpdf2 is installed),
+  POST /members/uploadResume (``resume_url`` from JSON), POST /applications/submit
 
 Prerequisites:
   - Docker / local stack up (health checks on ports in seed.BASE)
   - JSON produced by data/transform_ai_match_demo.py (or compatible files in --seeds-dir)
 
 Usage (from backend/):
-    pip install httpx
+    pip install httpx fpdf2
     python3 scripts/ingest_ai_demo_seeds.py
 
 Optional:
@@ -34,6 +36,7 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 import company_job_benefits as job_benefits  # noqa: E402
+import kaggle_resume_seed as kaggle_pdf  # noqa: E402  # synthesize_resume_pdf_bytes
 import recruiter_profile_defaults as recruiter_defaults  # noqa: E402
 import seed as seed  # noqa: E402
 
@@ -177,6 +180,23 @@ def _write_credentials(path: Path, password: str, members: list[dict], recruiter
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _upload_resume_file_bytes(
+    client: httpx.Client,
+    member_id: int,
+    token: str,
+    filename: str,
+    body: bytes,
+    content_type: str,
+) -> None:
+    url = f"{seed.BASE['profile']}/members/uploadResumeFile"
+    files = {"resume": (filename, body, content_type)}
+    data = {"member_id": str(member_id)}
+    r = client.post(url, files=files, data=data, headers={"Authorization": f"Bearer {token}"}, timeout=180)
+    if r.status_code != 200:
+        print(f"  {seed.RED}✗ uploadResumeFile → {r.status_code}: {r.text}{seed.RESET}")
+        sys.exit(1)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Ingest ai_demo_*.json seeds via SkillSync HTTP APIs.")
     ap.add_argument(
@@ -184,6 +204,11 @@ def main() -> None:
         type=Path,
         default=_REPO_ROOT / "data" / "seeds",
         help="Directory containing ai_demo_*.json (default: <repo>/data/seeds)",
+    )
+    ap.add_argument(
+        "--no-resume-file-upload",
+        action="store_true",
+        help="Skip POST /members/uploadResumeFile (no GridFS PDF from resume_plaintext)",
     )
     args = ap.parse_args()
     seeds_dir: Path = args.seeds_dir.resolve()
@@ -273,7 +298,7 @@ def main() -> None:
             jobs_cache.pop(rid, None)
             seed.ok(f"Created job {title!r}", {"job_id": jid})
 
-        seed.section("AI demo / 3 — Members (register + POST /members/create)")
+        seed.section("AI demo / 3 — Members (register + POST /members/create + résumé PDF)")
         member_uuid_to_login: dict[str, dict[str, Any]] = {}
         for m in members_in:
             uid, tok = _register_or_login(client, m["email"], password, "member")
@@ -287,7 +312,30 @@ def main() -> None:
                 ignore=[409, 400],
                 benign_async_fail=seed.BENIGN_DUP_MARKERS,
             )
-            seed.ok(f"Member {m['email']}", {"user_id": uid})
+            upload_meta: dict[str, Any] = {}
+            if not args.no_resume_file_upload:
+                blob = (m.get("resume_plaintext") or "").strip()
+                if len(blob) >= 40:
+                    try:
+                        pdf_bytes = kaggle_pdf.synthesize_resume_pdf_bytes(blob, row_id=f"ai_demo_{uid}")
+                        fname = f"ai_demo_{uid}.pdf"
+                        _upload_resume_file_bytes(client, uid, tok, fname, pdf_bytes, "application/pdf")
+                        upload_meta["resume_file"] = "pdf-generated"
+                    except RuntimeError as exc:
+                        print(f"  {seed.YELLOW}⚠ {m['email']}: no résumé file ({exc}){seed.RESET}")
+                else:
+                    print(f"  {seed.YELLOW}⚠ {m['email']}: resume_plaintext too short — skip file upload{seed.RESET}")
+            resume_url = (m.get("resume_url") or "").strip()
+            if resume_url:
+                seed.post(
+                    client,
+                    "profile",
+                    "/members/uploadResume",
+                    {"member_id": uid, "resume_url": resume_url},
+                    token=tok,
+                )
+                upload_meta["resume_url"] = resume_url
+            seed.ok(f"Member {m['email']}", {"user_id": uid, **upload_meta})
             member_uuid_to_login[str(m["member_id"])] = {"user_id": uid, "token": tok, "email": m["email"], "row": m}
 
         seed.section("AI demo / 4 — Applications (POST /applications/submit)")
@@ -338,6 +386,8 @@ def main() -> None:
     seed.section("Done")
     print(f"  Credentials written to {creds_out}")
     print(f"  Password: {password}")
+    if not args.no_resume_file_upload:
+        print("  Résumé files: PDF from each row's resume_plaintext (needs fpdf2); use --no-resume-file-upload to skip.")
 
 
 if __name__ == "__main__":
