@@ -67,6 +67,8 @@ class WorkflowService:
             "candidate_display_name": req.candidate_display_name,
             "recruiter_display_name": req.recruiter_display_name,
         }
+        if req.match_result is not None:
+            workflow_payload["match_result"] = req.match_result
 
         # Important: run locally inside the AI service after Kafka boundary.
         asyncio.create_task(self.run_workflow(workflow_payload))
@@ -158,11 +160,31 @@ class WorkflowService:
                 },
             )
 
-            match_req = AIMatchRequest(
-                candidate=payload["candidate"],
-                job=payload["job"],
-            )
-            match_result = await compute_match(match_req)
+            raw_override = payload.get("match_result")
+            if isinstance(raw_override, dict) and isinstance(
+                raw_override.get("match_score"), (int, float, str)
+            ):
+                try:
+                    _ms = float(raw_override["match_score"])
+                except (TypeError, ValueError):
+                    _ms = None
+                if _ms is not None and 0.0 <= _ms <= 100.0:
+                    match_result = dict(raw_override)
+                    match_result["match_score"] = _ms
+                    match_result.setdefault("matched_skills", [])
+                    match_result.setdefault("missing_skills", [])
+                else:
+                    match_req = AIMatchRequest(
+                        candidate=payload["candidate"],
+                        job=payload["job"],
+                    )
+                    match_result = await compute_match(match_req)
+            else:
+                match_req = AIMatchRequest(
+                    candidate=payload["candidate"],
+                    job=payload["job"],
+                )
+                match_result = await compute_match(match_req)
 
             await self.store.update_step(
                 trace_id,

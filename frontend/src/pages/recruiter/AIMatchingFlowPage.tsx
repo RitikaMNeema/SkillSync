@@ -50,6 +50,7 @@ import {
   memberToCandidateProfile,
   MIN_OUTREACH_MATCH_SCORE,
   R_PRIMARY,
+  extractOutreachMessageFromTrace,
   sanitizeOutreachDraft
 } from "./aiMatchingUtils";
 
@@ -99,16 +100,6 @@ const INTENT_OPTIONS: { value: FlowIntent; label: string; description: string }[
     value: "job_match",
     label: "Find matching candidates for a job",
     description: "Rank applicants and members against one role using AI matching."
-  },
-  {
-    value: "applicant_shortlist",
-    label: "Shortlist candidates from applicants",
-    description: "Focus on people who already applied to your posting."
-  },
-  {
-    value: "outreach_focus",
-    label: "Generate outreach messages",
-    description: "After matching, draft recruiter outreach for human approval."
   },
   {
     value: "talent_pool",
@@ -453,7 +444,8 @@ export function AIMatchingFlowPage() {
           workflow_type: "shortlist_outreach",
           require_human_approval: true,
           candidate_display_name: row.name,
-          recruiter_display_name: recruiterDisplayName ?? undefined
+          recruiter_display_name: recruiterDisplayName ?? undefined,
+          match_result: row.match
         });
         const cmdStatus = await pollCommandUntilDone(queued.command_id);
         const traceId = (cmdStatus.result as { trace_id?: string } | undefined)?.trace_id;
@@ -462,6 +454,15 @@ export function AIMatchingFlowPage() {
         }
         setOutreachTraceId(traceId);
         const final = await pollTraceUntilReviewable(traceId);
+        if (final.status === "failed" || final.status === "rejected") {
+          const errMsg =
+            typeof (final.final_result as { error?: string })?.error === "string"
+              ? (final.final_result as { error: string }).error
+              : `AI workflow ended as ${final.status}`;
+          toast.error(errMsg);
+          setOutreachOpen(false);
+          return;
+        }
         const skipped = (final.final_result as { outreach_skipped?: boolean })?.outreach_skipped;
         if (skipped) {
           const reason =
@@ -471,12 +472,17 @@ export function AIMatchingFlowPage() {
           setOutreachOpen(false);
           return;
         }
-        const draft =
-          final.final_result?.outreach_draft?.message ??
-          final.steps?.find((s: { step_name?: string }) => s.step_name === "outreach_generator")?.data?.message ??
-          "";
+        const draftRaw = extractOutreachMessageFromTrace(final);
         const recName = (recruiterDisplayName ?? "").trim() || "Recruiting Team";
-        setOutreachBody(sanitizeOutreachDraft(String(draft ?? ""), row.name, recName));
+        const draft = sanitizeOutreachDraft(String(draftRaw ?? ""), row.name, recName);
+        if (!draft.trim()) {
+          toast.error(
+            "The AI service returned an empty outreach draft. Check Ollama is running and try again, or retry in a few seconds."
+          );
+          setOutreachOpen(false);
+          return;
+        }
+        setOutreachBody(draft);
         setOutreachStatus((prev) => ({ ...prev, [row.member_id]: "pending_review" }));
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Could not generate outreach");
@@ -876,11 +882,6 @@ export function AIMatchingFlowPage() {
             <p className="mt-1 text-sm text-[#6b7280]">
               <span className="font-semibold text-[#111827]">{selectedJob.title}</span> · Job ID {selectedJob.job_id}
             </p>
-            {intent === "outreach_focus" ? (
-              <p className="mt-2 text-sm text-[#0A66C2]">
-                Tip: open a candidate and use Generate outreach to create a draft for approval.
-              </p>
-            ) : null}
           </div>
           <button
             type="button"

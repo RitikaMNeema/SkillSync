@@ -61,6 +61,25 @@ function fixLeadingBracketGreeting(s: string, displayName: string): string {
   return s;
 }
 
+/** Pull outreach body from trace (final_result first, then last completed outreach_generator step). */
+export function extractOutreachMessageFromTrace(trace: {
+  final_result?: {
+    outreach_draft?: { message?: string | null } | null;
+  } | null;
+  steps?: Array<{ step_name?: string; data?: { message?: string; skipped?: boolean } }>;
+}): string {
+  const fromFinal = trace.final_result?.outreach_draft?.message;
+  if (typeof fromFinal === "string" && fromFinal.trim()) return fromFinal;
+  const steps = trace.steps ?? [];
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    const s = steps[i];
+    if (s?.step_name !== "outreach_generator" || !s.data || s.data.skipped) continue;
+    const m = s.data.message;
+    if (typeof m === "string" && m.trim()) return m;
+  }
+  return "";
+}
+
 export function sanitizeOutreachDraft(raw: string, candidateName: string, recruiterName: string): string {
   let s = (raw || "").trim().normalize("NFKC");
   s = normalizeBracketChars(s);

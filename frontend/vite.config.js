@@ -21,12 +21,15 @@ var proxyLong = {
     proxyTimeout: 120000
 };
 export default defineConfig(function (_a) {
-    var _b, _c, _d, _e;
+    var _b, _c, _d, _e, _f, _g;
     var mode = _a.mode;
     var env = loadEnv(mode, process.cwd(), "");
     /** If set (e.g. http://localhost:3000), all `/api/*` goes to the gateway — best for uploads. */
     var gateway = ((_c = (_b = process.env.VITE_PROXY_GATEWAY) !== null && _b !== void 0 ? _b : env.VITE_PROXY_GATEWAY) !== null && _c !== void 0 ? _c : "").trim();
     var proxyHost = ((_e = (_d = process.env.VITE_PROXY_HOST) !== null && _d !== void 0 ? _d : env.VITE_PROXY_HOST) !== null && _e !== void 0 ? _e : "").trim() || "localhost";
+    /** Where Vite (Node) forwards `/ai-service` — must be reachable from the dev container (e.g. host.docker.internal:3010). */
+    var aiProxyTarget = ((_g = (_f = process.env.VITE_AI_PROXY_TARGET) !== null && _f !== void 0 ? _f : env.VITE_AI_PROXY_TARGET) !== null && _g !== void 0 ? _g : "").trim() ||
+        "http://".concat(proxyHost, ":3010");
     var serviceProxies = {
         "/api/auth": __assign({ target: "http://".concat(proxyHost, ":3001"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
         "/api/members": __assign({ target: "http://".concat(proxyHost, ":3002"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
@@ -38,7 +41,17 @@ export default defineConfig(function (_a) {
         "/api/threads": __assign({ target: "http://".concat(proxyHost, ":3007"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
         "/api/messages": __assign({ target: "http://".concat(proxyHost, ":3007"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
         "/api/analytics": __assign({ target: "http://".concat(proxyHost, ":3008"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
-        "/api/events": __assign({ target: "http://".concat(proxyHost, ":3008"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong)
+        "/api/network": __assign({ target: "http://".concat(proxyHost, ":3009"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
+        "/api/events": __assign({ target: "http://".concat(proxyHost, ":3008"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
+        /** AI service (FastAPI on 3010). Browser calls `/ai-service/*` → same-origin in dev; avoids direct `localhost:3010` failures. */
+        "/ai-service": {
+            target: aiProxyTarget,
+            changeOrigin: true,
+            rewrite: function (path) { return path.replace(/^\/ai-service/, ""); },
+            timeout: 120000,
+            proxyTimeout: 120000,
+            ws: true
+        }
     };
     var redirectLegacyRecruiterUrls = function () { return ({
         name: "redirect-legacy-recruiter-route",
@@ -70,7 +83,17 @@ export default defineConfig(function (_a) {
             port: 5173,
             proxy: gateway
                 ? {
-                    "/api": __assign({ target: gateway }, proxyLong)
+                    // Must be before `/api` so network score POST is not swallowed by the SPA/gateway-only path.
+                    "/api/network": __assign({ target: "http://".concat(proxyHost, ":3009"), rewrite: function (path) { return path.replace(/^\/api/, ""); } }, proxyLong),
+                    "/api": __assign({ target: gateway }, proxyLong),
+                    "/ai-service": {
+                        target: aiProxyTarget,
+                        changeOrigin: true,
+                        rewrite: function (path) { return path.replace(/^\/ai-service/, ""); },
+                        timeout: 120000,
+                        proxyTimeout: 120000,
+                        ws: true
+                    }
                 }
                 : serviceProxies
         }

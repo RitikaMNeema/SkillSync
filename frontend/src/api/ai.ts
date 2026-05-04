@@ -69,6 +69,11 @@ export type AgentWorkflowRequest = {
   /** Used in outreach copy — full name preferred */
   candidate_display_name?: string | null;
   recruiter_display_name?: string | null;
+  /**
+   * When the UI already ran matching for this candidate/job, pass it so the workflow does not
+   * re-run a second (non-deterministic) match that can dip below the outreach threshold.
+   */
+  match_result?: Record<string, unknown> | null;
 };
 
 export type ApprovalRequest = {
