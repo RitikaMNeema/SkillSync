@@ -206,8 +206,10 @@ export async function waitForAICommandResult(
   commandId: string,
   options?: { maxAttempts?: number; intervalMs?: number }
 ): Promise<unknown> {
-  const maxAttempts = options?.maxAttempts ?? 60;
-  const intervalMs = options?.intervalMs ?? 1000;
+  // Default: 150 attempts × 1.2 s = ~3 minutes.
+  // Covers slow AWS Ollama (embedding + LLM can each take 20–25 s per candidate).
+  const maxAttempts = options?.maxAttempts ?? 150;
+  const intervalMs = options?.intervalMs ?? 1200;
   for (let i = 0; i < maxAttempts; i += 1) {
     const status = await getAICommandStatus(commandId);
     if (status.status === "completed") return status.result;

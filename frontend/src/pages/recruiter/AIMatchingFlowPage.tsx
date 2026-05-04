@@ -128,7 +128,8 @@ function stepStatusForIndex(activeIndex: number, stepIndex: number, failed: bool
 }
 
 async function pollCommandUntilDone(commandId: string): Promise<CommandStatusResponse> {
-  for (let i = 0; i < 40; i += 1) {
+  // 150 attempts × 1.2 s = ~3 minutes (covers slow AWS Ollama per-candidate).
+  for (let i = 0; i < 150; i += 1) {
     const status = await getAICommandStatus(commandId);
     if (status.status === "completed") return status;
     if (status.status === "failed") throw new Error(status.error || "Command failed");
@@ -138,7 +139,8 @@ async function pollCommandUntilDone(commandId: string): Promise<CommandStatusRes
 }
 
 async function pollTraceUntilReviewable(traceId: string) {
-  for (let i = 0; i < 60; i += 1) {
+  // 120 attempts × 1.8 s = ~3.6 minutes (covers full outreach workflow on slow AWS).
+  for (let i = 0; i < 120; i += 1) {
     const status = await getAgentStatus(traceId);
     if (
       status.status === "awaiting_approval" ||
