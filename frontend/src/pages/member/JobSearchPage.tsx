@@ -1,5 +1,5 @@
-import { BriefcaseBusiness, MapPin, Search } from "lucide-react";
-import { useEffect, useState } from "react";
+import { BriefcaseBusiness, ChevronLeft, ChevronRight, MapPin, Search } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { useSearchParams } from "react-router-dom";
 import { getSavedJobs, saveJob, searchJobs, unsaveJob } from "../../api/jobs";
@@ -21,6 +21,26 @@ const initialFilters: JobFilterState = {
   work_mode: "",
   seniority_level: ""
 };
+
+/** Compact page list: first/last, current ± neighbors, ellipses — avoids rendering hundreds of controls. */
+function jobSearchPaginationItems(current: number, total: number): (number | "ellipsis")[] {
+  if (total <= 1) return [];
+  if (total <= 9) return Array.from({ length: total }, (_, i) => i + 1);
+
+  const pages = new Set<number>([1, total]);
+  for (let d = -2; d <= 2; d++) {
+    const p = current + d;
+    if (p >= 1 && p <= total) pages.add(p);
+  }
+
+  const sorted = [...pages].sort((a, b) => a - b);
+  const out: (number | "ellipsis")[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i] - sorted[i - 1] > 1) out.push("ellipsis");
+    out.push(sorted[i]);
+  }
+  return out;
+}
 
 export function JobSearchPage() {
   const userId = authStore((state) => state.userId);
@@ -96,6 +116,12 @@ export function JobSearchPage() {
       .catch(() => {/* saved state is non-critical; silently ignore */});
   }, [userId]);
 
+  const totalPages = Math.max(1, Math.ceil(totalJobs / Math.max(pageSize, 1)));
+  const paginationItems = useMemo(
+    () => jobSearchPaginationItems(currentPage, totalPages),
+    [currentPage, totalPages]
+  );
+
   async function toggleSave(job: Job) {
     if (!userId) return;
     const saved = savedIds.includes(job.job_id);
@@ -169,19 +195,63 @@ export function JobSearchPage() {
           ) : (
             <>
               {jobs.map((job) => <JobCard key={job.job_id} job={job} saved={savedIds.includes(job.job_id)} onSave={toggleSave} />)}
-              {Math.ceil(totalJobs / pageSize) > 1 ? (
-                <div className="flex items-center justify-center gap-2 pt-2">
-                  {Array.from({ length: Math.ceil(totalJobs / pageSize) }, (_, idx) => idx + 1).map((page) => (
-                    <button
-                      key={page}
+              {totalPages > 1 ? (
+                <nav
+                  className="relative z-10 flex flex-col items-center gap-3 border-t border-[#e4e6eb] pt-4 sm:flex-row sm:flex-wrap sm:justify-center"
+                  aria-label="Job results pages"
+                >
+                  <p className="order-first text-sm text-text-secondary sm:order-none sm:mr-2">
+                    Page {currentPage} of {totalPages}
+                  </p>
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <Button
                       type="button"
-                      className={`h-8 min-w-8 rounded-full px-2 text-sm font-semibold ${page === currentPage ? "bg-[#0A66C2] text-white" : "text-text-secondary hover:bg-[#edf2f7]"}`}
-                      onClick={() => setPage(page)}
+                      variant="secondary"
+                      className="!h-9 !min-h-0 !px-3 !py-0 !text-sm"
+                      disabled={currentPage <= 1}
+                      onClick={() => setPage(currentPage - 1)}
+                      aria-label="Previous page"
                     >
-                      {page}
-                    </button>
-                  ))}
-                </div>
+                      <ChevronLeft className="h-4 w-4 shrink-0" aria-hidden />
+                      Previous
+                    </Button>
+                    <div className="flex flex-wrap items-center justify-center gap-1">
+                      {paginationItems.map((item, idx) =>
+                        item === "ellipsis" ? (
+                          <span key={`e-${idx}`} className="px-1 text-sm text-text-secondary" aria-hidden>
+                            …
+                          </span>
+                        ) : (
+                          <button
+                            key={item}
+                            type="button"
+                            aria-label={`Page ${item}`}
+                            aria-current={item === currentPage ? "page" : undefined}
+                            className={`h-9 min-w-9 rounded-full px-2 text-sm font-semibold transition-colors ${
+                              item === currentPage
+                                ? "bg-[#0A66C2] text-white"
+                                : "text-text-secondary hover:bg-[#edf2f7]"
+                            }`}
+                            onClick={() => setPage(item)}
+                          >
+                            {item}
+                          </button>
+                        )
+                      )}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="!h-9 !min-h-0 !px-3 !py-0 !text-sm"
+                      disabled={currentPage >= totalPages}
+                      onClick={() => setPage(currentPage + 1)}
+                      aria-label="Next page"
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4 shrink-0" aria-hidden />
+                    </Button>
+                  </div>
+                </nav>
               ) : null}
             </>
           )}
