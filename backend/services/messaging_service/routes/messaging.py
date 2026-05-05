@@ -53,6 +53,12 @@ async def send(body: SendMessageRequest, u=Depends(get_current_user)):
 async def list_msgs(body: ListMessagesRequest, u=Depends(get_current_user)):
     return {"success": True, "data": await ctrl.list_msgs(body.thread_id, body.page, u["user_id"])}
 
+
+@messages_router.post("/unreadCount")
+async def unread_count(u=Depends(get_current_user)):
+    return {"success": True, "data": await ctrl.unread_count_for_user(u["user_id"])}
+
+
 @messages_router.post("/markRead", status_code=202)
 async def mark_read(body: MarkReadRequest, u=Depends(get_current_user)):
     return {"success": True, "data": await ctrl.enqueue_mark_read(body.thread_id, u)}

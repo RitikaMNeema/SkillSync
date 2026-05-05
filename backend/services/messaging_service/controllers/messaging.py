@@ -4,7 +4,7 @@ from models.thread import (
     find_thread_by_participants, create_thread, get_thread,
     threads_by_user, update_last_message_at, PAGE_SIZE,
 )
-from models.message import create_message, list_messages, mark_read
+from models.message import create_message, list_messages, mark_read, count_unread_messages_for_user
 from models.thread_preferences import get_preferences_for_user, upsert_preferences
 from producers.message_producer import emit_message_sent
 from websocket_hub import hub
@@ -85,6 +85,11 @@ async def send(thread_id: str, sender_id, text: str) -> dict:
             "realtime": "sent" if realtime_ok else "failed",
         },
     }
+
+
+async def unread_count_for_user(user_id) -> dict:
+    n = await count_unread_messages_for_user(user_id)
+    return {"unread_count": int(n)}
 
 
 async def list_msgs(thread_id: str, page: int, user_id) -> dict:

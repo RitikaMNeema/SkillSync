@@ -18,12 +18,13 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { logout as logoutRequest } from "../../api/auth";
 import { listPendingConnections } from "../../api/connections";
 import { getMember, searchMembers } from "../../api/members";
-import { getThreadsByUser } from "../../api/messages";
+import { getUnreadMessageCount } from "../../api/messages";
 import { searchJobs } from "../../api/jobs";
 import { getRecruiter, searchRecruiters } from "../../api/recruiters";
 import { authStore } from "../../context/AuthContext";
 import { useDebounce } from "../../hooks/useDebounce";
 import { APP_SHELL_MAIN_COLUMN_CLASS } from "../../constants/appShellLayout";
+import { UNREAD_BADGE_REFRESH_EVENT } from "../../constants/messagingEvents";
 import { cn } from "../../utils/cn";
 import { getHomePath, getJobsNavPath } from "../../utils/navigation";
 import { Avatar } from "../ui/Avatar";
@@ -63,12 +64,15 @@ export function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
   const [networkCount, setNetworkCount] = useState(0);
-  const [messageCount, setMessageCount] = useState(0);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const [seenNetworkCount, setSeenNetworkCount] = useState(0);
-  const [seenMessageCount, setSeenMessageCount] = useState(0);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const searchRef = useRef<HTMLFormElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  /** Monotonic: bump on each unread-subscription effect run (userId/pathname) to drop stale fetches. */
+  const unreadBadgeSessionRef = useRef(0);
+  /** Last userId we bound the messaging badge to; when it changes, clear count before refetch. */
+  const lastUnreadOwnerRef = useRef<number | null>(null);
   const debouncedQuery = useDebounce(query, 220);
   const homePath = getHomePath(role);
   /** Recruiters use `?type=recruiter` so `ProfilePage` always loads `/recruiters/get` (same id as auth `user_id`). */
@@ -100,6 +104,15 @@ export function Navbar() {
     [role, jobsNavPath]
   );
 
+  /** Invalidate in-flight unread fetches and clear badge counts (logout / account deletion). */
+  function resetMessagingBadgeStateForLogout() {
+    unreadBadgeSessionRef.current += 1;
+    lastUnreadOwnerRef.current = null;
+    setUnreadMessageCount(0);
+    setNetworkCount(0);
+    setSeenNetworkCount(0);
+  }
+
   function handleSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const keyword = query.trim();
@@ -119,6 +132,7 @@ export function Navbar() {
     } catch {
       // The local session should still be cleared even if the API call fails.
     }
+    resetMessagingBadgeStateForLogout();
     clearAuth();
     setMenuOpen(false);
     navigate("/login", { replace: true });
@@ -253,33 +267,67 @@ export function Navbar() {
     })();
   }, [userId, location.pathname]);
 
+  /** True unread messages from `/messages/unreadCount` — stale responses ignored via session + userId guard. */
   useEffect(() => {
-    if (!userId) return;
-    void (async () => {
-      try {
-        const threads = await getThreadsByUser(userId, 1);
-        setMessageCount(threads.total ?? threads.threads.length ?? 0);
-      } catch {
-        setMessageCount(0);
-      }
-    })();
+    if (!userId) {
+      lastUnreadOwnerRef.current = null;
+      setUnreadMessageCount(0);
+      setNetworkCount(0);
+      setSeenNetworkCount(0);
+      return;
+    }
+    if (lastUnreadOwnerRef.current !== userId) {
+      lastUnreadOwnerRef.current = userId;
+      setUnreadMessageCount(0);
+    }
+    unreadBadgeSessionRef.current += 1;
+    const session = unreadBadgeSessionRef.current;
+    const ownerId = userId;
+
+    const loadUnread = () => {
+      if (document.visibilityState !== "visible") return;
+      void getUnreadMessageCount()
+        .then((count) => {
+          if (unreadBadgeSessionRef.current !== session) return;
+          if (authStore.getState().userId !== ownerId) return;
+          setUnreadMessageCount(count);
+        })
+        .catch(() => {
+          if (unreadBadgeSessionRef.current !== session) return;
+          if (authStore.getState().userId !== ownerId) return;
+          setUnreadMessageCount(0);
+        });
+    };
+    loadUnread();
+    const onFocus = () => loadUnread();
+    const onVis = () => {
+      if (document.visibilityState === "visible") loadUnread();
+    };
+    const onAppRefresh = () => loadUnread();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener(UNREAD_BADGE_REFRESH_EVENT, onAppRefresh);
+    const poll = window.setInterval(loadUnread, 25_000);
+    return () => {
+      window.clearInterval(poll);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener(UNREAD_BADGE_REFRESH_EVENT, onAppRefresh);
+    };
   }, [userId, location.pathname]);
 
   useEffect(() => {
     if (location.pathname.startsWith("/connections")) {
       setSeenNetworkCount(networkCount);
     }
-    if (location.pathname.startsWith("/messages")) {
-      setSeenMessageCount(messageCount);
-    }
-  }, [location.pathname, networkCount, messageCount]);
+  }, [location.pathname, networkCount]);
 
   const navItemsWithBadges = navItems.map((item) => {
     if (item.to === "/connections") {
       return { ...item, badge: Math.max(0, networkCount - seenNetworkCount) };
     }
     if (item.to === "/messages") {
-      return { ...item, badge: Math.max(0, messageCount - seenMessageCount) };
+      return { ...item, badge: unreadMessageCount };
     }
     return { ...item, badge: 0 };
   });
@@ -494,12 +542,11 @@ export function Navbar() {
           </NavLink>
         ))}
       </div>
-      <div className="hidden">{userId}</div>
-
       <DeleteAccountDialogs
         confirmOpen={deleteConfirmOpen}
         onCloseConfirm={() => setDeleteConfirmOpen(false)}
         onNavigateAfterSuccess={() => {
+          resetMessagingBadgeStateForLogout();
           clearAuth();
           navigate("/login", { replace: true });
         }}
@@ -509,8 +556,9 @@ export function Navbar() {
 }
 
 function NotificationBadge({ count }: { count: number }) {
-  if (count <= 0) return null;
-  const text = count > 99 ? "99+" : String(count);
+  const n = Number(count);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const text = n > 99 ? "99+" : String(Math.floor(n));
   return (
     <span className="absolute -right-2 -top-2 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-[#d11124] px-1 text-[10px] font-semibold leading-none text-white">
       {text}

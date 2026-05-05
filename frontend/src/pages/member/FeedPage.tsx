@@ -1,15 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  ArrowRight,
-  FileText,
-  Image,
-  UserRoundPlus,
-  ShieldCheck,
-  MessageSquare,
-  Plus,
-  Sparkles
-} from "lucide-react";
+import { ArrowRight, FileText, Image, UserRoundPlus, ShieldCheck, MessageSquare, Plus } from "lucide-react";
 import toast from "react-hot-toast";
 import { useShallow } from "zustand/react/shallow";
 import { getMemberDashboard, getRecruiterProfileDashboard, getTopJobs } from "../../api/analytics";
@@ -17,7 +8,6 @@ import { getMutualConnections, listConnections, listPendingConnections, requestC
 import { getJob, searchJobs } from "../../api/jobs";
 import { createMember, searchMembers } from "../../api/members";
 import { createPost, getFeedPosts, uploadPostImage } from "../../api/posts";
-import { searchRecruiters } from "../../api/recruiters";
 import { RightSidebar, Sidebar } from "../../components/layout/Sidebar";
 import { PostCard } from "../../components/posts/PostCard";
 import { Avatar } from "../../components/ui/Avatar";
@@ -33,7 +23,6 @@ import type { MemberDashboard, RecruiterProfileDashboard } from "../../types/ana
 import type { Job } from "../../types/job";
 import type { MemberProfile, MemberSearchItem } from "../../types/member";
 import type { FeedPost, PostType } from "../../types/post";
-import type { RecruiterProfile } from "../../types/recruiter";
 import { getApiErrorMessage, getHttpStatus } from "../../utils/getApiErrorMessage";
 import { getUnifiedProfile, type UnifiedProfileResolution } from "../../utils/profileAdapter";
 import type { PendingConnection } from "../../types/connection";
@@ -87,7 +76,6 @@ export function FeedPage() {
   const [profile, setProfile] = useState<MemberProfile | null>(null);
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [peopleSuggestions, setPeopleSuggestions] = useState<MemberSearchItem[]>([]);
-  const [recruiterSuggestions, setRecruiterSuggestions] = useState<RecruiterProfile[]>([]);
   const [dashboard, setDashboard] = useState<MemberDashboard | RecruiterProfileDashboard | null>(null);
   const [trendingJobs, setTrendingJobs] = useState<Job[]>([]);
   const [pendingConnectionIds, setPendingConnectionIds] = useState<number[]>([]);
@@ -146,7 +134,6 @@ export function FeedPage() {
       const results = await Promise.allSettled([
         getFeedPosts(1),
         searchMembers({ location, page: 1 }),
-        searchRecruiters({ page: 1 }),
         listConnections(userId),
         listPendingConnections(userId),
         dashboardRequest,
@@ -155,14 +142,12 @@ export function FeedPage() {
 
       const feedPosts = results[0].status === "fulfilled" ? results[0].value.posts.slice(0, 5) : [];
       const memberResults = results[1].status === "fulfilled" ? results[1].value.members : [];
-      const recruiterResults = results[2].status === "fulfilled" ? results[2].value.recruiters.slice(0, 3) : [];
       const connectionResults =
-        results[3].status === "fulfilled" && Array.isArray(results[3].value) ? results[3].value : [];
+        results[2].status === "fulfilled" && Array.isArray(results[2].value) ? results[2].value : [];
       const pendingResults =
-        results[4].status === "fulfilled" && Array.isArray(results[4].value) ? results[4].value : [];
-      const dashboardResult = results[5].status === "fulfilled" ? results[5].value : null;
+        results[3].status === "fulfilled" && Array.isArray(results[3].value) ? results[3].value : [];
+      const dashboardResult = results[4].status === "fulfilled" ? results[4].value : null;
       setPosts(feedPosts);
-      setRecruiterSuggestions(recruiterResults);
       setConnectedUserIds(connectionResults.map((connection) => connection.connected_user_id));
       const pendingIndex = outgoingPendingIndex(pendingResults, userId);
       setPendingConnectionIds(pendingIndex.ids);
@@ -194,8 +179,8 @@ export function FeedPage() {
       setSuggestionDegrees(degreeById);
       setSuggestionMutualCounts(mutualCountById);
 
-      if (results[6].status === "fulfilled" && results[6].value.length > 0) {
-        const topJobResults = await Promise.allSettled(results[6].value.slice(0, 3).map((metric) => getJob(Number(metric.job_id))));
+      if (results[5].status === "fulfilled" && results[5].value.length > 0) {
+        const topJobResults = await Promise.allSettled(results[5].value.slice(0, 3).map((metric) => getJob(Number(metric.job_id))));
         setTrendingJobs(
           topJobResults
             .filter((result): result is PromiseFulfilledResult<Job> => result.status === "fulfilled")
@@ -310,18 +295,13 @@ export function FeedPage() {
     setComposerOpen(true);
   }
 
-  function goToJobs(params?: Record<string, string>) {
-    const search = new URLSearchParams(params);
-    navigate(search.size ? `/jobs?${search.toString()}` : "/jobs");
-  }
-
   function goToConnectionsPage() {
     navigate("/connections");
   }
 
   if (loading || !authHydrated) {
     return (
-      <div className="grid gap-6 lg:grid-cols-[225px_minmax(0,554px)_300px]">
+      <div className="grid gap-6 lg:grid-cols-[225px_minmax(0,1fr)_300px]">
         <CardSkeleton />
         <CardSkeleton />
         <CardSkeleton />
@@ -348,7 +328,7 @@ export function FeedPage() {
   );
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[225px_minmax(0,554px)_300px]">
+    <div className="grid gap-6 lg:grid-cols-[225px_minmax(0,1fr)_300px]">
       <Sidebar>
         <Card className="overflow-hidden rounded-2xl border border-[#dde3ea] p-0 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
           <div className="h-[68px] bg-gradient-to-r from-[#1d4477] to-[#1568bf]" />
@@ -536,31 +516,6 @@ export function FeedPage() {
       </div>
       <RightSidebar>
         <div className="space-y-4">
-          <Card>
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Add to your feed</h3>
-              <Sparkles className="h-5 w-5 text-brand" />
-            </div>
-            {recruiterSuggestions.length ? (
-              <div className="space-y-3">
-                {recruiterSuggestions.map((recruiter) => (
-                  <div key={recruiter.recruiter_id} className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold">{recruiter.company_name}</p>
-                      <p className="text-sm text-text-secondary">{recruiter.name}</p>
-                      <p className="text-sm text-text-secondary">{recruiter.industry || "Company"}</p>
-                    </div>
-                    <Button variant="secondary" onClick={() => goToJobs({ location: profile.location_city || "" })}>
-                      View jobs
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-text-secondary">Recruiter and company suggestions will appear here as data grows.</p>
-            )}
-          </Card>
-
           <Card>
             <h3 className="text-lg font-semibold">LinkedIn News</h3>
             <div className="mt-3 space-y-3 text-sm">

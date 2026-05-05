@@ -1,5 +1,6 @@
 import api from "./axios";
 import { resolveCommandResult } from "./commands";
+import { normalizeNavbarUnreadCount } from "../utils/navbarUnreadCount";
 import type { ApiResponse } from "../types/common";
 import type { Message, MessageListResponse, Thread, ThreadListResponse, ThreadPreference, ThreadPreferencesResponse } from "../types/message";
 
@@ -16,6 +17,12 @@ export async function getThread(thread_id: string) {
 export async function getThreadsByUser(user_id: number, page = 1) {
   const response = await api.post<ApiResponse<ThreadListResponse>>("/threads/byUser", { user_id, page });
   return response.data.data;
+}
+
+export async function getUnreadMessageCount() {
+  const response = await api.post<ApiResponse<{ unread_count: number }>>("/messages/unreadCount", {});
+  const raw = response.data?.data as { unread_count?: unknown } | undefined;
+  return normalizeNavbarUnreadCount(raw?.unread_count);
 }
 
 export async function sendMessage(thread_id: string, sender_id: number, text: string) {

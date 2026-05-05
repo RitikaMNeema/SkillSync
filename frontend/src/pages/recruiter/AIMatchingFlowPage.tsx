@@ -258,7 +258,7 @@ export function AIMatchingFlowPage() {
     setProcessingNote(null);
     const t0 = Date.now();
     setStartedAt(t0);
-    setTaskId(crypto.randomUUID());
+    setTaskId(typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substr(2, 9));
     setMatchRows([]);
     setTalentInsights([]);
     setPhase("processing");
@@ -299,7 +299,7 @@ export function AIMatchingFlowPage() {
     setProcessingNote(null);
     const t0 = Date.now();
     setStartedAt(t0);
-    setTaskId(crypto.randomUUID());
+    setTaskId(typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substr(2, 9));
     setPhase("processing");
     setActiveStepIndex(0);
     setMatchRows([]);
