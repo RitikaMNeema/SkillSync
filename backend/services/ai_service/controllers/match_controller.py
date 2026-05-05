@@ -259,7 +259,7 @@ async def safe_embed(text: str, timeout_seconds: float = 20.0) -> List[float] | 
 async def safe_llm_explanation(
     system_prompt: str,
     user_prompt: str,
-    timeout_seconds: float = 25.0,
+    timeout_seconds: float = 15.0,
 ) -> Dict[str, Any]:
     try:
         return await asyncio.wait_for(
