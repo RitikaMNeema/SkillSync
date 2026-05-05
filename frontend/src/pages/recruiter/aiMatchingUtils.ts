@@ -130,7 +130,10 @@ export function memberToCandidateProfile(m: MemberProfile): CandidateProfile {
     skills: m.skills ?? [],
     experiences,
     location,
-    education
+    education,
+    // Pass dedicated resume_text when available; otherwise fall back to summary,
+    // which the Kaggle seeder stores the full resume text in (up to 12,000 chars).
+    resume_text: (m.resume_text ?? m.summary ?? "").trim()
   };
 }
 

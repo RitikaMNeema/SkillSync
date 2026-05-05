@@ -98,6 +98,7 @@ MEMBER_FILE_COLUMNS: list[tuple[str, str]] = [
     ("resume_file_name", "VARCHAR(255)"),
     ("resume_content_type", "VARCHAR(100)"),
     ("resume_uploaded_at", "TIMESTAMP NULL DEFAULT NULL"),
+    ("resume_text", "MEDIUMTEXT NULL"),
     ("open_to", "VARCHAR(32)"),
     ("profile_status", "VARCHAR(32)"),
     ("profile_language", "VARCHAR(64)"),
@@ -904,6 +905,7 @@ async def set_resume_file(
     file_id: str,
     file_name: str,
     content_type: str,
+    resume_text: str = "",
 ) -> None:
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -911,9 +913,10 @@ async def set_resume_file(
             await cur.execute(
                 """UPDATE members
                    SET resume_file_id = %s, resume_file_name = %s,
-                       resume_content_type = %s, resume_uploaded_at = CURRENT_TIMESTAMP
+                       resume_content_type = %s, resume_uploaded_at = CURRENT_TIMESTAMP,
+                       resume_text = %s
                    WHERE member_id = %s AND is_deleted = 0""",
-                (file_id, file_name, content_type, member_id),
+                (file_id, file_name, content_type, resume_text or None, member_id),
             )
 
 

@@ -46,6 +46,8 @@ export type CandidateProfile = {
   experiences?: string[];
   location?: string;
   education?: string[];
+  /** Raw resume text extracted from the uploaded PDF / stored as plain text on the member profile. Primary input for the Resume Parser skill. */
+  resume_text?: string;
 };
 
 export type JobPayload = {

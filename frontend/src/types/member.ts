@@ -65,6 +65,8 @@ export interface MemberProfile {
   resume_file_name?: string | null;
   resume_content_type?: string | null;
   resume_uploaded_at?: string | null;
+  /** Extracted plain text of the resume (primary input for AI Resume Parser skill). Falls back to summary when absent. */
+  resume_text?: string | null;
   open_to?: OpenToOption | null;
   profile_status?: ProfileStatusOption | null;
   profile_language?: string | null;

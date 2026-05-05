@@ -1,4 +1,5 @@
 import asyncio
+import io
 import logging
 
 from fastapi import HTTPException
@@ -238,6 +239,31 @@ def _normalized_resume_content_type(content_type: str | None) -> str:
     return content_type.split(";", 1)[0].strip().lower()
 
 
+def _extract_resume_text(data: bytes, content_type: str) -> str:
+    """Extract plain text from resume file bytes. Returns empty string on failure."""
+    ct = _normalized_resume_content_type(content_type)
+    try:
+        if ct == "application/pdf":
+            import pdfplumber
+            with pdfplumber.open(io.BytesIO(data)) as pdf:
+                pages = [page.extract_text() or "" for page in pdf.pages]
+            return "\n".join(pages).strip()
+        if ct == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            from docx import Document
+            doc = Document(io.BytesIO(data))
+            return "\n".join(p.text for p in doc.paragraphs if p.text.strip()).strip()
+        if ct in ("text/html",):
+            import re
+            text = data.decode("utf-8", errors="ignore")
+            text = re.sub(r"<[^>]+>", " ", text)
+            return " ".join(text.split()).strip()
+        if ct == "text/plain":
+            return data.decode("utf-8", errors="ignore").strip()
+    except Exception as exc:
+        logger.warning("resume text extraction failed (%s): %s", ct, exc)
+    return ""
+
+
 async def upload_photo_file(
     member_id: int,
     actor_id: int,
@@ -355,9 +381,10 @@ async def upload_resume_file(
     if not await get_member_by_id(member_id):
         raise HTTPException(404, "Member not found")
 
+    resume_text = _extract_resume_text(data, content_type)
     existing = await get_member_resume_meta(member_id)
     new_file_id = await files_mongo.upload_resume(member_id, filename, content_type, data)
-    await set_resume_file(member_id, new_file_id, filename, content_type)
+    await set_resume_file(member_id, new_file_id, filename, content_type, resume_text)
     if existing and existing.get("resume_file_id") and existing["resume_file_id"] != new_file_id:
         await files_mongo.delete_resume(existing["resume_file_id"])
     await cache_del(_profile_key(member_id))
