@@ -281,16 +281,31 @@ async def compute_match(payload: AIMatchRequest):
     candidate = payload.candidate
     job = payload.job
 
-    candidate_skills = normalize_skills(candidate.skills)
     job_skills = normalize_skills(job.skills_required)
 
-    candidate_text = " ".join([
+    # Prefer resume_text (full uploaded resume) as the primary semantic signal.
+    # Fall back to structured profile fields when it is absent.
+    resume_text = (getattr(candidate, "resume_text", None) or "").strip()
+    candidate_text = " ".join(filter(None, [
         candidate.headline or "",
-        candidate.summary or "",
+        candidate.summary or "" if not resume_text else "",
         " ".join(candidate.skills or []),
         " ".join(candidate.experiences or []),
         " ".join(candidate.education or []),
-    ])
+        resume_text,   # full resume text — gives embeddings rich semantic content
+    ])).strip()
+
+    # When the profile skills list is empty but a resume is present, augment the
+    # skills list with any job-required skills that appear verbatim in the resume text
+    # so that fuzzy_job_skill_coverage can detect them.
+    effective_skills = list(candidate.skills or [])
+    if resume_text and not effective_skills:
+        rt_lower = resume_text.lower()
+        for js in (job.skills_required or []):
+            if js.strip().lower() in rt_lower and js not in effective_skills:
+                effective_skills.append(js)
+
+    candidate_skills = normalize_skills(effective_skills)
 
     job_text = " ".join([
         job.title or "",
@@ -303,7 +318,7 @@ async def compute_match(payload: AIMatchRequest):
 
     overlap_score, matched_skills, missing_skills = fuzzy_job_skill_coverage(
         job.skills_required or [],
-        candidate.skills or [],
+        effective_skills,
         candidate_text,
     )
 
@@ -352,9 +367,14 @@ async def compute_match(payload: AIMatchRequest):
         "Return valid JSON only."
     )
 
+    candidate_dump = candidate.model_dump()
+    # Truncate resume_text in the prompt to keep token count manageable.
+    if candidate_dump.get("resume_text"):
+        candidate_dump["resume_text"] = candidate_dump["resume_text"][:3000]
+
     user_prompt = f"""
 Candidate:
-{json.dumps(candidate.model_dump(), indent=2)}
+{json.dumps(candidate_dump, indent=2)}
 
 Job:
 {json.dumps(job.model_dump(), indent=2)}

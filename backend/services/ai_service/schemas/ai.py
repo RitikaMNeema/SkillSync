@@ -10,6 +10,9 @@ class CandidateProfile(BaseModel):
     experiences: List[str] = Field(default_factory=list)
     location: str = ""
     education: List[str] = Field(default_factory=list)
+    # Raw resume text (extracted from PDF or stored as plain text on the member profile).
+    # When present this is the primary input for the Resume Parser skill, per project spec.
+    resume_text: str = ""
 
 
 class JobPayload(BaseModel):
@@ -34,6 +37,8 @@ class ResumeParseRequest(BaseModel):
     experiences: List[str] = Field(default_factory=list)
     education: List[str] = Field(default_factory=list)
     skills: List[str] = Field(default_factory=list)
+    # Primary resume content — takes precedence over structured profile fields in the parser.
+    resume_text: str = ""
 
 
 class OutreachDraftRequest(BaseModel):

@@ -131,6 +131,7 @@ class WorkflowService:
                 experiences=payload["candidate"].get("experiences", []),
                 education=payload["candidate"].get("education", []),
                 skills=payload["candidate"].get("skills", []),
+                resume_text=payload["candidate"].get("resume_text", ""),
             )
             parsed = await parse_profile(parse_req)
 
