@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { Bookmark, BriefcaseBusiness, Eye, FileText, Lightbulb } from "lucide-react";
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { getRecruiterProfileDashboard } from "../../api/analytics";
+import { ProfileViewsAreaChart } from "../../components/analytics/ProfileViewsAreaChart";
 import { ProfileViewersList } from "../../components/analytics/ProfileViewersList";
 import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
@@ -54,20 +54,6 @@ export function RecruiterProfileAnalyticsPage() {
       })
       .finally(() => setLoading(false));
   }, [authHydrated, userId]);
-
-  const areaData = useMemo(() => {
-    const source = dashboard?.profile_views_daily_30d ?? [];
-    if (!source.length) {
-      return Array.from({ length: 30 }, (_, index) => ({
-        label: `Day ${index + 1}`,
-        views: 0
-      }));
-    }
-    return source.map((point, index) => ({
-      label: index % 5 === 0 ? `Day ${index + 1}` : "",
-      views: point.count
-    }));
-  }, [dashboard?.profile_views_daily_30d]);
 
   const statusData = dashboard?.application_status_breakdown ?? [];
   const applicantsCount = dashboard?.applicants_30d ?? 0;
@@ -193,23 +179,7 @@ export function RecruiterProfileAnalyticsPage() {
               <p className="pb-0.5 text-sm text-[#666]">Total views</p>
             </div>
 
-            <div className="h-[205px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={areaData} margin={{ top: 8, right: 8, bottom: 0, left: -12 }}>
-                  <defs>
-                    <linearGradient id="recruiterViews" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#0a66c2" stopOpacity={0.22} />
-                      <stop offset="95%" stopColor="#0a66c2" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid vertical={false} stroke="#edf1f4" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#666" }} tickLine={false} axisLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: "#666" }} tickLine={false} axisLine={false} width={28} />
-                  <Tooltip contentStyle={{ borderRadius: 8, borderColor: "#dce0e4" }} formatter={(value) => [`${value} views`, "Profile views"]} />
-                  <Area type="monotone" dataKey="views" stroke="#0a66c2" strokeWidth={2} fillOpacity={1} fill="url(#recruiterViews)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            <ProfileViewsAreaChart daily={dashboard.profile_views_daily_30d ?? []} instanceId="recruiter-profile" />
 
             <ProfileViewersList rows={dashboard.profile_viewers_recent} />
           </div>
