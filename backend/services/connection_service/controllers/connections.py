@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 from ..models.connection import (
     find_request, find_request_by_id, create_request, update_request_status,
+    delete_request_by_id,
     get_pending_requests, connection_exists, accept_connection_transaction,
     remove_connection_transaction, get_user_connections, get_mutual_connections,
     block_user_transaction,
@@ -34,7 +35,11 @@ async def request(requester_id, receiver_id) -> dict:
         if existing["status"] == "pending":
             raise HTTPException(409, "Connection request already pending")
         if existing["status"] == "accepted":
-            raise HTTPException(409, "Already connected")
+            if await connection_exists(requester_id, receiver_id):
+                raise HTTPException(409, "Already connected")
+            # Stale row left after a remove (or legacy data); allow a fresh invite.
+            await delete_request_by_id(existing["id"])
+            existing = None
     if await connection_exists(requester_id, receiver_id):
         raise HTTPException(409, "Already connected")
     rid = await create_request(requester_id, receiver_id)
