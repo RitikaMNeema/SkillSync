@@ -24,6 +24,7 @@ import { Avatar } from "../../components/ui/Avatar";
 import { CardSkeleton } from "../../components/ui/Skeleton";
 import { LeadingIconInput } from "../../components/ui/LeadingIconInput";
 import { Input } from "../../components/ui/Input";
+import { UNREAD_BADGE_REFRESH_EVENT } from "../../constants/messagingEvents";
 import { authStore } from "../../context/AuthContext";
 import { useWebSocket } from "../../hooks/useWebSocket";
 import type { Message, Thread } from "../../types/message";
@@ -197,6 +198,7 @@ export function MessagesPage() {
         }
         return [...current, incoming];
       });
+      queueMicrotask(() => window.dispatchEvent(new Event(UNREAD_BADGE_REFRESH_EVENT)));
     },
     [activeThread?.thread_id]
   );
@@ -397,6 +399,7 @@ export function MessagesPage() {
     );
     setUnreadCountByThread(Object.fromEntries(unreadEntries.map(([threadId, unread]) => [threadId, unread])));
     setPreviewByThread(Object.fromEntries(unreadEntries.map(([threadId, _unread, preview]) => [threadId, preview])));
+    window.dispatchEvent(new Event(UNREAD_BADGE_REFRESH_EVENT));
   }, [resolveUserProfile, userId]);
 
   useEffect(() => {
@@ -580,7 +583,9 @@ export function MessagesPage() {
     if (!activeThread || !userId) return;
     void listMessages(activeThread.thread_id).then((data) => {
       setMessages(data.messages);
-      void markThreadRead(activeThread.thread_id, userId);
+      void markThreadRead(activeThread.thread_id, userId).finally(() =>
+        window.dispatchEvent(new Event(UNREAD_BADGE_REFRESH_EVENT))
+      );
       setUnreadCountByThread((current) => ({ ...current, [activeThread.thread_id]: 0 }));
       setForceUnreadThreadIds((current) => {
         if (!current[activeThread.thread_id]) return current;

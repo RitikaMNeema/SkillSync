@@ -38,3 +38,14 @@ async def mark_read(thread_id: str, user_id) -> int:
         {"$addToSet": {"read_by": str(user_id)}},
     )
     return result.modified_count
+
+
+async def count_unread_messages_for_user(user_id) -> int:
+    """Messages this user has not yet read — same predicate as `mark_read` (`read_by` / `$ne`)."""
+    db = get_db()
+    uid = str(user_id)
+    thread_ids = await db.threads.distinct("thread_id", {"participant_ids": uid})
+    if not thread_ids:
+        return 0
+    # Match `mark_read`: count rows `update_many` would touch (per-thread filter is thread_id + read_by $ne).
+    return await db.messages.count_documents({"thread_id": {"$in": thread_ids}, "read_by": {"$ne": uid}})
