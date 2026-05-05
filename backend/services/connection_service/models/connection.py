@@ -3,6 +3,18 @@ from shared.database.mysql import get_pool
 PAGE_SIZE = 20
 
 
+async def _delete_accepted_requests_between_cursor(cur, uid1: int, uid2: int) -> None:
+    """Remove accepted request rows for this unordered pair (same link as connections table)."""
+    await cur.execute(
+        """DELETE FROM connection_requests
+           WHERE status='accepted'
+             AND requester_id IN (%s, %s)
+             AND receiver_id IN (%s, %s)
+             AND requester_id <> receiver_id""",
+        (uid1, uid2, uid1, uid2),
+    )
+
+
 async def ensure_blocks_table() -> None:
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -57,6 +69,13 @@ async def update_request_status(request_id, status) -> None:
             await cur.execute(
                 "UPDATE connection_requests SET status=%s WHERE id=%s", (status, request_id)
             )
+
+
+async def delete_request_by_id(request_id) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("DELETE FROM connection_requests WHERE id=%s", (request_id,))
 
 
 async def get_pending_requests(user_id) -> list:
@@ -134,6 +153,7 @@ async def remove_connection_transaction(uid1, uid2) -> None:
                 await cur.execute(
                     "DELETE FROM connections WHERE user_id_1=%s AND user_id_2=%s", (a, b)
                 )
+                await _delete_accepted_requests_between_cursor(cur, uid1, uid2)
             await conn.commit()
         except Exception:
             await conn.rollback()
@@ -196,6 +216,7 @@ async def block_user_transaction(blocker_id: int, blocked_id: int) -> None:
                     "DELETE FROM connections WHERE user_id_1=%s AND user_id_2=%s",
                     (a, b),
                 )
+                await _delete_accepted_requests_between_cursor(cur, blocker_id, blocked_id)
                 await cur.execute(
                     """UPDATE connection_requests
                        SET status='rejected'
