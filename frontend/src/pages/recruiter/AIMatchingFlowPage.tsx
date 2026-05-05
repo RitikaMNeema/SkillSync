@@ -22,7 +22,7 @@ import {
   type AIMatchResult,
   type CommandStatusResponse
 } from "../../api/ai";
-import { getAllApplicationsByJob } from "../../api/applications";
+import { getAllApplicationsByJob, updateApplicationStatus } from "../../api/applications";
 import { openThread, sendMessage } from "../../api/messages";
 import { getRecruiter } from "../../api/recruiters";
 import type { Application } from "../../types/application";
@@ -128,7 +128,8 @@ function stepStatusForIndex(activeIndex: number, stepIndex: number, failed: bool
 }
 
 async function pollCommandUntilDone(commandId: string): Promise<CommandStatusResponse> {
-  for (let i = 0; i < 40; i += 1) {
+  // 150 attempts × 1.2 s = ~3 minutes (covers slow AWS Ollama per-candidate).
+  for (let i = 0; i < 150; i += 1) {
     const status = await getAICommandStatus(commandId);
     if (status.status === "completed") return status;
     if (status.status === "failed") throw new Error(status.error || "Command failed");
@@ -138,7 +139,8 @@ async function pollCommandUntilDone(commandId: string): Promise<CommandStatusRes
 }
 
 async function pollTraceUntilReviewable(traceId: string) {
-  for (let i = 0; i < 60; i += 1) {
+  // 120 attempts × 1.8 s = ~3.6 minutes (covers full outreach workflow on slow AWS).
+  for (let i = 0; i < 120; i += 1) {
     const status = await getAgentStatus(traceId);
     if (
       status.status === "awaiting_approval" ||
@@ -849,12 +851,21 @@ export function AIMatchingFlowPage() {
             <Button
               type="button"
               variant="danger"
-              onClick={() => {
+              onClick={async () => {
                 setDisposition((d) => ({ ...d, [selectedRow.member_id]: "rejected" }));
-                toast.success("Marked as not a match (local tracker)");
+                if (selectedRow.application_id != null) {
+                  try {
+                    await updateApplicationStatus(selectedRow.application_id, "rejected");
+                    toast.success("Candidate rejected.");
+                  } catch {
+                    toast.error("Could not update application status — disposition saved locally.");
+                  }
+                } else {
+                  toast.success("Candidate rejected.");
+                }
               }}
             >
-              Not a match
+              Reject
             </Button>
           </div>
         </div>
@@ -1134,7 +1145,7 @@ export function AIMatchingFlowPage() {
                               ) : null}
                               {disposition[row.member_id] === "rejected" ? (
                                 <span className="rounded bg-red-50 px-1.5 py-0.5 font-semibold text-red-800">
-                                  Not a match
+                                  Rejected
                                 </span>
                               ) : null}
                               {outreachStatus[row.member_id] && outreachStatus[row.member_id] !== "draft" ? (
