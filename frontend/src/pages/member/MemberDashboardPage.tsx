@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { Eye, FileText, Lightbulb, Search } from "lucide-react";
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { getMemberDashboard } from "../../api/analytics";
 import { getApplicationsByMember } from "../../api/applications";
+import { ProfileViewsAreaChart } from "../../components/analytics/ProfileViewsAreaChart";
 import { ProfileViewersList } from "../../components/analytics/ProfileViewersList";
 import { CardSkeleton } from "../../components/ui/Skeleton";
 import { authStore } from "../../context/AuthContext";
@@ -50,20 +50,6 @@ export function MemberDashboardPage() {
       })
       .finally(() => setLoading(false));
   }, [userId]);
-
-  const areaData = useMemo(() => {
-    const source = dashboard?.profile_views_daily_30d ?? [];
-    if (!source.length) {
-      return Array.from({ length: 30 }, (_, index) => ({
-        label: `Day ${index + 1}`,
-        views: 0
-      }));
-    }
-    return source.map((point, index) => ({
-      label: index % 5 === 0 ? `Day ${index + 1}` : "",
-      views: point.count
-    }));
-  }, [dashboard?.profile_views_daily_30d]);
 
   const statusData = dashboard?.application_status_breakdown ?? [];
   const totalStatusCount = statusData.reduce((sum, row) => sum + row.count, 0) || applicationsCount;
@@ -189,23 +175,7 @@ export function MemberDashboardPage() {
               <span className="ml-1 text-[#666]">from previous 30 days</span>
             </p>
 
-            <div className="h-[205px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={areaData} margin={{ top: 8, right: 8, bottom: 0, left: -12 }}>
-                  <defs>
-                    <linearGradient id="memberViews" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#0a66c2" stopOpacity={0.22} />
-                      <stop offset="95%" stopColor="#0a66c2" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid vertical={false} stroke="#edf1f4" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#666" }} tickLine={false} axisLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: "#666" }} tickLine={false} axisLine={false} width={28} />
-                  <Tooltip contentStyle={{ borderRadius: 8, borderColor: "#dce0e4" }} formatter={(value) => [`${value} views`, "Profile views"]} />
-                  <Area type="monotone" dataKey="views" stroke="#0a66c2" strokeWidth={2} fillOpacity={1} fill="url(#memberViews)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            <ProfileViewsAreaChart daily={dashboard.profile_views_daily_30d ?? []} instanceId="member-dashboard" />
 
             <ProfileViewersList rows={dashboard.profile_viewers_recent} />
 
