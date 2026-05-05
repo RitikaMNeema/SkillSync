@@ -4,7 +4,13 @@ from models.thread import (
     find_thread_by_participants, create_thread, get_thread,
     threads_by_user, update_last_message_at, PAGE_SIZE,
 )
-from models.message import create_message, list_messages, mark_read, count_unread_messages_for_user
+from models.message import (
+    create_message,
+    list_messages,
+    mark_read,
+    count_unread_messages_for_user,
+    serialize_message,
+)
 from models.thread_preferences import get_preferences_for_user, upsert_preferences
 from producers.message_producer import emit_message_sent
 from websocket_hub import hub
@@ -67,19 +73,17 @@ async def send(thread_id: str, sender_id, text: str) -> dict:
         raise HTTPException(403, "Sender is not a participant")
     msg = await _send_with_retry(thread_id, sender_id, text)
     await update_last_message_at(thread_id, msg["timestamp"])
+    msg_out = serialize_message(msg)
     realtime_payload = {
         "event": "message.created",
-        "data": {
-            **msg,
-            "timestamp": msg["timestamp"].isoformat() if hasattr(msg["timestamp"], "isoformat") else msg["timestamp"],
-        },
+        "data": msg_out,
     }
 
     kafka_ok = await _best_effort_retry(lambda: emit_message_sent(sender_id, msg["message_id"], thread_id))
     realtime_ok = await _best_effort_retry(lambda: hub.broadcast(thread_id, realtime_payload))
 
     return {
-        **msg,
+        **msg_out,
         "delivery_status": {
             "kafka": "sent" if kafka_ok else "failed",
             "realtime": "sent" if realtime_ok else "failed",

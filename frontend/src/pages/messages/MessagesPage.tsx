@@ -27,6 +27,7 @@ import { Input } from "../../components/ui/Input";
 import { UNREAD_BADGE_REFRESH_EVENT } from "../../constants/messagingEvents";
 import { authStore } from "../../context/AuthContext";
 import { useWebSocket } from "../../hooks/useWebSocket";
+import { normalizeIsoForParse } from "../../utils/formatDate";
 import type { Message, Thread } from "../../types/message";
 
 /** Flat illustration for inbox search empty state (LinkedIn-style). */
@@ -211,7 +212,7 @@ export function MessagesPage() {
     (activeThread ? threadLabels[activeThread.thread_id] ?? `Thread ${activeThread.thread_id.slice(0, 8)}` : "Select a conversation");
   const activeAvatarName = activeParticipantProfile?.name?.split(" ")[0] || activeThreadLabel.split(",")[0]?.trim() || "Thread";
 
-  const normalizeTs = useCallback((ts: string) => (/(?:Z|[+-]\d{2}:\d{2})$/.test(ts) ? ts : `${ts}Z`), []);
+  const normalizeTs = useCallback((ts: string) => normalizeIsoForParse(ts), []);
 
   const dayKey = useCallback((ts: string) => format(parseISO(normalizeTs(ts)), "yyyy-MM-dd"), [normalizeTs]);
 

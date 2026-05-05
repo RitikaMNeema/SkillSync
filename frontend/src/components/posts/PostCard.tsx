@@ -9,6 +9,8 @@ import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { CommentsPanel } from "./CommentsPanel";
 import { deletePost, likePost } from "../../api/posts";
+import { useMinuteTicker } from "../../hooks/useMinuteTicker";
+import { formatTimeAgo } from "../../utils/formatDate";
 import type { FeedPost } from "../../types/post";
 
 interface PostCardProps {
@@ -19,6 +21,7 @@ interface PostCardProps {
 }
 
 export function PostCard({ post, viewerId, onUpdate, onDelete }: PostCardProps) {
+  useMinuteTicker();
   const [likeCount, setLikeCount] = useState(post.like_count);
   const [hasLiked, setHasLiked] = useState(post.viewer_has_liked);
   const [commentCount, setCommentCount] = useState(post.comment_count);
@@ -226,25 +229,4 @@ function resolveMediaUrl(url: string): string {
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
   const base = import.meta.env.VITE_API_BASE_URL ?? "/api";
   return `${base.replace(/\/$/, "")}${url}`;
-}
-
-function formatTimeAgo(isoString: string): string {
-  const now = new Date();
-  const postTime = new Date(isoString);
-  const diffMs = now.getTime() - postTime.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffMins < 1) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-
-  // For older posts, show the actual date
-  return postTime.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: postTime.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
-  });
 }
