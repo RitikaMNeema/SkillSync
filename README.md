@@ -1,5 +1,12 @@
 # LinkedIn (class project)
 
+Group project, originally developed in [KruthikaVirupakshappa/SkillSync](https://github.com/KruthikaVirupakshappa/SkillSync).
+This is a full-history mirror on my own GitHub — every commit below is
+attributed to whoever actually wrote it.
+
+**Contributors:** nithyaanantharamanGIT, bavishna11, KruthikaVirupakshappa,
+shrutinaik-web, matthewleffler1, RitikaMNeema, elsasjsu, Alfred-Koh
+
 A LinkedIn-style professional networking platform built as a distributed systems class project. This app lets members create profiles, connect with each other, browse and apply to jobs, message recruiters, and track their application pipeline. Recruiters can post listings, manage applicants, and communicate with candidates. Activity is streamed through Kafka and aggregated into an analytics layer in real time.
 
 ---
